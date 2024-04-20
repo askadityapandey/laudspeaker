@@ -19,6 +19,8 @@ export default class CacheService {
 	constructor() {}
 
 	/**
+	 * Fetches data from the cache, using the given key. If there is data in the cache with the given key, then that data is returned.
+	 * If there is no such data in the cache (a cache miss), then null will be returned. However, if a callbackFn has been passed, the return value of the callbackFn will be written to the cache under the given cache key, and that return value will be returned.
 	 * let nextStep1 = await this.cacheService.get(Step, step.id, async () => {
 	 *  return await this.stepsService.lazyFindByID(step.id); 
 	 * }, 10000);
@@ -97,6 +99,22 @@ export default class CacheService {
 
 		await this.cacheManager.set(cacheKey, value, expiry);
 	}
+
+	/**
+	 */
+	async delete(klass: any, id: string) {
+		const cacheKey = this.getCacheKey(klass, id);
+
+		return await this.deleteRaw(cacheKey);
+	}	
+
+	/**
+	 */
+	async deleteRaw(cacheKey: string) {
+		const cacheKey = this.getCacheKey(klass, id);
+
+		return await this.cacheManager.del(cacheKey);
+	}	
 
 	private getCacheKey(klass: any, id: string): string {
 		this.assertValue(id);
