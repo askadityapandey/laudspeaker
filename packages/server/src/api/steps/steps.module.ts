@@ -33,7 +33,7 @@ import { JourneyLocation } from '../journeys/entities/journey-location.entity';
 import { JourneysModule } from '../journeys/journeys.module';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { Requeue } from './entities/requeue.entity';
-import CacheService from '@/common/services/cache-service';
+import CacheService from '@/common/services/cache.service';
 
 @Module({
   imports: [

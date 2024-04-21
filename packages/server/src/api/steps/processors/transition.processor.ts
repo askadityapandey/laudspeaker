@@ -58,7 +58,7 @@ import { Journey } from '@/api/journeys/entities/journey.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
 import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
-import CacheService from '@/common/services/cache-service';
+import CacheService from '@/common/services/cache.service';
 
 @Injectable()
 @Processor('transition', {

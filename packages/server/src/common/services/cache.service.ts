@@ -111,7 +111,7 @@ export default class CacheService {
 	/**
 	 */
 	async deleteRaw(cacheKey: string) {
-		const cacheKey = this.getCacheKey(klass, id);
+		this.assertValue(cacheKey);
 
 		return await this.cacheManager.del(cacheKey);
 	}	
