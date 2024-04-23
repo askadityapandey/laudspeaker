@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 
-class CacheServiceInvalidValueError extends Error {
+export class CacheServiceInvalidValueError extends Error {
 	constructor(message: string) {
 		super(message);
 		this.name = this.constructor.name;
@@ -11,7 +11,7 @@ class CacheServiceInvalidValueError extends Error {
 }
 
 @Injectable()
-export default class CacheService {
+export class CacheService {
 
 	readonly DEFAULT_EXPIRY = 5000;
 	
@@ -43,7 +43,7 @@ export default class CacheService {
 		}
 		catch(err) {
 			if (err instanceof CacheServiceInvalidValueError) {
-				return null;
+				return undefined;
 			}
 			else
 				throw err;
@@ -71,7 +71,9 @@ export default class CacheService {
 		if(callbackFn) {
 			const result = await callbackFn();
 
-			await this.setRaw(cacheKey, result, expiry);
+			await this.setRaw(cacheKey, async () => {
+				return result;
+			}, expiry);
 
 			return result;
 		}
@@ -85,9 +87,7 @@ export default class CacheService {
 	async set(klass: any, id: string, callbackFn: () => any, expiry: number = this.DEFAULT_EXPIRY) {
 		const cacheKey = this.getCacheKey(klass, id);
 
-		const result = callbackFn();
-
-		await this.setRaw(cacheKey, result, expiry);
+		await this.setRaw(cacheKey, callbackFn, expiry);
 	}
 
 	/**
@@ -95,10 +95,12 @@ export default class CacheService {
 	 *  return "hello-there";
 	 * });
 	 */
-	async setRaw(cacheKey: string, value: any, expiry: number) {
+	async setRaw(cacheKey: string, callbackFn: () => any, expiry: number = this.DEFAULT_EXPIRY) {
 		this.assertValue(cacheKey);
 
-		await this.cacheManager.set(cacheKey, value, expiry);
+		const result = await callbackFn();
+
+		await this.cacheManager.set(cacheKey, result, expiry);
 	}
 
 	/**
