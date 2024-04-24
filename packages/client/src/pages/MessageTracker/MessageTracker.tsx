@@ -14,6 +14,7 @@ import { format } from "date-fns";
 import CopyIcon from "assets/icons/CopyIcon";
 import Pagination from "components/Pagination";
 import SearchIcon from "assets/icons/SearchIcon";
+import Select from "components/Elements/Selectv2";
 
 interface PosthogEvent {
   name: string;
@@ -33,6 +34,16 @@ interface CustomEvent {
   errorMessage?: string;
 }
 
+enum ClickhouseKey {
+  STEP_ID = "stepId",
+  EVENT = "event",
+  CREATED_AT = "createdAt",
+  EVENT_PROVIDER = "eventProvider",
+  TEMPLATE_ID = "templateId",
+}
+
+const clickhouseKeys = Object.values(ClickhouseKey);
+
 const MessageTracker = () => {
   const [loading, setLoading] = useState(false);
 
@@ -43,9 +54,8 @@ const MessageTracker = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pagesCount, setPagesCount] = useState(1);
 
-  const [searchKey, setSearchKey] = useState("");
+  const [searchKey, setSearchKey] = useState(ClickhouseKey.EVENT);
   const [searchValue, setSearchValue] = useState("");
-  const [possibleNames, setPossibleNames] = useState<string[]>([]);
 
   const loadData = async () => {
     setSelectedCustomEvent("{}");
@@ -75,26 +85,6 @@ const MessageTracker = () => {
       }: { data: CustomEvent[]; totalPages: number } = data;
       setPagesCount(totalPages);
       setCustomEvents(fetchedCustomEvents);
-      setPossibleNames(
-        fetchedCustomEvents
-          .map((customEvent) => customEvent.event)
-          .reduce(
-            (acc, el) => (acc.includes(el) ? acc : acc.concat([el])),
-            [] as string[]
-          )
-      );
-      /*
-      setPagesCount(totalPages);
-      setPosthogEvents(fetchedPosthogEvents);
-      setPossibleNames(
-        fetchedPosthogEvents
-          .map((posthogEvent) => posthogEvent.name)
-          .reduce(
-            (acc, el) => (acc.includes(el) ? acc : acc.concat([el])),
-            [] as string[]
-          )
-      );
-      */
     } catch (err) {
       toast.error("Failed to load events");
     } finally {
@@ -129,11 +119,14 @@ const MessageTracker = () => {
         <div className="w-full p-5 border-r border-[#F3F4F6] flex flex-col gap-5">
           <div className="flex items-center gap-5">
             <div className="relative">
-              <Input
+              <Select
                 value={searchKey}
+                options={clickhouseKeys.map((key) => ({
+                  key: key,
+                  title: key,
+                }))}
                 onChange={(value) => setSearchKey(value)}
                 placeholder="Search key"
-                wrapperClassName="!w-[200px]"
                 className="!w-full !pl-[38px]"
               />
               <div className="absolute top-1/2 -translate-y-1/2 left-[12px]">
@@ -146,11 +139,11 @@ const MessageTracker = () => {
                 onChange={(value) => setSearchValue(value)}
                 placeholder="Search value"
                 wrapperClassName="!w-[200px]"
-                className="!w-full !pl-[38px]"
+                className="!w-full"
               />
-              <div className="absolute top-1/2 -translate-y-1/2 left-[12px]">
+              {/* <div className="absolute top-1/2 -translate-y-1/2 left-[12px]">
                 <SearchIcon />
-              </div>
+              </div> */}
             </div>
           </div>
 

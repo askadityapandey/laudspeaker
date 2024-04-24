@@ -6,7 +6,11 @@ import {
   forwardRef,
   HttpStatus,
 } from '@nestjs/common';
-import { Correlation, CustomersService } from '../customers/customers.service';
+import {
+  ClickhouseKey,
+  Correlation,
+  CustomersService,
+} from '../customers/customers.service';
 import { CustomerDocument } from '../customers/schemas/customer.schema';
 import { AttributeType } from '../customers/schemas/customer-keys.schema';
 import {
@@ -571,7 +575,7 @@ export class EventsService {
     account: Account,
     take = 100,
     skip = 0,
-    searchKey = '',
+    searchKey = ClickhouseKey.EVENT,
     searchValue = ''
   ) {
     if (take > 100) take = 100;

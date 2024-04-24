@@ -12,6 +12,7 @@ import {
   Query,
   Req,
   Logger,
+  ParseEnumPipe,
 } from '@nestjs/common';
 import { PosthogBatchEventDto } from './dto/posthog-batch-event.dto';
 import { EventDto } from './dto/event.dto';
@@ -28,6 +29,7 @@ import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { SendFCMDto } from './dto/send-fcm.dto';
 import { IdentifyCustomerDTO } from './dto/identify-customer.dto';
 import { SetCustomerPropsDTO } from './dto/set-customer-props.dto';
+import { ClickhouseKey } from '../customers/customers.service';
 
 @Controller('events')
 export class EventsController {
@@ -303,7 +305,8 @@ export class EventsController {
     @Req() { user }: Request,
     @Query('take') take?: string,
     @Query('skip') skip?: string,
-    @Query('searchKey') searchKey?: string,
+    @Query('searchKey', new ParseEnumPipe(ClickhouseKey))
+    searchKey?: ClickhouseKey,
     @Query('searchValue') searchValue?: string
   ) {
     return this.eventsService.getMessageEvents(

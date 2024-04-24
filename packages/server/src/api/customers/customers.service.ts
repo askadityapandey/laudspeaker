@@ -59,11 +59,7 @@ import { JourneyLocationsService } from '../journeys/journey-locations.service';
 import { Journey } from '../journeys/entities/journey.entity';
 import { SegmentType } from '../segments/entities/segment.entity';
 import { UpdatePK_DTO } from './dto/update-pk.dto';
-import {
-  Attribute,
-  CustomerAttribute,
-  StepType,
-} from '../steps/types/step.interface';
+import { StepType } from '../steps/types/step.interface';
 import {
   KEYS_TO_SKIP,
   validateKeyForMutations,
@@ -75,11 +71,10 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { DeleteCustomerDto } from './dto/delete-customer.dto';
 import { ReadCustomerDto } from './dto/read-customer.dto';
 import {
-  DeleteAttributeDto,
   ModifyAttributesDto,
   UpdateAttributeDto,
 } from './dto/modify-attributes.dto';
-import { parseISO, add, sub, formatISO } from 'date-fns';
+import { add, sub, formatISO } from 'date-fns';
 import { cloneDeep } from 'lodash';
 import { StatementValueType } from '../journeys/types/visual-layout.interface';
 import { v4 as uuid } from 'uuid';
@@ -185,6 +180,14 @@ export const systemAttributes: SystemAttribute[] = [
 export interface QueryOptions {
   // ... other properties ...
   customerKeys?: { key: string; type: AttributeType }[];
+}
+
+export enum ClickhouseKey {
+  STEP_ID = 'stepId',
+  EVENT = 'event',
+  CREATED_AT = 'createdAt',
+  EVENT_PROVIDER = 'eventProvider',
+  TEMPLATE_ID = 'templateId',
 }
 
 @Injectable()
@@ -512,13 +515,13 @@ export class CustomersService {
     workspaceId: string,
     take: number,
     skip: number,
-    searchKey = '',
+    searchKey: ClickhouseKey,
     searchValue = ''
   ) {
-    console.log(searchKey, searchValue);
-
     const searchPart =
-      searchKey && searchValue ? 'AND event = {searchValue:String}' : '';
+      searchKey && searchValue
+        ? `AND ${searchKey} LIKE {searchValue:String}`
+        : '';
 
     const baseQuery = `SELECT stepId, event, createdAt, eventProvider, templateId 
         FROM message_status 
@@ -532,7 +535,7 @@ export class CustomersService {
             query: `
         SELECT COUNT(*) FROM (${baseQuery}) as q1
       `,
-            query_params: { workspaceId, searchKey, searchValue },
+            query_params: { workspaceId, searchValue: `%${searchValue}%` },
           })
         ).json()) as any
       )?.data?.[0]?.['count()'] || '0'
@@ -546,7 +549,7 @@ export class CustomersService {
         ${baseQuery}
         LIMIT ${take} OFFSET ${skip}
       `,
-        query_params: { workspaceId, searchKey, searchValue },
+        query_params: { workspaceId, searchValue },
       })
     ).json()) as any;
 
