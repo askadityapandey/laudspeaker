@@ -1,7 +1,7 @@
 /* eslint-disable no-case-declarations */
 import Mailgun from 'mailgun.js';
 import formData from 'form-data';
-import { Liquid } from 'liquidjs';
+import { Liquid, TagToken, Context, Emitter } from 'liquidjs';
 import { MailService } from '@sendgrid/mail';
 import {
   ClickHouseEventProvider,
@@ -136,6 +136,19 @@ export class MessageSender {
     private accountRepository: Repository<Account>
   ) {
     this.accountRepository = accountRepository;
+    this.tagEngine.registerTag('api_call', {
+      parse: function(tagToken: TagToken) {
+        this.args = tagToken.args; // stores the URL template
+      },
+      render: async function(ctx: Context, emitter: Emitter) {
+        const urlTemplate = this.args;
+        const renderedUrl = await ctx.liquid.parseAndRender(urlTemplate, ctx.getAll());
+        const response = await fetch(renderedUrl);
+        const result = await response.json();
+        ctx.push(result); // Add API result to the context for subsequent usage
+        return ''; // Return nothing as this tag's output is indirect (via context)
+      }
+    });
   }
 
   log(message, method, session, user = 'ANONYMOUS') {
