@@ -4,6 +4,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { randomUUID } from 'crypto';
 import { MockCacheService } from "./__mocks__/mock-cache.service";
+import { Step } from "./__mocks__/mock-step.entity"
 
 // to run: npm run test -- cache.service.spec --watch
 describe('CacheService', () => {
@@ -40,11 +41,11 @@ describe('CacheService', () => {
 
       let expectedValueInCache = {"id": uuid, type: "waitUntil"};
 
-      let value = await cacheService.get(Object, uuid, async () => {
+      let value = await cacheService.get(Step, uuid, async () => {
         return expectedValueInCache;
       });
 
-      value = await cacheService.get(Object, uuid, async () => {
+      value = await cacheService.get(Step, uuid, async () => {
         return "NEWVALUE";
       });
 
@@ -58,7 +59,7 @@ describe('CacheService', () => {
 
       let expectedValueInCache = {"id": uuid, type: "waitUntil"};
 
-      let value = await cacheService.get(Object, uuid);
+      let value = await cacheService.get(Step, uuid);
 
       expect(spyGet).toHaveBeenCalledTimes(1);
       expect(spySet).toHaveBeenCalledTimes(0);
@@ -67,13 +68,13 @@ describe('CacheService', () => {
 
     it('should get value from cache that was pre-set without a setter method', async () => {    
       const uuid = randomUUID();
-      let key = `Object:${uuid}`;
+      let key = `Step:${uuid}`;
 
       let expectedValueInCache = {"id": uuid, type: "waitUntil"};
 
       cache.set(key, expectedValueInCache);
 
-      let value = await cacheService.get(Object, uuid);
+      let value = await cacheService.get(Step, uuid);
 
       expect(spyGet).toHaveBeenCalledTimes(1);
       expect(spySet).toHaveBeenCalledTimes(1);
@@ -83,7 +84,7 @@ describe('CacheService', () => {
     it('should throw an error when id is empty', async () => {    
       const uuid = "";
 
-      await expect(cacheService.get(Object, uuid))
+      await expect(cacheService.get(Step, uuid))
           .rejects
           .toThrow(CacheServiceInvalidValueError);
 
@@ -155,11 +156,11 @@ describe('CacheService', () => {
 
       let expectedValueInCache = {"id": uuid, type: "waitUntil"};
 
-      let value = await cacheService.getIgnoreError(Object, uuid, async () => {
+      let value = await cacheService.getIgnoreError(Step, uuid, async () => {
         return expectedValueInCache;
       });
 
-      value = await cacheService.getIgnoreError(Object, uuid, async () => {
+      value = await cacheService.getIgnoreError(Step, uuid, async () => {
         return "NEWVALUE";
       });
 
@@ -173,7 +174,7 @@ describe('CacheService', () => {
 
       let expectedValueInCache = {"id": uuid, type: "waitUntil"};
 
-      let value = await cacheService.getIgnoreError(Object, uuid);
+      let value = await cacheService.getIgnoreError(Step, uuid);
 
       expect(spyGet).toHaveBeenCalledTimes(1);
       expect(spySet).toHaveBeenCalledTimes(0);
@@ -182,13 +183,13 @@ describe('CacheService', () => {
 
     it('should get value from cache that was pre-set without a setter method', async () => {    
       const uuid = randomUUID();
-      let key = `Object:${uuid}`;
+      let key = `Step:${uuid}`;
 
       let expectedValueInCache = {"id": uuid, type: "waitUntil"};
 
       cache.set(key, expectedValueInCache);
 
-      let value = await cacheService.getIgnoreError(Object, uuid);
+      let value = await cacheService.getIgnoreError(Step, uuid);
 
       expect(spyGet).toHaveBeenCalledTimes(1);
       expect(spySet).toHaveBeenCalledTimes(1);
@@ -198,7 +199,7 @@ describe('CacheService', () => {
     it('should not throw an error when id is empty', async () => {    
       const uuid = "";
 
-      let value = await cacheService.getIgnoreError(Object, uuid);
+      let value = await cacheService.getIgnoreError(Step, uuid);
 
       expect(spyGet).toHaveBeenCalledTimes(0);
       expect(spySet).toHaveBeenCalledTimes(0);
@@ -213,11 +214,11 @@ describe('CacheService', () => {
 
       let expectedValueInCache = {"id": uuid, type: "waitUntil"};
 
-      await cacheService.set(Object, uuid, async () => {
+      await cacheService.set(Step, uuid, async () => {
         return expectedValueInCache;
       });
 
-      let value = await cacheService.get(Object, uuid);
+      let value = await cacheService.get(Step, uuid);
 
       expect(spyGet).toHaveBeenCalledTimes(1);
       expect(spySet).toHaveBeenCalledTimes(1);
@@ -228,7 +229,7 @@ describe('CacheService', () => {
   describe('setRaw', () => {
     it('should set value in cache', async () => {
       const uuid = randomUUID();
-      let key = `Object:${uuid}`;
+      let key = `Step:${uuid}`;
 
       let expectedValueInCache = {"id": uuid, type: "waitUntil"};
 
@@ -247,11 +248,11 @@ describe('CacheService', () => {
   describe('delete', () => {
     it('should delete key that doesnt exist in cache', async () => {
       const uuid = randomUUID();
-      let key = `Object:${uuid}`;
+      let key = `Step:${uuid}`;
 
-      await cacheService.delete(Object, uuid);
+      await cacheService.delete(Step, uuid);
 
-      let value = await cacheService.get(Object, uuid);
+      let value = await cacheService.get(Step, uuid);
 
       expect(spyGet).toHaveBeenCalledTimes(1);
       expect(spySet).toHaveBeenCalledTimes(0);
@@ -261,17 +262,17 @@ describe('CacheService', () => {
 
     it('should delete key that exists in cache', async () => {
       const uuid = randomUUID();
-      let key = `Object:${uuid}`;
+      let key = `Step:${uuid}`;
 
       let expectedValueInCache = {"id": uuid, type: "waitUntil"};
 
-      await cacheService.set(Object, uuid, async () => {
+      await cacheService.set(Step, uuid, async () => {
         return expectedValueInCache;
       });
 
-      await cacheService.delete(Object, uuid);
+      await cacheService.delete(Step, uuid);
 
-      let value = await cacheService.get(Object, uuid);
+      let value = await cacheService.get(Step, uuid);
 
       expect(spyGet).toHaveBeenCalledTimes(1);
       expect(spySet).toHaveBeenCalledTimes(1);

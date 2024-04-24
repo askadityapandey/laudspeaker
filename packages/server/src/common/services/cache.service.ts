@@ -25,7 +25,6 @@ export class CacheService {
 	 *  return await this.stepsService.lazyFindByID(step.id); 
 	 * }, 10000);
 	 * let nextStep2 = await this.cacheService.get(Step, step.id);
-	 * TODO: change name to getSet()
 	 */
 	async get(klass: any, id: string, callbackFn?: () => any, expiry: number = this.DEFAULT_EXPIRY): Promise<any> {
 		const cacheKey = this.getCacheKey(klass, id);
@@ -127,7 +126,7 @@ export class CacheService {
 
 	private generateCacheKey(klass: any, id: string): string {
 		const key: string = `${this.getKlassName(klass)}:${id}`;
-
+		
 		return key;
 	}
 
