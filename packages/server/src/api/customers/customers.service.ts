@@ -509,21 +509,23 @@ export class CustomersService {
   }
 
   async getMessageTrackerEvents(
-    account: Account,
-    customerId: string,
+    workspaceId: string,
     session: string,
     page = 1,
-    pageSize = 10
+    pageSize = 50
   ){
+
+    const offset = (page - 1) * pageSize;
+
     const response = await this.clickhouseClient.query({
       query: `
         SELECT stepId, event, createdAt, eventProvider, templateId 
         FROM message_status 
-        WHERE customerId = {customerId:String} 
+        WHERE workspaceId = {workspaceId:String} 
         ORDER BY createdAt DESC
         LIMIT ${pageSize} OFFSET ${offset}
       `,
-      query_params: { customerId },
+      query_params: { workspaceId },
     });
 
     return {

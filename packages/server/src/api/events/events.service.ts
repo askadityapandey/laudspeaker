@@ -565,7 +565,7 @@ export class EventsService {
   /*
    *
    * Retrieves a number of Message Events for the user to see in the Message tracker
-   * uses mongo aggregation
+   * 
    */
   async getMessageEvents(
     account: Account,
@@ -575,7 +575,7 @@ export class EventsService {
     search = ''
   ) {
     this.debug(
-      ` in customEvents`,
+      ` in messageEvents`,
       this.getCustomEvents.name,
       session,
       account.id
@@ -585,66 +585,15 @@ export class EventsService {
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
     const workspaceIdCondition = `workspaceId = '${workspace.id}'`;
-
-    customersService.getMessageTrackerEvents(){
-      
-    }
     
+    // Adjust page and pageSize for internal use based on `skip` and `take`
+    const page = Math.floor(skip / take) + 1;
+    const pageSize = take;
 
-    const totalPages =
-      Math.ceil(
-        (await this.EventModel.count({
-          event: searchRegExp,
-          workspaceId: workspace.id,
-          //ownerId: (<Account>account).id,
-        }).exec()) / take
-      ) || 1;
+    const messageEvents = this.customersService.getMessageTrackerEvents(workspace.id, session, page, pageSize, searchRegExp)
 
-    const customEvents = await this.EventModel.aggregate([
-      {
-        $match: {
-          event: searchRegExp,
-          workspaceId: workspace.id,
-          //ownerId: (<Account>account).id,
-        },
-      },
-      {
-        $addFields: {
-          createdAt: { $toDate: '$_id' }, // Convert _id to a date and assign to createdAt
-        },
-      },
-      {
-        $project: {
-          _id: 0, // Exclude the _id field
-          ownerId: 0, // Exclude the ownerId field
-          workspaceId: 0, // Exclude the ownerId field
-          __v: 0, // Exclude the __v field
-          // Note: No need to explicitly include other fields; they are included by default
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      { $skip: skip },
-      { $limit: take > 100 ? 100 : take },
-    ]).exec();
-
-    return {
-      /*
-      data: customEvents.map((customEvent) => ({
-        ...customEvent.toObject(),
-        //createdAt: customEvent._id.getTimestamp(),
-        createdAt: customEvent._id.getTimestamp(),
-        
-      })),
-      */
-      data: customEvents.map((customEvent) => {
-        const cleanedEvent = {
-          ...customEvent,
-          // Perform any additional transformations here if necessary
-        };
-        return cleanedEvent;
-      }),
-      totalPages,
-    };
+    return messageEvents;
+    
   }
 
 
