@@ -510,32 +510,50 @@ export class CustomersService {
 
   async getMessageTrackerEvents(
     workspaceId: string,
-    session: string,
-    page = 1,
-    pageSize = 50
-  ){
+    take: number,
+    skip: number,
+    searchKey = '',
+    searchValue = ''
+  ) {
+    console.log(searchKey, searchValue);
 
-    const offset = (page - 1) * pageSize;
+    const searchPart =
+      searchKey && searchValue ? 'AND event = {searchValue:String}' : '';
 
-    const response = await this.clickhouseClient.query({
-      query: `
-        SELECT stepId, event, createdAt, eventProvider, templateId 
+    const baseQuery = `SELECT stepId, event, createdAt, eventProvider, templateId 
         FROM message_status 
-        WHERE workspaceId = {workspaceId:String} 
-        ORDER BY createdAt DESC
-        LIMIT ${pageSize} OFFSET ${offset}
+        WHERE workspaceId = {workspaceId:String} ${searchPart}
+        ORDER BY createdAt DESC`;
+
+    const count = +(
+      (
+        (await (
+          await this.clickhouseClient.query({
+            query: `
+        SELECT COUNT(*) FROM (${baseQuery}) as q1
       `,
-      query_params: { workspaceId },
-    });
+            query_params: { workspaceId, searchKey, searchValue },
+          })
+        ).json()) as any
+      )?.data?.[0]?.['count()'] || '0'
+    );
+
+    const totalPages = Math.ceil(count / take);
+
+    const { data } = (await (
+      await this.clickhouseClient.query({
+        query: `
+        ${baseQuery}
+        LIMIT ${take} OFFSET ${skip}
+      `,
+        query_params: { workspaceId, searchKey, searchValue },
+      })
+    ).json()) as any;
 
     return {
-      data: result,
-      page,
-      pageSize,
-      totalPage,
-      totalCount,
+      data,
+      totalPages,
     };
-
   }
 
   async findCustomerEvents(

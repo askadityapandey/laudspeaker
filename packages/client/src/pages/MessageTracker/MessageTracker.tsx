@@ -43,7 +43,8 @@ const MessageTracker = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pagesCount, setPagesCount] = useState(1);
 
-  const [searchName, setSearchName] = useState("");
+  const [searchKey, setSearchKey] = useState("");
+  const [searchValue, setSearchValue] = useState("");
   const [possibleNames, setPossibleNames] = useState<string[]>([]);
 
   const loadData = async () => {
@@ -66,7 +67,7 @@ const MessageTracker = () => {
       const { data } = await ApiService.get({
         url: `/events/message-events?take=${itemsPerPage}&skip=${
           itemsPerPage * (currentPage - 1)
-        }&search=${searchName}`,
+        }&searchKey=${searchKey}&searchValue=${searchValue}`,
       });
       const {
         data: fetchedCustomEvents,
@@ -110,7 +111,7 @@ const MessageTracker = () => {
       loadData();
     },
     800,
-    [searchName]
+    [searchKey, searchKey, searchValue]
   );
 
   const handleSelectCustomEvent = (customEvent: string) => {
@@ -126,16 +127,30 @@ const MessageTracker = () => {
       </div>
       <div className="bg-white rounded-lg flex">
         <div className="w-full p-5 border-r border-[#F3F4F6] flex flex-col gap-5">
-          <div className="relative">
-            <Input
-              value={searchName}
-              onChange={(value) => setSearchName(value)}
-              placeholder="Search all messages"
-              wrapperClassName="!w-[200px]"
-              className="!w-full !pl-[38px]"
-            />
-            <div className="absolute top-1/2 -translate-y-1/2 left-[12px]">
-              <SearchIcon />
+          <div className="flex items-center gap-5">
+            <div className="relative">
+              <Input
+                value={searchKey}
+                onChange={(value) => setSearchKey(value)}
+                placeholder="Search key"
+                wrapperClassName="!w-[200px]"
+                className="!w-full !pl-[38px]"
+              />
+              <div className="absolute top-1/2 -translate-y-1/2 left-[12px]">
+                <SearchIcon />
+              </div>
+            </div>
+            <div className="relative">
+              <Input
+                value={searchValue}
+                onChange={(value) => setSearchValue(value)}
+                placeholder="Search value"
+                wrapperClassName="!w-[200px]"
+                className="!w-full !pl-[38px]"
+              />
+              <div className="absolute top-1/2 -translate-y-1/2 left-[12px]">
+                <SearchIcon />
+              </div>
             </div>
           </div>
 

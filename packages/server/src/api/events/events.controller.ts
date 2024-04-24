@@ -303,15 +303,15 @@ export class EventsController {
     @Req() { user }: Request,
     @Query('take') take?: string,
     @Query('skip') skip?: string,
-    @Query('search') search?: string
+    @Query('searchKey') searchKey?: string,
+    @Query('searchValue') searchValue?: string
   ) {
-    const session = randomUUID();
     return this.eventsService.getMessageEvents(
       <Account>user,
-      session,
       take && +take,
       skip && +skip,
-      search
+      searchKey,
+      searchValue
     );
   }
 
