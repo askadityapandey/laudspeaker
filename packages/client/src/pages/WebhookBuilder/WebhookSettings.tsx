@@ -303,10 +303,6 @@ const WebhookSettings: FC<WebhookSettingsProps> = ({
 
     setWebhookState({
       ...webhookState,
-      headers: {
-        ...webhookState.headers,
-        "Content-Type": mimeTypeMap[newBodyType],
-      },
       body:
         newBodyType === BodyType.JSON
           ? "{}"
@@ -573,23 +569,7 @@ const WebhookSettings: FC<WebhookSettingsProps> = ({
                       buttonClassName="w-full"
                       className="w-fit max-w-[100px]"
                       onChange={(val) =>
-                        setWebhookState((curr) => {
-                          const maybeUpdatedHeaders =
-                            ["POST", "PUT", "PATCH"].includes(val) &&
-                            !curr.headers["Content-Type"]
-                              ? {
-                                  headers: {
-                                    ...curr.headers,
-                                    "Content-Type": "application/json",
-                                  },
-                                }
-                              : {};
-                          return {
-                            ...webhookState,
-                            ...maybeUpdatedHeaders,
-                            method: val,
-                          };
-                        })
+                        setWebhookState({ ...webhookState, method: val })
                       }
                       id="webhookMethod"
                     />
