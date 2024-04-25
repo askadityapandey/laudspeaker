@@ -142,7 +142,7 @@ export class MessageSender {
       },
       render: async function(ctx: Context, emitter: Emitter) {
         const urlTemplate = this.args;
-        const renderedUrl = await ctx.liquid.parseAndRender(urlTemplate, ctx.getAll());
+        const renderedUrl = await this.liquidEngine.parseAndRender(this.args, ctx.getAll());
         const response = await fetch(renderedUrl);
         const result = await response.json();
         ctx.push(result); // Add API result to the context for subsequent usage

@@ -41,7 +41,7 @@ import { cleanTagsForSending } from '../../shared/utils/helpers';
 import { MessageType } from '../email/email.processor';
 import { Response, fetch } from 'undici';
 import { Model } from 'mongoose';
-import { Liquid } from 'liquidjs';
+import { Liquid, TagToken, Context, Emitter } from 'liquidjs';
 import { format, parseISO } from 'date-fns';
 import { TestWebhookDto } from './dto/test-webhook.dto';
 import wait from '../../utils/wait';
@@ -80,7 +80,8 @@ export class TemplatesService extends QueueEventsHost {
                                                .replace(/%M/g, 'mm')
                                                .replace(/%S/g, 'ss');
       return format(date, adjustedFormatString);
-  });
+    });
+    this.registerApiCallTag();
   }
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -140,6 +141,39 @@ export class TemplatesService extends QueueEventsHost {
         user: user,
       })
     );
+  }
+
+  private registerApiCallTag() {
+    // We define local variables in the outer scope of the tag functions
+    let apiUrlTemplate: string = '';
+    let saveAs: string | undefined;
+
+    this.tagEngine.registerTag('api_call', {
+      parse: function(tagToken: TagToken) {
+        const args = tagToken.args.split(':').map(arg => arg.trim());
+        apiUrlTemplate = args[0];
+        if (args.length > 1 && args[1].startsWith('save')) {
+          saveAs = args[1].split(' ')[1];
+        }
+      },
+      render: async function(ctx: Context, emitter: Emitter) {
+        try {
+          const renderedUrl = await this.tagEngine.parseAndRender(apiUrlTemplate, ctx.getAll());
+          const response = await fetch(renderedUrl);
+          if (!response.ok) {
+            throw new Error(`API Request failed with status: ${response.status}`);
+          }
+          const result = await response.json();
+          if (saveAs) {
+            ctx.environments[saveAs] = result; // Save the result under a named variable
+          }
+        } catch (error) {
+          console.error('Error in api_call tag:', error);
+          return //ctx.handleError(error);
+        }
+        return '';
+      }
+    });
   }
 
   @OnQueueEvent('active')

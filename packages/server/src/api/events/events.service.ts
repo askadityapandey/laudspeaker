@@ -71,7 +71,8 @@ import {
   ClickHouseMessage,
   WebhooksService,
 } from '../webhooks/webhooks.service';
-import { Liquid } from 'liquidjs';
+import { Liquid, TagToken, Context, Emitter } from 'liquidjs';
+import { format, parseISO } from 'date-fns';
 import { cleanTagsForSending } from '@/shared/utils/helpers';
 import { randomUUID } from 'crypto';
 
@@ -151,6 +152,18 @@ export class EventsService {
         ).exec();
       }
     }
+    this.tagEngine.registerFilter('date', (input, formatString) => {
+      const date = input === 'now' ? new Date() : parseISO(input);
+      // Adjust the formatString to fit JavaScript's date formatting if necessary
+      const adjustedFormatString = formatString.replace(/%Y/g, 'yyyy')
+                                               .replace(/%m/g, 'MM')
+                                               .replace(/%d/g, 'dd')
+                                               .replace(/%H/g, 'HH')
+                                               .replace(/%M/g, 'mm')
+                                               .replace(/%S/g, 'ss');
+      return format(date, adjustedFormatString);
+    });
+    this.registerApiCallTag();
   }
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -210,6 +223,39 @@ export class EventsService {
         user: user,
       })
     );
+  }
+
+  private registerApiCallTag() {
+    // We define local variables in the outer scope of the tag functions
+    let apiUrlTemplate: string = '';
+    let saveAs: string | undefined;
+
+    this.tagEngine.registerTag('api_call', {
+      parse: function(tagToken: TagToken) {
+        const args = tagToken.args.split(':').map(arg => arg.trim());
+        apiUrlTemplate = args[0];
+        if (args.length > 1 && args[1].startsWith('save')) {
+          saveAs = args[1].split(' ')[1];
+        }
+      },
+      render: async function(ctx: Context, emitter: Emitter) {
+        try {
+          const renderedUrl = await this.tagEngine.parseAndRender(apiUrlTemplate, ctx.getAll());
+          const response = await fetch(renderedUrl);
+          if (!response.ok) {
+            throw new Error(`API Request failed with status: ${response.status}`);
+          }
+          const result = await response.json();
+          if (saveAs) {
+            ctx.environments[saveAs] = result; // Save the result under a named variable
+          }
+        } catch (error) {
+          console.error('Error in api_call tag:', error);
+          return //ctx.handleError(error);
+        }
+        return '';
+      }
+    });
   }
 
   async correlate(
