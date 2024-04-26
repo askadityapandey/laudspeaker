@@ -33,6 +33,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { EventsService } from './events.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 
 export enum ProviderType {
   LAUDSPEAKER = 'laudspeaker',
@@ -79,7 +81,8 @@ export class EventsPreProcessor extends WorkerHost {
     @InjectModel(Customer.name) public customerModel: Model<CustomerDocument>,
     @InjectQueue('events') private readonly eventsQueue: Queue,
     @InjectRepository(Journey)
-    private readonly journeysRepository: Repository<Journey>
+    private readonly journeysRepository: Repository<Journey>,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache
   ) {
     super();
   }
