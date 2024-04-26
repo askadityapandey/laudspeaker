@@ -1270,6 +1270,20 @@ export class CronService {
     }
   }
 
+  /*
+   * Helper for clean up
+   */
+  async deleteCollectionIfNeeded(collectionName) {
+    if (collectionName.includes('_FullDetails')) {
+        // Remove '_FullDetails' from the collection name
+        const modifiedCollectionName = collectionName.replace('_FullDetails', '');
+        await this.segmentsService.deleteCollectionsWithPrefix(modifiedCollectionName);
+    } else {
+        // If '_FullDetails' is not part of the name, use the original collection name
+        await this.segmentsService.deleteCollectionsWithPrefix(collectionName);
+    }
+}
+
   @Cron(CronExpression.EVERY_MINUTE)
   async handleEntryTiming() {
     const session = randomUUID();
@@ -1377,6 +1391,10 @@ export class CronService {
             queryRunner,
             client,
             session,
+            collectionName
+          );
+          // drop the collections after adding customer segments
+          await this.deleteCollectionIfNeeded(
             collectionName
           );
           // if (triggerStartTasks.collectionName)
