@@ -1626,6 +1626,11 @@ export class JourneysService {
       });
 
       await this.trackChange(account, journeyResult.id);
+
+      // invalidate journeys cache entry set in eventPreprocessor
+      if(workspace) {
+        await this.cacheManager.del(`journeys:${workspace.id}`);
+      }
     } catch (err) {
       this.error(err, this.stop.name, session, account.email);
       throw err;
