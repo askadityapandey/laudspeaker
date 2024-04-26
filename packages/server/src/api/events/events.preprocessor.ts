@@ -187,17 +187,27 @@ export class EventsPreProcessor extends WorkerHost {
       //console.timeEnd(`handleCustom - findOrCreateCustomer ${job.data.session}`)
       //get all the journeys that are active, and pipe events to each journey in case they are listening for event
       //console.time(`handleCustom - find journeys ${job.data.session}`)
-      const journeys = await this.journeysRepository.find({
-        where: {
-          workspace: {
-            id: job.data.workspace.id,
+      let journeys: Journey[];
+      journeys = await this.cacheManager.get(
+        `journeys:${job.data.workspace.id}`
+      );
+      if (!journeys) {
+        journeys = await this.journeysRepository.find({
+          where: {
+            workspace: {
+              id: job.data.workspace.id,
+            },
+            isActive: true,
+            isPaused: false,
+            isStopped: false,
+            isDeleted: false,
           },
-          isActive: true,
-          isPaused: false,
-          isStopped: false,
-          isDeleted: false,
-        },
-      });
+        });
+        await this.cacheManager.set(
+          `journeys:${job.data.workspace.id}`,
+          journeys
+        );
+      }
       //console.timeEnd(`handleCustom - find journeys ${job.data.session}`)
       // add event to event database for visibility
       if (job.data.event) {
