@@ -5,6 +5,7 @@ import { Inject, Logger } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Liquid } from 'liquidjs';
+import { format, parseISO } from 'date-fns';
 import {
   ClickHouseEventProvider,
   WebhooksService,
@@ -23,7 +24,7 @@ import { Account } from '../accounts/entities/accounts.entity';
 import { Repository } from 'typeorm';
 import { Workspace } from '../workspaces/entities/workspace.entity';
 
-@Processor('webhooks', { removeOnComplete: { age: 0, count: 0 } })
+@Processor('webhooks')
 @Injectable()
 export class WebhooksProcessor extends WorkerHost {
   private tagEngine = new Liquid();
@@ -37,6 +38,19 @@ export class WebhooksProcessor extends WorkerHost {
     private workspacesRepository: Repository<Workspace>
   ) {
     super();
+
+    this.tagEngine.registerFilter('date', (input, formatString) => {
+      const date = input === 'now' ? new Date() : parseISO(input);
+      // Adjust the formatString to fit JavaScript's date formatting if necessary
+      const adjustedFormatString = formatString
+        .replace(/%Y/g, 'yyyy')
+        .replace(/%m/g, 'MM')
+        .replace(/%d/g, 'dd')
+        .replace(/%H/g, 'HH')
+        .replace(/%M/g, 'mm')
+        .replace(/%S/g, 'ss');
+      return format(date, adjustedFormatString);
+    });
   }
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -202,7 +216,7 @@ export class WebhooksProcessor extends WorkerHost {
               createdAt: new Date().toISOString(),
               eventProvider: ClickHouseEventProvider.WEBHOOKS,
               messageId: '',
-              audienceId: job.data.audienceId,
+              stepId: job.data.stepId,
               customerId: job.data.customerId,
               templateId: String(job.data.template.id),
               workspaceId: workspace.id,
@@ -225,7 +239,7 @@ export class WebhooksProcessor extends WorkerHost {
               createdAt: new Date().toISOString(),
               eventProvider: ClickHouseEventProvider.WEBHOOKS,
               messageId: '',
-              audienceId: job.data.audienceId,
+              stepId: job.data.stepId,
               customerId: job.data.customerId,
               templateId: String(job.data.template.id),
               workspaceId: workspace.id,

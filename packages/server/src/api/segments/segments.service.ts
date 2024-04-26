@@ -27,6 +27,7 @@ import { CountSegmentUsersSizeDTO } from './dto/size-count.dto';
 import { randomUUID } from 'crypto';
 import { Filter, Document } from 'mongodb';
 import { Workspace } from '../workspaces/entities/workspace.entity';
+import * as Sentry from '@sentry/node';
 
 @Injectable()
 export class SegmentsService {
@@ -535,86 +536,90 @@ export class SegmentsService {
     createSegmentDTO: CountSegmentUsersSizeDTO,
     session: string
   ) {
-    this.debug(
-      `SegmentDTO is: ${JSON.stringify(
-        createSegmentDTO.inclusionCriteria.query.type,
-        null,
-        2
-      )}`,
-      this.size.name,
-      session,
-      account.id
-    );
-
-    const workspace = account.currentWorkspace;
-
-    if (createSegmentDTO.inclusionCriteria.query.type === 'any') {
-      const collectionPrefix = this.generateRandomString();
-      const customersInSegment =
-        await this.customersService.getSegmentCustomersFromQuery(
-          createSegmentDTO.inclusionCriteria.query,
-          workspace,
-          session,
-          true,
-          0,
-          collectionPrefix
-        );
-
-      if (!customersInSegment || customersInSegment.length === 0) {
-        return { size: 0, total: 1 };
-      }
-
-      const mongoCollection = this.connection.db.collection(customersInSegment);
-
-      const segmentDocuments = await mongoCollection.countDocuments();
-      const totalCount = await this.customersService.customersSize(
-        account,
-        session
+    return Sentry.startSpan({ name: 'SegmentsService.size' }, async () => {
+      this.debug(
+        `SegmentDTO is: ${JSON.stringify(
+          createSegmentDTO.inclusionCriteria.query.type,
+          null,
+          2
+        )}`,
+        this.size.name,
+        session,
+        account.id
       );
-      try {
-        await this.deleteCollectionsWithPrefix(collectionPrefix);
-      } catch (e) {
-        this.error(e, this.size.name, session, account.id);
-      }
-      return { size: segmentDocuments, total: totalCount };
-    } else if (createSegmentDTO.inclusionCriteria.query.type === 'all') {
-      const collectionPrefix = this.generateRandomString();
-      const customersInSegment =
-        await this.customersService.getSegmentCustomersFromQuery(
-          createSegmentDTO.inclusionCriteria.query,
-          workspace,
-          session,
-          true,
-          0,
-          collectionPrefix
+
+      const workspace = account.currentWorkspace;
+
+      if (createSegmentDTO.inclusionCriteria.query.type === 'any') {
+        const collectionPrefix = this.generateRandomString();
+        const customersInSegment =
+          await this.customersService.getSegmentCustomersFromQuery(
+            createSegmentDTO.inclusionCriteria.query,
+            workspace,
+            session,
+            true,
+            0,
+            collectionPrefix
+          );
+
+        if (!customersInSegment || customersInSegment.length === 0) {
+          return { size: 0, total: 1 };
+        }
+
+        const mongoCollection =
+          this.connection.db.collection(customersInSegment);
+
+        const segmentDocuments = await mongoCollection.countDocuments();
+        const totalCount = await this.customersService.customersSize(
+          account,
+          session
         );
+        try {
+          await this.deleteCollectionsWithPrefix(collectionPrefix);
+        } catch (e) {
+          this.error(e, this.size.name, session, account.id);
+        }
+        return { size: segmentDocuments, total: totalCount };
+      } else if (createSegmentDTO.inclusionCriteria.query.type === 'all') {
+        const collectionPrefix = this.generateRandomString();
+        const customersInSegment =
+          await this.customersService.getSegmentCustomersFromQuery(
+            createSegmentDTO.inclusionCriteria.query,
+            workspace,
+            session,
+            true,
+            0,
+            collectionPrefix
+          );
 
-      if (!customersInSegment || customersInSegment.length === 0) {
-        return { size: 0, total: 1 };
-      }
+        if (!customersInSegment || customersInSegment.length === 0) {
+          return { size: 0, total: 1 };
+        }
 
-      const mongoCollection = this.connection.db.collection(customersInSegment);
+        const mongoCollection =
+          this.connection.db.collection(customersInSegment);
 
-      const segmentDocuments = await mongoCollection.countDocuments();
-      const totalCount = await this.customersService.customersSize(
-        account,
-        session
-      );
-      try {
-        await this.deleteCollectionsWithPrefix(collectionPrefix);
-      } catch (e) {
-        this.debug(
-          `could not drop: ${collectionPrefix}`,
-          this.size.name,
-          session,
-          account.id
+        const segmentDocuments = await mongoCollection.countDocuments();
+        const totalCount = await this.customersService.customersSize(
+          account,
+          session
         );
-        this.error(e, this.size.name, session);
+        try {
+          await this.deleteCollectionsWithPrefix(collectionPrefix);
+        } catch (e) {
+          this.debug(
+            `could not drop: ${collectionPrefix}`,
+            this.size.name,
+            session,
+            account.id
+          );
+          this.error(e, this.size.name, session);
+        }
+        return { size: segmentDocuments, total: totalCount };
+      } else {
+        throw new Error(`Shouldn't be making it here`);
       }
-      return { size: segmentDocuments, total: totalCount };
-    } else {
-      throw new Error(`Shouldn't be making it here`);
-    }
+    });
   }
 
   public async update(
