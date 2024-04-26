@@ -110,42 +110,48 @@ const findTemplateSections = (text: string) => {
   return templateSections;
 };
 
-
 const PushBuilderContent = ({ data, onChange }: PushBuilderContentProps) => {
   const handleChangeData =
     (platforms: PushPlatforms[]) => (settings: PlatformSettings) => {
       const newData = { ...data };
       platforms.forEach((el) => {
+        // Identify template sections in the title.
+        const templateSections = findTemplateSections(settings.title);
 
-      // Identify template sections in the title.
-      const templateSections = findTemplateSections(settings.title);
+        // We'll rebuild the title considering template sections.
+        let rebuiltTitle = "";
+        let nonTemplateCharacterCount = 0;
 
-      // We'll rebuild the title considering template sections.
-      let rebuiltTitle = '';
-      let nonTemplateCharacterCount = 0;
+        // Track the last index we processed up to.
+        let lastIndex = 0;
 
-      // Track the last index we processed up to.
-      let lastIndex = 0;
+        templateSections.forEach((section) => {
+          // Add non-template characters up to the section.
+          const nonTemplatePart = settings.title
+            .slice(lastIndex, section.index)
+            .slice(0, 65 - nonTemplateCharacterCount);
+          rebuiltTitle += nonTemplatePart;
+          nonTemplateCharacterCount += nonTemplatePart.length;
 
-      templateSections.forEach((section) => {
-        // Add non-template characters up to the section.
-        const nonTemplatePart = settings.title.slice(lastIndex, section.index).slice(0, 65 - nonTemplateCharacterCount);
-        rebuiltTitle += nonTemplatePart;
-        nonTemplateCharacterCount += nonTemplatePart.length;
+          // If we haven't exceeded the character limit, add the template section.
+          if (nonTemplateCharacterCount < 65) {
+            rebuiltTitle += settings.title.slice(
+              section.index,
+              section.index + section.length
+            );
+          }
 
-        // If we haven't exceeded the character limit, add the template section.
+          // Update the lastIndex to the end of the current template section.
+          lastIndex = section.index + section.length;
+        });
+
+        // Add any remaining non-template characters after the last template section.
         if (nonTemplateCharacterCount < 65) {
-          rebuiltTitle += settings.title.slice(section.index, section.index + section.length);
+          rebuiltTitle += settings.title.slice(
+            lastIndex,
+            lastIndex + (65 - nonTemplateCharacterCount)
+          );
         }
-
-        // Update the lastIndex to the end of the current template section.
-        lastIndex = section.index + section.length;
-      });
-
-      // Add any remaining non-template characters after the last template section.
-      if (nonTemplateCharacterCount < 65) {
-        rebuiltTitle += settings.title.slice(lastIndex, lastIndex + (65 - nonTemplateCharacterCount));
-      }
 
         newData.settings[el] = {
           ...settings,
