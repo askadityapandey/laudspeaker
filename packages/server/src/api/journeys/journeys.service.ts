@@ -1411,6 +1411,12 @@ export class JourneysService {
         }
       );
       await this.trackChange(account, id);
+
+      // invalidate journeys cache entry set in eventPreprocessor
+      if(workspace) {
+        await this.cacheManager.del(`journeys:${workspace.id}`);
+      }
+
       return result;
     } catch (err) {
       this.error(err, this.markDeleted.name, session, account.email);
@@ -1460,6 +1466,11 @@ export class JourneysService {
 
       await this.trackChange(account, journeyResult.id);
 
+      // invalidate journeys cache entry set in eventPreprocessor
+      if(workspace) {
+        await this.cacheManager.del(`journeys:${workspace.id}`);
+      }
+      
       return journeyResult;
     } catch (error) {
       this.error(error, this.setPaused.name, session, account.email);
