@@ -1407,42 +1407,11 @@ export class CronService {
               session,
               collectionName
             );
-          // if (collectionName) collectionNames.push(collectionName);
-          // Step 3: Edit journey details
-          await queryRunner.manager.save(Journey, {
-            ...delayedJourneys[journeysIndex],
-            enrollment_count:
-              delayedJourneys[journeysIndex].enrollment_count + 1,
-            last_enrollment_timestamp: Date.now(),
-          });
-          // Step 4: Reenroll customers that have been unenrolled
-          triggerStartTasks = await this.stepsService.triggerStart(
-            delayedJourneys[journeysIndex].workspace.organization.owner,
-            delayedJourneys[journeysIndex],
-            delayedJourneys[journeysIndex].inclusionCriteria,
-            delayedJourneys[journeysIndex]?.journeySettings?.maxEntries
-              ?.enabled &&
-              count >
-                parseInt(
-                  delayedJourneys[journeysIndex]?.journeySettings?.maxEntries
-                    ?.maxEntries
-                )
-              ? parseInt(
-                  delayedJourneys[journeysIndex]?.journeySettings?.maxEntries
-                    ?.maxEntries
-                )
-              : count,
-            queryRunner,
-            client,
-            session,
-            collectionName
-          );
-          // drop the collections after adding customer segments
-          await this.deleteCollectionIfNeeded(
-            collectionName
-          );
-          // if (triggerStartTasks.collectionName)
-          //   collectionNames.push(triggerStartTasks.collectionName);
+            // drop the collections after adding customer segments
+            await this.deleteCollectionIfNeeded(
+              collectionName
+            );
+          }
         }
         await queryRunner.commitTransaction();
         // for (const collection of collectionNames) {
