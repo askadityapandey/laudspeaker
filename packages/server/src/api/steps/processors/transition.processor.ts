@@ -1132,28 +1132,9 @@ export class TransitionProcessor extends WorkerHost {
       return;
     }
 
-<<<<<<< HEAD
-    let nextStep: Step;
-
-    if (step.metadata.destination) {
-      nextStep = await this.cacheManager.get(
-        `step:${step.metadata.destination}`
-      );
-      if (!nextStep) {
-        nextStep = await this.stepsService.lazyFindByID(
-          step.metadata.destination
-        );
-        await this.cacheManager.set(
-          `step:${step.metadata.destination}`,
-          nextStep
-        );
-      }
-    }
-=======
     let nextStep: Step = await this.cacheService.getIgnoreError(Step, step.metadata.destination, async () => {
       return await this.stepsService.lazyFindByID(step.metadata.destination);
     });
->>>>>>> 151dfb8a (created cache store to asbtract cache manager)
 
     if (nextStep) {
       if (
