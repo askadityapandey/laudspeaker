@@ -5,6 +5,7 @@ import { Inject, Logger } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Liquid } from 'liquidjs';
+import { format, parseISO } from 'date-fns';
 import {
   ClickHouseEventProvider,
   WebhooksService,
@@ -15,13 +16,14 @@ import {
   FallBackAction,
   Template,
   WebhookMethod,
+  MIMEType,
 } from '../templates/entities/template.entity';
 import { TemplatesService } from '../templates/templates.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Repository } from 'typeorm';
 
-@Processor('webhooks', { removeOnComplete: { age: 0, count: 0 } })
+@Processor('webhooks')
 @Injectable()
 export class WebhooksProcessor extends WorkerHost {
   private tagEngine = new Liquid();
@@ -35,6 +37,19 @@ export class WebhooksProcessor extends WorkerHost {
     private accountRepository: Repository<Account>
   ) {
     super();
+
+    this.tagEngine.registerFilter('date', (input, formatString) => {
+      const date = input === 'now' ? new Date() : parseISO(input);
+      // Adjust the formatString to fit JavaScript's date formatting if necessary
+      const adjustedFormatString = formatString
+        .replace(/%Y/g, 'yyyy')
+        .replace(/%m/g, 'MM')
+        .replace(/%d/g, 'dd')
+        .replace(/%H/g, 'HH')
+        .replace(/%M/g, 'mm')
+        .replace(/%S/g, 'ss');
+      return format(date, adjustedFormatString);
+    });
   }
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -101,7 +116,7 @@ export class WebhooksProcessor extends WorkerHost {
 
     const { method, retries, fallBackAction } = template.webhookData;
 
-    let { body, headers, url } = template.webhookData;
+    let { body, headers, url, mimeType } = template.webhookData;
 
     url = await this.tagEngine.parseAndRender(url, filteredTags || {}, {
       strictVariables: true,
@@ -140,6 +155,15 @@ export class WebhooksProcessor extends WorkerHost {
         ])
       )
     );
+
+    // add content type to headers
+    if (Object.values(MIMEType).includes(mimeType)) {
+      headers = {
+        ...headers,
+        'content-type': mimeType,
+      };
+    }
+
     const account = await this.accountRepository.findOne({
       where: { id: job.data.accountId },
       relations: ['teams.organization.workspaces'],
@@ -193,7 +217,7 @@ export class WebhooksProcessor extends WorkerHost {
               createdAt: new Date().toISOString(),
               eventProvider: ClickHouseEventProvider.WEBHOOKS,
               messageId: '',
-              audienceId: job.data.audienceId,
+              stepId: job.data.stepId,
               customerId: job.data.customerId,
               templateId: String(job.data.template.id),
               workspaceId: workspace.id,
@@ -216,7 +240,7 @@ export class WebhooksProcessor extends WorkerHost {
               createdAt: new Date().toISOString(),
               eventProvider: ClickHouseEventProvider.WEBHOOKS,
               messageId: '',
-              audienceId: job.data.audienceId,
+              stepId: job.data.stepId,
               customerId: job.data.customerId,
               templateId: String(job.data.template.id),
               workspaceId: workspace.id,

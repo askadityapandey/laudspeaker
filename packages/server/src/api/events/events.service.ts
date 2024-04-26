@@ -66,13 +66,25 @@ import {
 import { SetCustomerPropsDTO } from './dto/set-customer-props.dto';
 import { MobileBatchDto } from './dto/mobile-batch.dto';
 import e from 'express';
+import {
+  ClickHouseEventProvider,
+  ClickHouseMessage,
+  WebhooksService,
+} from '../webhooks/webhooks.service';
+import { Liquid } from 'liquidjs';
+import { cleanTagsForSending } from '@/shared/utils/helpers';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class EventsService {
+  private tagEngine = new Liquid();
+
   constructor(
     private dataSource: DataSource,
     @Inject(forwardRef(() => CustomersService))
     private readonly customersService: CustomersService,
+    @Inject(forwardRef(() => WebhooksService))
+    private readonly webhooksService: WebhooksService,
     @InjectModel(CustomerKeys.name)
     public CustomerKeysModel: Model<CustomerKeysDocument>,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -99,6 +111,17 @@ export class EventsService {
     @Inject(forwardRef(() => JourneysService))
     private readonly journeysService: JourneysService
   ) {
+    const session = randomUUID();
+    (async () => {
+      try {
+        const collection = this.connection.db.collection('events');
+        await collection.createIndex({ event: 1, workspaceId: 1 });
+        await collection.createIndex({ correlationKey: 1, workspaceId: 1 });
+        await collection.createIndex({ correlationValue: 1, workspaceId: 1 });
+      } catch (e) {
+        this.error(e, EventsService.name, session);
+      }
+    })();
     for (const { name, property_type } of defaultEventKeys) {
       if (name && property_type) {
         this.EventKeysModel.updateOne(
@@ -582,108 +605,97 @@ export class EventsService {
   }
 
   async sendTestPush(account: Account, token: string) {
-    const foundAcc = await this.accountsRepository.findOne({
-      where: {
-        id: account.id,
-      },
-      relations: ['teams.organization.workspaces'],
-    });
-
-    const workspace = foundAcc.teams?.[0]?.organization?.workspaces?.[0];
+    const workspace = account.teams?.[0]?.organization?.workspaces?.[0];
 
     const hasConnected = Object.values(workspace.pushPlatforms).some(
       (el) => !!el
     );
 
-    try {
-      if (!hasConnected) {
-        throw new HttpException(
-          "You don't have platform's connected",
-          HttpStatus.NOT_ACCEPTABLE
-        );
-      }
+    if (!hasConnected) {
+      throw new HttpException(
+        "You don't have platform's connected",
+        HttpStatus.NOT_ACCEPTABLE
+      );
+    }
 
-      await Promise.all(
-        Object.keys(workspace.pushPlatforms)
-          .filter((el) => !!workspace.pushPlatforms[el])
-          .map(async (el) => {
-            if (workspace.pushPlatforms[el].credentials) {
-              let firebaseApp: admin.app.App;
+    await Promise.all(
+      Object.keys(workspace.pushPlatforms)
+        .filter((el) => !!workspace.pushPlatforms[el])
+        .map(async (el) => {
+          if (workspace.pushPlatforms[el].credentials) {
+            let firebaseApp: admin.app.App;
 
-              try {
-                firebaseApp = admin.app(foundAcc.id + ';;' + el);
-              } catch (e: any) {
-                if (e.code == 'app/no-app') {
-                  firebaseApp = admin.initializeApp(
-                    {
-                      credential: admin.credential.cert(
-                        workspace.pushPlatforms[el].credentials
-                      ),
-                    },
-                    `${foundAcc.id};;${el}`
-                  );
-                } else {
-                  throw new HttpException(
-                    `Error while using credentials for ${el}.`,
-                    HttpStatus.FAILED_DEPENDENCY
-                  );
-                }
+            try {
+              firebaseApp = admin.app(account.id + ';;' + el);
+            } catch (e: any) {
+              if (e.code == 'app/no-app') {
+                firebaseApp = admin.initializeApp(
+                  {
+                    credential: admin.credential.cert(
+                      workspace.pushPlatforms[el].credentials
+                    ),
+                  },
+                  `${account.id};;${el}`
+                );
+              } else {
+                throw new HttpException(
+                  `Error while using credentials for ${el}.`,
+                  HttpStatus.FAILED_DEPENDENCY
+                );
               }
+            }
 
-              const messaging = admin.messaging(firebaseApp);
+            const messaging = admin.messaging(firebaseApp);
 
-              await messaging.send({
-                token: token,
+            await messaging.send({
+              token: token,
+              notification: {
+                title: `Laudspeaker ${el} test`,
+                body: 'Testing push notifications',
+              },
+              android: {
                 notification: {
-                  title: `Laudspeaker ${el} test`,
-                  body: 'Testing push notifications',
+                  sound: 'default',
                 },
-                android: {
-                  notification: {
+                priority: 'high',
+              },
+              apns: {
+                headers: {
+                  'apns-priority': '5',
+                },
+                payload: {
+                  aps: {
+                    badge: 1,
                     sound: 'default',
                   },
-                  priority: 'high',
                 },
-                apns: {
-                  headers: {
-                    'apns-priority': '5',
-                  },
-                  payload: {
-                    aps: {
-                      badge: 1,
-                      sound: 'default',
-                    },
-                  },
-                },
-              });
-              // await messaging.send({
-              //   token: token,
-              //   data: {
-              //     title: `Laudspeaker ${el} test`,
-              //     body: 'Testing push notifications',
-              //     sound: 'default',
-              //     badge: '1',
-              //   },
-              //   android: {
-              //     priority: 'high'
-              //   },
-              //   apns: {
-              //     headers: {
-              //       'apns-priority': '5',
-              //     },
-              //     payload: {
-              //       aps: {
-              //         contentAvailable: true,
-              //       },
-              //     },
-              //   },
-              // });
-            }
-          })
-      );
-    } catch (e) {
-      throw e;
-    }
+              },
+            });
+            // await messaging.send({
+            //   token: token,
+            //   data: {
+            //     title: `Laudspeaker ${el} test`,
+            //     body: 'Testing push notifications',
+            //     sound: 'default',
+            //     badge: '1',
+            //   },
+            //   android: {
+            //     priority: 'high'
+            //   },
+            //   apns: {
+            //     headers: {
+            //       'apns-priority': '5',
+            //     },
+            //     payload: {
+            //       aps: {
+            //         contentAvailable: true,
+            //       },
+            //     },
+            //   },
+            // });
+          }
+        })
+    );
   }
 
   async sendFCMToken(
@@ -838,139 +850,143 @@ export class EventsService {
   }
 
   async sendTestPushByCustomer(account: Account, body: CustomerPushTest) {
-    const foundAcc = await this.accountsRepository.findOne({
-      where: {
-        id: account.id,
-      },
-      relations: ['teams.organization.workspaces'],
-    });
-
-    const workspace = foundAcc.teams?.[0]?.organization?.workspaces?.[0];
+    const workspace = account.teams?.[0]?.organization?.workspaces?.[0];
 
     const hasConnected = Object.values(workspace.pushPlatforms).some(
       (el) => !!el
     );
 
-    try {
-      if (!hasConnected) {
-        throw new HttpException(
-          "You don't have platform's connected",
-          HttpStatus.NOT_ACCEPTABLE
-        );
-      }
-
-      const customer = await this.customersService.findById(
-        account,
-        body.customerId
+    if (!hasConnected) {
+      throw new HttpException(
+        "You don't have platform's connected",
+        HttpStatus.NOT_ACCEPTABLE
       );
-
-      if (!customer.androidDeviceToken && !customer.iosDeviceToken) {
-        throw new HttpException(
-          "Selected customer don't have androidDeviceToken nor iosDeviceToken.",
-          HttpStatus.NOT_ACCEPTABLE
-        );
-      }
-
-      await Promise.all(
-        Object.entries(body.pushObject.platform)
-          .filter(
-            ([platform, isEnabled]) =>
-              isEnabled && workspace.pushPlatforms[platform]
-          )
-          .map(async ([platform]) => {
-            if (!workspace.pushPlatforms[platform]) {
-              throw new HttpException(
-                `Platform ${platform} is not connected.`,
-                HttpStatus.NOT_ACCEPTABLE
-              );
-            }
-
-            if (
-              platform === PushPlatforms.ANDROID &&
-              !customer.androidDeviceToken
-            ) {
-              this.logger.warn(
-                `Customer ${body.customerId} don't have androidDeviceToken property to test push notification. Skipping.`
-              );
-              return;
-            }
-
-            if (platform === PushPlatforms.IOS && !customer.iosDeviceToken) {
-              this.logger.warn(
-                `Customer ${body.customerId} don't have iosDeviceToken property to test push notification. Skipping.`
-              );
-              return;
-            }
-
-            const settings: PlatformSettings =
-              body.pushObject.settings[platform];
-            let firebaseApp;
-            try {
-              firebaseApp = admin.app(foundAcc.id + ';;' + platform);
-            } catch (e: any) {
-              if (e.code == 'app/no-app') {
-                firebaseApp = admin.initializeApp(
-                  {
-                    credential: admin.credential.cert(
-                      workspace.pushPlatforms[platform].credentials
-                    ),
-                  },
-                  `${foundAcc.id};;${platform}`
-                );
-              } else {
-                throw new HttpException(
-                  `Error while using credentials for ${platform}.`,
-                  HttpStatus.FAILED_DEPENDENCY
-                );
-              }
-            }
-
-            const messaging = admin.messaging(firebaseApp);
-            await messaging.send({
-              token:
-                platform === PushPlatforms.ANDROID
-                  ? customer.androidDeviceToken
-                  : customer.iosDeviceToken,
-              notification: {
-                title: settings.title,
-                body: settings.description,
-              },
-              android:
-                platform === PushPlatforms.ANDROID
-                  ? {
-                      notification: {
-                        sound: 'default',
-                        imageUrl: settings?.image?.imageSrc,
-                      },
-                    }
-                  : undefined,
-              apns:
-                platform === PushPlatforms.IOS
-                  ? {
-                      payload: {
-                        aps: {
-                          badge: 1,
-                          sound: 'default',
-                          category: settings.clickBehavior?.type,
-                          contentAvailable: true,
-                          mutableContent: true,
-                        },
-                      },
-                      fcmOptions: {
-                        imageUrl: settings?.image?.imageSrc,
-                      },
-                    }
-                  : undefined,
-              data: body.pushObject.fields.reduce((acc, field) => {
-                acc[field.key] = field.value;
-                return acc;
-              }, {}),
-            });
-          })
-      );
-    } catch (e) {
-      throw e;
     }
+
+    const customer = await this.customersService.findById(
+      account,
+      body.customerId
+    );
+
+    if (!customer.androidDeviceToken && !customer.iosDeviceToken) {
+      throw new HttpException(
+        "Selected customer don't have androidDeviceToken nor iosDeviceToken.",
+        HttpStatus.NOT_ACCEPTABLE
+      );
+    }
+
+    await Promise.all(
+      Object.entries(body.pushObject.platform)
+        .filter(
+          ([platform, isEnabled]) =>
+            isEnabled && workspace.pushPlatforms[platform]
+        )
+        .map(async ([platform]) => {
+          if (!workspace.pushPlatforms[platform]) {
+            throw new HttpException(
+              `Platform ${platform} is not connected.`,
+              HttpStatus.NOT_ACCEPTABLE
+            );
+          }
+
+          if (
+            platform === PushPlatforms.ANDROID &&
+            !customer.androidDeviceToken
+          ) {
+            this.logger.warn(
+              `Customer ${body.customerId} don't have androidDeviceToken property to test push notification. Skipping.`
+            );
+            return;
+          }
+
+          if (platform === PushPlatforms.IOS && !customer.iosDeviceToken) {
+            this.logger.warn(
+              `Customer ${body.customerId} don't have iosDeviceToken property to test push notification. Skipping.`
+            );
+            return;
+          }
+
+          const settings: PlatformSettings = body.pushObject.settings[platform];
+          let firebaseApp;
+          try {
+            firebaseApp = admin.app(account.id + ';;' + platform);
+          } catch (e: any) {
+            if (e.code == 'app/no-app') {
+              firebaseApp = admin.initializeApp(
+                {
+                  credential: admin.credential.cert(
+                    workspace.pushPlatforms[platform].credentials
+                  ),
+                },
+                `${account.id};;${platform}`
+              );
+            } else {
+              throw new HttpException(
+                `Error while using credentials for ${platform}.`,
+                HttpStatus.FAILED_DEPENDENCY
+              );
+            }
+          }
+
+          const { _id, workspaceId, workflows, ...tags } = customer.toObject();
+          const filteredTags = cleanTagsForSending(tags);
+
+          const messaging = admin.messaging(firebaseApp);
+
+          await messaging.send({
+            token:
+              platform === PushPlatforms.ANDROID
+                ? customer.androidDeviceToken
+                : customer.iosDeviceToken,
+            notification: {
+              title: await this.tagEngine.parseAndRender(
+                settings.title,
+                filteredTags || {},
+                {
+                  strictVariables: true,
+                }
+              ),
+              body: await this.tagEngine.parseAndRender(
+                settings.description,
+                filteredTags || {},
+                {
+                  strictVariables: true,
+                }
+              ),
+            },
+            android:
+              platform === PushPlatforms.ANDROID
+                ? {
+                    notification: {
+                      sound: 'default',
+                      imageUrl: settings?.image?.imageSrc,
+                    },
+                  }
+                : undefined,
+            apns:
+              platform === PushPlatforms.IOS
+                ? {
+                    payload: {
+                      aps: {
+                        badge: 1,
+                        sound: 'default',
+                        category: settings.clickBehavior?.type,
+                        contentAvailable: true,
+                        mutableContent: true,
+                      },
+                    },
+                    fcmOptions: {
+                      imageUrl: settings?.image?.imageSrc,
+                    },
+                  }
+                : undefined,
+            data: body.pushObject.fields.reduce((acc, field) => {
+              acc[field.key] = field.value;
+              return acc;
+            }, {}),
+          });
+        })
+    );
   }
 
   async batch(
@@ -980,81 +996,62 @@ export class EventsService {
   ) {
     let err: any;
 
-    //console.log("in batch events service");
-    //console.log("here is the whole batch", JSON.stringify(MobileBatchDto, null, 2));
-
     try {
-      //if(MobileBatchDto.batch.length <= 1){
       for (const thisEvent of MobileBatchDto.batch) {
-        switch (thisEvent.event) {
-          case '$identify':
-            // Handle $identify event
-            // You can add your logic here, for example:
-            this.debug(
-              `Handling $identify event for correlationKey: ${thisEvent.correlationValue}`,
-              this.handleIdentify.name,
-              session,
-              auth.account.id
-            );
-            //console.log('Handling $identify event for correlationKey:', thisEvent.correlationValue);
-            await this.handleIdentify(auth, thisEvent, session);
-            break;
-          // Your logic to handle $identify event
-          case '$set':
-            // Handle $set event
-            this.debug(
-              `Handling $set event for correlationKey: ${thisEvent.correlationValue}`,
-              this.handleIdentify.name,
-              session,
-              auth.account.id
-            );
-            //console.log('Handling $set event for correlationKey:', thisEvent.correlationValue);
-            await this.handleSet(auth, thisEvent, session);
-            // Your logic to handle $set event
-            break;
-          case '$fcm':
-            // Handle $set event
-            this.debug(
-              `Handling $fcm event for correlationKey: ${thisEvent.correlationValue}`,
-              this.handleIdentify.name,
-              session,
-              auth.account.id
-            );
-            //console.log('Handling $fcm event for correlationKey:', thisEvent.correlationValue);
-            await this.handleFCM(auth, thisEvent, session);
-            // Your logic to handle $set event
-            break;
-          default:
-            // Handle any other event
-            /*
-
-              const eventStruct: EventDto = {
-                correlationKey: '_id',
-                correlationValue: customer.id,
-                source: AnalyticsProviderTypes.MOBILE,
-                payload: payloadObj,
-                event: eventName,
-              };
-              */
-            await this.customPayload(
-              { account: auth.account, workspace: auth.workspace },
-              thisEvent,
-              session
-            );
-            if (!thisEvent.correlationValue) {
-              throw new Error('correlation value is empty');
-            }
-            // Your logic to handle other types of events
-            break;
+        if (thisEvent.source === 'message') {
+          const clickHouseRecord: ClickHouseMessage = {
+            workspaceId: thisEvent.payload.workspaceID,
+            stepId: thisEvent.payload.stepID,
+            customerId: thisEvent.payload.customerID,
+            templateId: String(thisEvent.payload.templateID),
+            messageId: thisEvent.payload.messageID,
+            event: thisEvent.event === '$delivered' ? 'delivered' : 'opened',
+            eventProvider: ClickHouseEventProvider.PUSH,
+            processed: false,
+            createdAt: new Date().toISOString(),
+          };
+          await this.webhooksService.insertMessageStatusToClickhouse(
+            [clickHouseRecord],
+            session
+          );
+        } else {
+          switch (thisEvent.event) {
+            case '$identify':
+              this.debug(
+                `Handling $identify event for correlationKey: ${thisEvent.correlationValue}`,
+                this.batch.name,
+                session,
+                auth.account.id
+              );
+              await this.handleIdentify(auth, thisEvent, session);
+              break;
+            case '$set':
+              this.debug(
+                `Handling $set event for correlationKey: ${thisEvent.correlationValue}`,
+                this.batch.name,
+                session,
+                auth.account.id
+              );
+              await this.handleSet(auth, thisEvent, session);
+              break;
+            default:
+              await this.customPayload(
+                { account: auth.account, workspace: auth.workspace },
+                thisEvent,
+                session
+              );
+              if (!thisEvent.correlationValue) {
+                throw new Error('correlation value is empty');
+              }
+              break;
+          }
         }
       }
       //}
     } catch (e) {
       this.error(e, this.batch.name, session);
-      //await queryRunner.rollbackTransaction();
       err = e;
     } finally {
-      //await queryRunner.release();
       if (err) throw err;
     }
   }
@@ -1090,41 +1087,11 @@ export class EventsService {
 
     const { customer, findType } = await this.findOrCreateCustomer(
       workspaceId,
+      session,
       null,
       null,
-      event.correlationValue
+      event
     );
-
-    /*
-    let customer = await this.customersService.CustomerModel.findOne({
-      _id: event.correlationValue, // Assuming the correlationValue is the customer ID
-      workspaceId,
-    });
-  
-    if (!customer) {
-      this.debug(
-        `Customer not found`,
-        this.handleSet.name,
-        session,
-        auth.account.id
-      );
-      // Optionally, handle the scenario where the customer doesn't exist
-      customer = new this.customersService.CustomerModel({
-        _id: event.correlationValue,
-        workspaceId,
-        //isAnonymous: true, // Adjust based on your logic
-      });
-      try {
-        await customer.save(); // Use await if within an async function
-        // Handle success, e.g., logging or further actions
-        console.log('Customer saved successfully.');
-      } catch (error) {
-        // Handle errors, e.g., logging or error responses
-        console.error('Error saving customer:', error);
-      }
-      //return;
-    }
-    */
 
     // Filter and validate the event payload against CustomerKeys
     // Exclude the primary key and 'other_ids' from updates
@@ -1225,76 +1192,43 @@ export class EventsService {
     const deleteResult = await this.customersService.CustomerModel.deleteMany({
       _id: correlationValue,
     });
-
-    //console.log('Delete result:', deleteResult);
   }
 
   async findOrCreateCustomer(
     workspaceId: string,
+    session: string,
     primaryKeyValue?: string,
     primaryKeyName?: string,
-    correlationValue?: string | string[]
+    event?: EventDto
   ): Promise<{ customer: any; findType: number }> {
     let customer;
     let findType;
 
     // Try to find by primary key if provided
     if (primaryKeyValue) {
-      this.debug(
-        `searcing for customer by primary key: ${primaryKeyValue}`,
-        this.findOrCreateCustomer.name,
-        '000'
-      );
-
-      //console.log("searcing for customer by primary key", primaryKeyName, primaryKeyValue)
       customer = await this.customersService.CustomerModel.findOne({
         [primaryKeyName]: primaryKeyValue,
         workspaceId,
       });
-      //console.log("customer is", JSON.stringify(customer, null, 2))
-      this.debug(
-        `customer is: ${customer}`,
-        this.findOrCreateCustomer.name,
-        '000'
-      );
       if (customer) findType = 1;
     }
 
     // If not found by primary key, try finding by _id
-    if (!customer && correlationValue) {
-      console.log(
-        'searcing for customer by correlationValue',
-        correlationValue
-      );
+    if (!customer && event.correlationValue) {
       customer = await this.customersService.CustomerModel.findOne({
-        _id: correlationValue,
+        _id: event.correlationValue,
         workspaceId,
       });
-      this.debug(
-        `customer is: ${customer}`,
-        this.findOrCreateCustomer.name,
-        '000'
-      );
 
       if (customer) findType = 2;
     }
 
     // If still not found, try finding by other_ids array containing the correlationValue
-    if (!customer && correlationValue) {
-      console.log(
-        'searcing for customer by correlationValue in other ids',
-        correlationValue
-      );
+    if (!customer && event.correlationValue) {
       customer = await this.customersService.CustomerModel.findOne({
-        other_ids: { $in: [correlationValue] },
+        other_ids: { $in: [event.correlationValue] },
         workspaceId,
       });
-      this.debug(
-        `customer is: ${customer}`,
-        this.findOrCreateCustomer.name,
-        '000'
-      );
-
       if (customer) findType = 3;
     }
 
@@ -1302,8 +1236,9 @@ export class EventsService {
     if (!customer) {
       const upsertData = {
         $setOnInsert: {
-          _id: correlationValue,
+          _id: event.correlationValue,
           workspaceId,
+          createdAt: new Date(),
         },
       };
 
@@ -1314,39 +1249,45 @@ export class EventsService {
 
       try {
         customer = await this.customersService.CustomerModel.findOneAndUpdate(
-          { _id: correlationValue, workspaceId },
+          { _id: event.correlationValue, workspaceId },
           upsertData,
           { upsert: true, new: true }
-        );
-        this.debug(
-          `upserted customer is: ${customer}`,
-          this.findOrCreateCustomer.name,
-          '000'
         );
         findType = 4; // Set findType to 4 to indicate an upsert operation
       } catch (error: any) {
         // Check if the error is a duplicate key error
         if (error.code === 11000) {
-          // Handle the duplicate key error, for example, by fetching the existing customer
-          console.error(
-            'Duplicate key error encountered. Fetching existing customer.'
-          );
           customer = await this.customersService.CustomerModel.findOne({
-            _id: correlationValue,
+            _id: event.correlationValue,
             workspaceId,
           });
-          this.debug(
-            `fetched existing customer after duplicate key error: ${customer}`,
-            this.findOrCreateCustomer.name,
-            '000'
-          );
           findType = 5; // Optionally, set a different findType to indicate handling of a duplicate key error
         } else {
-          // Re-throw the error if it is not a duplicate key error
-          this.error(error, this.findOrCreateCustomer.name, '000');
-          //throw error;
+          this.error(error, this.findOrCreateCustomer.name, session);
         }
       }
+    }
+
+    if (event.$fcm) {
+      const { iosDeviceToken, androidDeviceToken } = event.$fcm;
+      const deviceTokenField = iosDeviceToken
+        ? 'iosDeviceToken'
+        : 'androidDeviceToken';
+      const deviceTokenValue = iosDeviceToken || androidDeviceToken;
+      const deviceTokenSetAtField = iosDeviceToken
+        ? 'iosDeviceTokenSetAt'
+        : 'androidDeviceTokenSetAt';
+      if (customer[deviceTokenField] !== deviceTokenValue)
+        customer = await this.customersService.CustomerModel.findOneAndUpdate(
+          { _id: customer._id, workspaceId },
+          {
+            $set: {
+              [deviceTokenField]: deviceTokenValue,
+              [deviceTokenSetAtField]: new Date(), // Dynamically sets the appropriate deviceTokenSetAt field
+            },
+          },
+          { new: true }
+        );
     }
 
     return { customer, findType };
@@ -1363,29 +1304,15 @@ export class EventsService {
     event: EventDto, // Assuming EventDto has all the necessary fields including payload
     session: string
   ) {
-    this.debug(
-      ` in handleIdentify`,
-      this.handleIdentify.name,
-      session,
-      auth.account.id
-    );
-
     const primaryKeyValue = event.payload?.distinct_id; // Adjust based on your actual primary key field
     if (!primaryKeyValue) {
-      this.debug(
-        ` no primary key provided in identify call --so return`,
+      this.warn(
+        `No primary key provided in $identify event:${JSON.stringify(event)}`,
         this.handleIdentify.name,
         session,
-        auth.account.id
+        auth.account.email
       );
-
       return;
-      /*
-      throw new HttpException(
-        'No Primary Key given in payload',
-        HttpStatus.NOT_ACCEPTABLE
-      );
-      */
     }
 
     const workspaceId = auth.workspace.id;
@@ -1425,9 +1352,10 @@ export class EventsService {
 
     const { customer, findType } = await this.findOrCreateCustomer(
       workspaceId,
+      session,
       primaryKeyValue,
       primaryKeyName,
-      event.correlationValue
+      event
     );
     //check the customer does not have another primary key already if it does this is not supported right now
     if (findType == 2) {
@@ -1477,7 +1405,6 @@ export class EventsService {
         ) {
           otherIdsUpdates.push(anonId);
         } else {
-          //console.warn(`Skipping update for $anon_distinct_id: Type mismatch or already exists.`);
         }
       } else {
         // Handle other keys normally
@@ -1488,27 +1415,12 @@ export class EventsService {
         ) {
           filteredPayload[key] = event.payload[key];
         } else {
-          //console.warn(`Skipping update for key ${key}: Type mismatch or key not allowed.`);
         }
       }
     });
 
-    // Add $anon_distinct_id updates if any
-    /*
-    if (otherIdsUpdates.length > 0) {
-      filteredPayload['other_ids'] = { $each: otherIdsUpdates };
-    }
-    */
-
     // Assuming the merging logic or creation of a new customer has been handled before this
     // Update the customer with validated and filtered payload, including handling of arrays
-    //console.log("about to update customer in identify")
-    this.debug(
-      `about to update customer in identify`,
-      this.handleIdentify.name,
-      session,
-      auth.account.id
-    );
     await this.customersService.CustomerModel.updateOne(
       { _id: customer._id },
       {
@@ -1524,8 +1436,6 @@ export class EventsService {
       event: event.event,
       workspaceId: workspaceId,
       payload: filteredPayload,
-      //we should really standardize on .toISOString() or .toUTCString()
-      //createdAt: new Date().toUTCString(),
       createdAt: new Date().toISOString(),
     });
 
@@ -1537,15 +1447,8 @@ export class EventsService {
     event: EventDto,
     session: string
   ) {
-    this.debug(
-      `Handling FCM event`,
-      this.handleFCM.name,
-      session,
-      auth.account.id
-    );
-
     // Extract device tokens from the event payload
-    const { iosDeviceToken, androidDeviceToken } = event.payload;
+    const { iosDeviceToken, androidDeviceToken } = event.$fcm;
     const customerId = event.correlationValue; // Or distinct_id, assuming they are meant to represent the same identifier
 
     // Determine which device token is provided
@@ -1573,41 +1476,11 @@ export class EventsService {
     const workspaceId = auth.workspace.id;
     const { customer, findType } = await this.findOrCreateCustomer(
       workspaceId,
+      session,
       null,
       null,
-      event.correlationValue
+      event
     );
-
-    /*
-    let customer = await this.customersService.CustomerModel.findOne({
-      _id: customerId,
-      workspaceId,
-    });
-    
-  
-    if (!customer) {
-      this.debug(
-        `Customer not found for FCM event`,
-        this.handleFCM.name,
-        session,
-        auth.account.id
-      );
-      customer = new this.customersService.CustomerModel({
-        _id: event.correlationValue,
-        workspaceId,
-        isAnonymous: true, // Adjust based on your logic
-      });
-      try {
-        await customer.save(); // Use await if within an async function
-        // Handle success, e.g., logging or further actions
-        console.log('Customer saved successfully.');
-      } catch (error) {
-        // Handle errors, e.g., logging or error responses
-        console.error('Error saving customer:', error);
-      }
-      //return;
-    }
-    */
 
     // Update the customer with the provided device token
     const updatedCustomer =
