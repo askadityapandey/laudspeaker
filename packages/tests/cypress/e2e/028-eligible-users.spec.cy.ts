@@ -67,7 +67,6 @@ describe("eligible users", () => {
 
       cy.contains("Save").click();
 
-
       cy.contains("Audience").click();
       cy.get("#segments").click();
       cy.contains("Create Segment").click();
