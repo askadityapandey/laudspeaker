@@ -83,8 +83,7 @@ import { RedisService } from '@liaoliaots/nestjs-redis';
 import { JourneyChange } from './entities/journey-change.entity';
 import isObjectDeepEqual from '@/utils/isObjectDeepEqual';
 import { JourneyLocation } from './entities/journey-location.entity';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
+import { CacheService } from '@/common/services/cache.service';
 
 export enum JourneyStatus {
   ACTIVE = 'Active',
@@ -250,7 +249,7 @@ export class JourneysService {
     @InjectQueue('transition') private readonly transitionQueue: Queue,
     @Inject(RedisService) private redisService: RedisService,
     @InjectQueue('enrollment') private readonly enrollmentQueue: Queue,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache
+    @Inject(CacheService) private cacheService: CacheService
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -1414,7 +1413,7 @@ export class JourneysService {
 
       // invalidate journeys cache entry set in eventPreprocessor
       if(workspace) {
-        await this.cacheManager.del(`journeys:${workspace.id}`);
+        await this.cacheService.delete("Journeys", workspace.id);
       }
 
       return result;
@@ -1468,7 +1467,7 @@ export class JourneysService {
 
       // invalidate journeys cache entry set in eventPreprocessor
       if(workspace) {
-        await this.cacheManager.del(`journeys:${workspace.id}`);
+        await this.cacheService.delete("Journeys", workspace.id);
       }
       
       return journeyResult;
@@ -1519,7 +1518,7 @@ export class JourneysService {
 
       // invalidate journeys cache entry set in eventPreprocessor
       if(workspace) {
-        await this.cacheManager.del(`journeys:${workspace.id}`);
+        await this.cacheService.delete("Journeys", workspace.id);
       }
 
       const graph = new Graph();
@@ -1629,7 +1628,7 @@ export class JourneysService {
 
       // invalidate journeys cache entry set in eventPreprocessor
       if(workspace) {
-        await this.cacheManager.del(`journeys:${workspace.id}`);
+        await this.cacheService.delete("Journeys", workspace.id);
       }
     } catch (err) {
       this.error(err, this.stop.name, session, account.email);

@@ -33,8 +33,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { EventsService } from './events.service';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
+import { CacheService } from '@/common/services/cache.service';
 
 export enum ProviderType {
   LAUDSPEAKER = 'laudspeaker',
@@ -82,7 +81,7 @@ export class EventsPreProcessor extends WorkerHost {
     @InjectQueue('events') private readonly eventsQueue: Queue,
     @InjectRepository(Journey)
     private readonly journeysRepository: Repository<Journey>,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache
+    @Inject(CacheService) private cacheService: CacheService
   ) {
     super();
   }
@@ -190,12 +189,8 @@ export class EventsPreProcessor extends WorkerHost {
       //console.timeEnd(`handleCustom - findOrCreateCustomer ${job.data.session}`)
       //get all the journeys that are active, and pipe events to each journey in case they are listening for event
       //console.time(`handleCustom - find journeys ${job.data.session}`)
-      let journeys: Journey[];
-      journeys = await this.cacheManager.get(
-        `journeys:${job.data.workspace.id}`
-      );
-      if (!journeys) {
-        journeys = await this.journeysRepository.find({
+      let journeys: Journey[] = await this.cacheService.get("Journeys", job.data.workspace.id, async () => {
+        return await this.journeysRepository.find({
           where: {
             workspace: {
               id: job.data.workspace.id,
@@ -205,12 +200,9 @@ export class EventsPreProcessor extends WorkerHost {
             isStopped: false,
             isDeleted: false,
           },
-        });
-        await this.cacheManager.set(
-          `journeys:${job.data.workspace.id}`,
-          journeys
-        );
-      }
+        });;
+      });
+
       //console.timeEnd(`handleCustom - find journeys ${job.data.session}`)
       // add event to event database for visibility
       if (job.data.event) {
