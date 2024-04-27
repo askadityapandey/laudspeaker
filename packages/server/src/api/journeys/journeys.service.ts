@@ -1411,10 +1411,7 @@ export class JourneysService {
       );
       await this.trackChange(account, id);
 
-      // invalidate journeys cache entry set in eventPreprocessor
-      if(workspace) {
-        await this.cacheService.delete("Journeys", workspace.id);
-      }
+      await this.cleanupJourneyCache({workspaceId: workspace.id});
 
       return result;
     } catch (err) {
@@ -1464,11 +1461,8 @@ export class JourneysService {
       });
 
       await this.trackChange(account, journeyResult.id);
-
-      // invalidate journeys cache entry set in eventPreprocessor
-      if(workspace) {
-        await this.cacheService.delete("Journeys", workspace.id);
-      }
+      
+      await this.cleanupJourneyCache({workspaceId: workspace.id});
       
       return journeyResult;
     } catch (error) {
@@ -1516,10 +1510,7 @@ export class JourneysService {
       if (!journey.inclusionCriteria)
         throw new Error('To start journey a filter should be defined');
 
-      // invalidate journeys cache entry set in eventPreprocessor
-      if(workspace) {
-        await this.cacheService.delete("Journeys", workspace.id);
-      }
+      await this.cleanupJourneyCache({workspaceId: workspace.id});
 
       const graph = new Graph();
       const steps = await this.stepsService.transactionalfindByJourneyID(
@@ -1626,10 +1617,7 @@ export class JourneysService {
 
       await this.trackChange(account, journeyResult.id);
 
-      // invalidate journeys cache entry set in eventPreprocessor
-      if(workspace) {
-        await this.cacheService.delete("Journeys", workspace.id);
-      }
+      await this.cleanupJourneyCache({workspaceId: workspace.id});
     } catch (err) {
       this.error(err, this.stop.name, session, account.email);
       throw err;
@@ -2739,5 +2727,12 @@ export class JourneysService {
       changedState: journey,
       previousChange: previousChange ? { id: previousChange.id } : undefined,
     });
+  }
+
+  private async cleanupJourneyCache(data: {workspaceId: string}) {
+    // invalidate journeys cache entry set in eventPreprocessor
+    if(data.workspaceId) {
+      await this.cacheService.delete("Journeys", data.workspaceId);
+    }
   }
 }
