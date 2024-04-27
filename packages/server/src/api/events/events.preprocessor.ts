@@ -169,8 +169,6 @@ export class EventsPreProcessor extends WorkerHost {
       any
     >
   ): Promise<any> {
-    const transactionSession = await this.connection.startSession();
-    transactionSession.startTransaction();
     let err: any;
     try {
       //find customer associated with event or create new customer if not found
@@ -215,36 +213,29 @@ export class EventsPreProcessor extends WorkerHost {
               createdAt: new Date().toISOString(),
             },
           ],
-          { session: transactionSession }
         );
         //console.timeEnd(`handleCustom - create event ${job.data.session}`)
       }
 
-      await transactionSession.commitTransaction();
-
       // Always add jobs after committing transactions, otherwise there could be race conditions
-      for (let i = 0; i < journeys.length; i++) {
-        //console.time(`handleCustom - adding to queue ${job.data.session}`)
-        await this.eventsQueue.add(
-          EventType.EVENT,
-          {
-            account: job.data.owner,
-            workspace: job.data.workspace,
-            event: job.data.event,
-            journey: journeys[i],
-            customer: customer,
-            session: job.data.session,
-          },
-          {
-            attempts: Number.MAX_SAFE_INTEGER,
-            backoff: { type: 'fixed', delay: 1000 },
-          }
-        );
-        //console.timeEnd(`handleCustom - adding to queue ${job.data.session}`)
-      }
+      let eventJobs = journeys.map(journey => ({
+        name: EventType.EVENT,
+        data: {
+          account: job.data.owner,
+          workspace: job.data.workspace,
+          event: job.data.event,
+          journey: journey,
+          customer: customer,
+          session: job.data.session,
+        },
+        opts: {
+          attempts: Number.MAX_SAFE_INTEGER,
+          backoff: { type: 'fixed', delay: 1000 },
+        }
+      }));
+
+      await this.eventsQueue.addBulk(eventJobs);
     } catch (e) {
-      if (transactionSession.inTransaction())
-        transactionSession.abortTransaction();
       this.error(
         e,
         this.handleCustom.name,
@@ -252,9 +243,8 @@ export class EventsPreProcessor extends WorkerHost {
         job.data.owner.email
       );
       err = e;
-    } finally {
-      await transactionSession.endSession();
     }
+
     if (err?.code === 11000) {
       this.warn(
         `${JSON.stringify({
