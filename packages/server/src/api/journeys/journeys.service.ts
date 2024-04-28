@@ -1483,6 +1483,7 @@ export class JourneysService {
     let journey: Journey;
     let err: any;
 
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -1491,6 +1492,8 @@ export class JourneysService {
       if (!account) throw new HttpException('User not found', 404);
       const workspace = account.teams?.[0]?.organization?.workspaces?.[0];
 
+      await this.cleanupJourneyCache({workspaceId: workspace.id});
+      
       journey = await queryRunner.manager.findOne(Journey, {
         where: {
           workspace: {
@@ -1509,8 +1512,6 @@ export class JourneysService {
 
       if (!journey.inclusionCriteria)
         throw new Error('To start journey a filter should be defined');
-
-      await this.cleanupJourneyCache({workspaceId: workspace.id});
 
       const graph = new Graph();
       const steps = await this.stepsService.transactionalfindByJourneyID(
