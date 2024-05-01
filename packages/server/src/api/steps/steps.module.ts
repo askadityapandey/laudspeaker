@@ -34,6 +34,15 @@ import { JourneysModule } from '../journeys/journeys.module';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { Requeue } from './entities/requeue.entity';
 import { CacheService } from '@/common/services/cache.service';
+import { ExitStepProcessor } from './processors/exit.step.processor';
+import { ExperimentStepProcessor } from './processors/experiment.step.processor';
+import { JumpToStepProcessor } from './processors/jump.to.step.processor';
+import { MessageStepProcessor } from './processors/message.step.processor';
+import { MultisplitStepProcessor } from './processors/multisplit.step.processor';
+import { StartStepProcessor } from './processors/start.step.processor';
+import { TimeDelayStepProcessor } from './processors/time.delay.step.processor';
+import { TimeWindowStepProcessor } from './processors/time.window.step.processor';
+import { WaitUntilStepProcessor } from './processors/wait.until.step.processor';
 
 @Module({
   imports: [
@@ -62,6 +71,33 @@ import { CacheService } from '@/common/services/cache.service';
     BullModule.registerQueue({
       name: 'start',
     }),
+    BullModule.registerQueue({
+      name: 'start.step',
+    }),
+    BullModule.registerQueue({
+      name: 'wait.until.step',
+    }),
+    BullModule.registerQueue({
+      name: 'time.window.step',
+    }),
+    BullModule.registerQueue({
+      name: 'exit.step',
+    }),
+    BullModule.registerQueue({
+      name: 'jump.to.step',
+    }),
+    BullModule.registerQueue({
+      name: 'message.step',
+    }),
+    BullModule.registerQueue({
+      name: 'time.delay.step',
+    }),
+    BullModule.registerQueue({
+      name: 'multisplit.step',
+    }),
+    BullModule.registerQueue({
+      name: 'experiment.step',
+    }),
     forwardRef(() => CustomersModule),
     forwardRef(() => WebhooksModule),
     forwardRef(() => TemplatesModule),
@@ -82,6 +118,15 @@ import { CacheService } from '@/common/services/cache.service';
     JourneyLocationsService,
     EnrollmentProcessor,
     CacheService,
+    ExitStepProcessor,
+    ExperimentStepProcessor,
+    JumpToStepProcessor,
+    MessageStepProcessor,
+    MultisplitStepProcessor,
+    StartStepProcessor,
+    TimeDelayStepProcessor,
+    TimeWindowStepProcessor,
+    WaitUntilStepProcessor,
   ],
   controllers: [StepsController],
   exports: [StepsService],

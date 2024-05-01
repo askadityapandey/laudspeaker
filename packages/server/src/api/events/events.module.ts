@@ -50,6 +50,15 @@ import { Step } from '../steps/entities/step.entity';
 import { Journey } from '../journeys/entities/journey.entity';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 import { CacheService } from '@/common/services/cache.service';
+import { WaitUntilStepProcessor } from '../steps/processors/wait.until.step.processor';
+import { ExitStepProcessor } from '../steps/processors/exit.step.processor';
+import { ExperimentStepProcessor } from '../steps/processors/experiment.step.processor';
+import { JumpToStepProcessor } from '../steps/processors/jump.to.step.processor';
+import { MessageStepProcessor } from '../steps/processors/message.step.processor';
+import { MultisplitStepProcessor } from '../steps/processors/multisplit.step.processor';
+import { StartStepProcessor } from '../steps/processors/start.step.processor';
+import { TimeDelayStepProcessor } from '../steps/processors/time.delay.step.processor';
+import { TimeWindowStepProcessor } from '../steps/processors/time.window.step.processor';
 
 @Module({
   imports: [
@@ -86,6 +95,33 @@ import { CacheService } from '@/common/services/cache.service';
       name: 'events',
     }),
     BullModule.registerQueue({
+      name: 'start.step',
+    }),
+    BullModule.registerQueue({
+      name: 'wait.until.step',
+    }),
+    BullModule.registerQueue({
+      name: 'time.window.step',
+    }),
+    BullModule.registerQueue({
+      name: 'exit.step',
+    }),
+    BullModule.registerQueue({
+      name: 'jump.to.step',
+    }),
+    BullModule.registerQueue({
+      name: 'message.step',
+    }),
+    BullModule.registerQueue({
+      name: 'time.delay.step',
+    }),
+    BullModule.registerQueue({
+      name: 'multisplit.step',
+    }),
+    BullModule.registerQueue({
+      name: 'experiment.step',
+    }),
+    BullModule.registerQueue({
       name: 'events_pre',
     }),
     BullModule.registerQueue({
@@ -116,6 +152,15 @@ import { CacheService } from '@/common/services/cache.service';
     EventsService,
     EventsProcessor,
     EventsPreProcessor,
+    ExitStepProcessor,
+    ExperimentStepProcessor,
+    JumpToStepProcessor,
+    MessageStepProcessor,
+    MultisplitStepProcessor,
+    StartStepProcessor,
+    TimeDelayStepProcessor,
+    TimeWindowStepProcessor,
+    WaitUntilStepProcessor,
     AudiencesHelper,
     RedlockService,
     JourneyLocationsService,
