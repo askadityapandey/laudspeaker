@@ -508,17 +508,17 @@ export class CronService {
       if (!timeBasedErr) {
         await this.waitUntilStepQueue.addBulk(
           timeBasedJobs.filter((job) => {
-            job.type === String(StepType.WAIT_UNTIL_BRANCH);
+            return job.name === String(StepType.WAIT_UNTIL_BRANCH);
           })
         );
         await this.timeDelayStep.addBulk(
           timeBasedJobs.filter((job) => {
-            job.type === String(StepType.TIME_DELAY);
+            return job.name === String(StepType.TIME_DELAY);
           })
         );
         await this.timeWindowStep.addBulk(
           timeBasedJobs.filter((job) => {
-            job.type === String(StepType.TIME_WINDOW);
+            return job.name === String(StepType.TIME_WINDOW);
           })
         );
       }
