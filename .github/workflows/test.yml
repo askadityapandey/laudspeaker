@@ -33,6 +33,10 @@ jobs:
       - name: Install cypress dependencies
         run: |
           npm install -w packages/tests
+      - name: Run unit tests
+        # TODO: Existing unit tests need their dependencies mocked. Append fixed spec files as arguments to test:server
+        run: |
+          npm run test:server -- cache.service.spec
       - name: Run cypress tests
         run: |
           TESTS_BASE_URL=http://localhost:8080 TESTS_API_BASE_URL=http://localhost:8080/api TESTS_INTERNAL_API_BASE_URL=http://laudspeaker-web:8080/api npm run tests:run
