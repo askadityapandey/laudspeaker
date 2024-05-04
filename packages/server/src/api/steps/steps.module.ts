@@ -44,6 +44,36 @@ import { TimeDelayStepProcessor } from './processors/time.delay.step.processor';
 import { TimeWindowStepProcessor } from './processors/time.window.step.processor';
 import { WaitUntilStepProcessor } from './processors/wait.until.step.processor';
 
+function getProvidersList() {
+  let providerList: Array<any> = [
+    StepsService,
+    JobsService,
+    RedlockService,
+    JourneyLocationsService,
+    CacheService
+  ];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
+    providerList = [
+      ...providerList,
+      TransitionProcessor,
+      StartProcessor,
+      EnrollmentProcessor,
+      ExitStepProcessor,
+      ExperimentStepProcessor,
+      JumpToStepProcessor,
+      MessageStepProcessor,
+      MultisplitStepProcessor,
+      StartStepProcessor,
+      TimeDelayStepProcessor,
+      TimeWindowStepProcessor,
+      WaitUntilStepProcessor,
+    ];
+  }
+
+  return providerList;
+}
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -109,25 +139,7 @@ import { WaitUntilStepProcessor } from './processors/wait.until.step.processor';
     forwardRef(() => JourneysModule),
     SlackModule,
   ],
-  providers: [
-    StepsService,
-    JobsService,
-    TransitionProcessor,
-    StartProcessor,
-    RedlockService,
-    JourneyLocationsService,
-    EnrollmentProcessor,
-    CacheService,
-    ExitStepProcessor,
-    ExperimentStepProcessor,
-    JumpToStepProcessor,
-    MessageStepProcessor,
-    MultisplitStepProcessor,
-    StartStepProcessor,
-    TimeDelayStepProcessor,
-    TimeWindowStepProcessor,
-    WaitUntilStepProcessor,
-  ],
+  providers: getProvidersList(),
   controllers: [StepsController],
   exports: [StepsService],
 })

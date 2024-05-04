@@ -60,6 +60,37 @@ import { StartStepProcessor } from '../steps/processors/start.step.processor';
 import { TimeDelayStepProcessor } from '../steps/processors/time.delay.step.processor';
 import { TimeWindowStepProcessor } from '../steps/processors/time.window.step.processor';
 
+function getProvidersList() {
+  let providerList: Array<any> = [
+    EventsService,
+    AudiencesHelper,
+    RedlockService,
+    JourneyLocationsService,
+    CustomersService,
+    S3Service,
+    CacheService,
+  ];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
+    providerList = [
+      ...providerList,
+      EventsProcessor,
+      EventsPreProcessor,
+      ExitStepProcessor,
+      ExperimentStepProcessor,
+      JumpToStepProcessor,
+      MessageStepProcessor,
+      MultisplitStepProcessor,
+      StartStepProcessor,
+      TimeDelayStepProcessor,
+      TimeWindowStepProcessor,
+      WaitUntilStepProcessor,
+    ];
+  }
+
+  return providerList;
+}
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -148,26 +179,7 @@ import { TimeWindowStepProcessor } from '../steps/processors/time.window.step.pr
     forwardRef(() => StepsModule),
   ],
   controllers: [EventsController],
-  providers: [
-    EventsService,
-    EventsProcessor,
-    EventsPreProcessor,
-    ExitStepProcessor,
-    ExperimentStepProcessor,
-    JumpToStepProcessor,
-    MessageStepProcessor,
-    MultisplitStepProcessor,
-    StartStepProcessor,
-    TimeDelayStepProcessor,
-    TimeWindowStepProcessor,
-    WaitUntilStepProcessor,
-    AudiencesHelper,
-    RedlockService,
-    JourneyLocationsService,
-    CustomersService,
-    S3Service,
-    CacheService,
-  ],
+  providers: getProvidersList(),
   exports: [EventsService],
 })
 export class EventsModule {}
