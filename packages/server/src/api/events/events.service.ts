@@ -1092,7 +1092,7 @@ export class EventsService {
           }
           //}
         } catch (e) {
-          this.error(e, this.batch.name, session);
+          this.error(e, this.batch.name, session, auth.account.email);
           err = e;
         } finally {
           if (err) throw err;
