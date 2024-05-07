@@ -23,6 +23,10 @@ import { SegmentCustomers } from '../entities/segment-customers.entity';
 @Injectable()
 @Processor('segment_update')
 export class SegmentUpdateProcessor extends WorkerHost {
+  private providerMap = {
+    update: this.handleUpdate,
+    create: this.handleCreate,
+  };
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -31,8 +35,8 @@ export class SegmentUpdateProcessor extends WorkerHost {
     @Inject(forwardRef(() => CustomersService))
     private customersService: CustomersService,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @InjectQueue('customer_changes')
-    private readonly customerChangesQueue: Queue
+    @InjectQueue('customer_change')
+    private readonly customerChangeQueue: Queue
   ) {
     super();
   }
@@ -100,7 +104,19 @@ export class SegmentUpdateProcessor extends WorkerHost {
    *
    *
    */
-  async process(
+  async process(job: any): Promise<any> {
+    const fn = this.providerMap[job.name];
+    const that = this;
+
+    return Sentry.startSpan(
+      { name: `${SegmentUpdateProcessor.name}.${fn.name}` },
+      async () => {
+        await fn.call(that, job);
+      }
+    );
+  }
+
+  async handleCreate(
     job: Job<
       {
         account: Account;
@@ -111,11 +127,11 @@ export class SegmentUpdateProcessor extends WorkerHost {
       any,
       string
     >
-  ): Promise<any> {
+  ) {
     let err: any;
-    await this.customerChangesQueue.pause();
+    await this.customerChangeQueue.pause();
     while (true) {
-      const jobCounts = await this.customerChangesQueue.getJobCounts('active');
+      const jobCounts = await this.customerChangeQueue.getJobCounts('active');
       const activeJobs = jobCounts.active;
 
       if (activeJobs === 0) {
@@ -204,7 +220,57 @@ export class SegmentUpdateProcessor extends WorkerHost {
       err = e;
     } finally {
       await queryRunner.release();
-      await this.customerChangesQueue.resume();
+      await this.customerChangeQueue.resume();
+      if (err) throw err;
+    }
+  }
+
+  async handleUpdate(
+    job: Job<
+      {
+        account: Account;
+        segment: Segment;
+        session: string;
+        csvFile: any;
+      },
+      any,
+      string
+    >
+  ) {
+    let err: any;
+    const queryRunner = await this.dataSource.createQueryRunner();
+    const client = await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const { stats } = await this.customersService.loadCSV(
+        job.data.account,
+        job.data.csvFile,
+        job.data.session
+      );
+
+      await this.segmentsService.assignCustomers(
+        job.data.account,
+        job.data.segment.id,
+        stats.customers,
+        job.data.session
+      );
+
+      await queryRunner.manager.save(Segment, {
+        ...job.data.segment,
+        isUpdating: false,
+      });
+      await queryRunner.commitTransaction();
+    } catch (e) {
+      this.error(
+        e,
+        this.handleUpdate.name,
+        job.data.session,
+        job.data.account.email
+      );
+      await queryRunner.rollbackTransaction();
+      err = e;
+    } finally {
+      await queryRunner.release();
       if (err) throw err;
     }
   }

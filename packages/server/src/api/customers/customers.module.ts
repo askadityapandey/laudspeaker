@@ -38,10 +38,9 @@ function getProvidersList() {
     JourneyLocationsService,
   ];
 
-  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
     providerList = [
       ...providerList,
-      CustomersProcessor,
       ImportProcessor,
       CustomersConsumerService,
       CustomerChangeProcessor,
@@ -52,15 +51,10 @@ function getProvidersList() {
 }
 
 function getExportsList() {
-  let exportList: Array<any> = [
-    CustomersService,
-  ];
+  let exportList: Array<any> = [CustomersService];
 
-  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
-    exportList = [
-      ...exportList,
-      CustomersConsumerService,
-    ];
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
+    exportList = [...exportList, CustomersConsumerService, CustomerChangeProcessor];
   }
 
   return exportList;

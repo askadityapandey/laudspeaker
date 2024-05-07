@@ -45,7 +45,7 @@ export class SegmentsService {
     private readonly audiencesHelper: AudiencesHelper,
     @InjectConnection() private readonly connection: mongoose.Connection,
     @InjectQueue('segment_update')
-    private readonly segmentUpdateQueue: Queue
+    private readonly segmentUpdateQueue: Queue,
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -1135,14 +1135,17 @@ export class SegmentsService {
     if (segment.type !== SegmentType.MANUAL)
       throw new BadRequestException("This segment isn't manual");
 
-    const { stats } = await this.customersService.loadCSV(
+    console.log("_______________________________________________")
+    console.log("here...")
+    console.log("_______________________________________________")
+    await this.segmentUpdateQueue.add('update', {
       account,
+      segment,
       csvFile,
-      session
-    );
+      session,
+    });
 
-    await this.assignCustomers(account, segment.id, stats.customers, session);
-    return { stats };
+    return;
   }
 
   public async updateAutomaticSegmentCustomerInclusion(

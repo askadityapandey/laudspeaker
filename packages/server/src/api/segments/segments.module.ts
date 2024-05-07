@@ -10,6 +10,44 @@ import { SegmentsController } from './segments.controller';
 import { SegmentsService } from './segments.service';
 import { BullModule } from '@nestjs/bullmq';
 import { SegmentUpdateProcessor } from './processors/segment.processor';
+import { CustomerChangeProcessor } from '../customers/processors/customers.processor';
+import { JourneysModule } from '../journeys/journeys.module';
+import { AccountsModule } from '../accounts/accounts.module';
+
+
+function getProvidersList() {
+  let providerList: Array<any> = [
+    SegmentsService,
+    AudiencesHelper,
+  ];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
+    providerList = [
+      ...providerList,
+      SegmentUpdateProcessor,
+      CustomerChangeProcessor,
+    ];
+  }
+
+  return providerList;
+}
+
+function getExportList() {
+  let exportList: Array<any> = [
+    SegmentsService,
+  ];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
+    exportList = [
+      ...exportList,
+      SegmentUpdateProcessor,
+      CustomerChangeProcessor,
+    ];
+  }
+
+  return exportList;
+
+}
 
 @Module({
   imports: [
@@ -17,14 +55,19 @@ import { SegmentUpdateProcessor } from './processors/segment.processor';
       name: 'segment_update',
     }),
     BullModule.registerQueue({
-      name: 'customer_changes',
+      name: 'events_pre',
+    }),
+    BullModule.registerQueue({
+      name: 'customer_change',
     }),
     TypeOrmModule.forFeature([Segment, SegmentCustomers]),
     forwardRef(() => CustomersModule),
     forwardRef(() => WorkflowsModule),
+    forwardRef(() => JourneysModule),
+    forwardRef(() => AccountsModule),
   ],
   controllers: [SegmentsController],
-  providers: [SegmentsService, AudiencesHelper, SegmentUpdateProcessor],
-  exports: [SegmentsService],
+  providers: getProvidersList(),
+  exports: getExportList(),
 })
-export class SegmentsModule {}
+export class SegmentsModule { }
