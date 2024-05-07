@@ -9,8 +9,6 @@ import Button, { ButtonType } from "components/Elements/Buttonv2";
 import { toast } from "react-toastify";
 import StripeButton from "components/StripeButton/StripeButton";
 
-const listTimezones = getTimezonesWithOffset();
-
 
 const SubscriptionPayment = () => {
   const navigate = useNavigate();
