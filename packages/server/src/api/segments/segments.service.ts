@@ -46,7 +46,7 @@ export class SegmentsService {
     @InjectConnection() private readonly connection: mongoose.Connection,
     @InjectQueue('segment_update')
     private readonly segmentUpdateQueue: Queue,
-  ) {}
+  ) { }
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
@@ -452,7 +452,7 @@ export class SegmentsService {
         isUpdating: true,
       });
       if (segment.type === SegmentType.AUTOMATIC) {
-        await this.segmentUpdateQueue.add('create', {
+        await this.segmentUpdateQueue.add('createDynamic', {
           segment,
           createSegmentDTO,
           account,
@@ -581,74 +581,12 @@ export class SegmentsService {
 
     await this.segmentRepository.update(
       { id, workspace: { id: workspace.id } },
-      { ...updateSegmentDTO, workspace: { id: workspace.id } }
+      { ...updateSegmentDTO, workspace: { id: workspace.id }, isUpdating: true }
     );
 
-    (async () => {
-      const forDelete = await this.segmentCustomersRepository.findBy({
-        segment: id, //{ id: segment.id },
-      });
-
-      for (const { customerId } of forDelete) {
-        const customer = await this.customersService.CustomerModel.findById(
-          customerId
-        ).exec();
-        await this.updateAutomaticSegmentCustomerInclusion(
-          account,
-          customer,
-          session
-        );
-        await this.customersService.recheckDynamicInclusion(
-          account,
-          customer,
-          session
-        );
-      }
-
-      const amount = await this.customersService.CustomerModel.count({
-        workspaceId: workspace.id,
-      });
-
-      const batchOptions = {
-        current: 0,
-        documentsCount: amount || 0,
-        batchSize: 500,
-      };
-
-      while (batchOptions.current < batchOptions.documentsCount) {
-        const batch = await this.customersService.CustomerModel.find({
-          workspaceId: workspace.id,
-        })
-          .skip(batchOptions.current)
-          .limit(batchOptions.batchSize)
-          .exec();
-
-        for (const customer of batch) {
-          await this.updateAutomaticSegmentCustomerInclusion(
-            account,
-            customer,
-            session
-          );
-        }
-
-        batchOptions.current += batchOptions.batchSize;
-      }
-
-      const records = await this.segmentCustomersRepository.findBy({
-        segment: id, //{ id: segment.id },
-      });
-
-      for (const { customerId } of records) {
-        const customer = await this.customersService.CustomerModel.findById(
-          customerId
-        ).exec();
-        await this.customersService.recheckDynamicInclusion(
-          account,
-          customer,
-          session
-        );
-      }
-    })();
+    await this.segmentUpdateQueue.add('updateDynamic', {
+      account, id, updateSegmentDTO, session, workspace
+    });
   }
 
   public async delete(account: Account, id: string, session: string) {
@@ -1082,7 +1020,7 @@ export class SegmentsService {
   ) {
     /*
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
-   
+
     await this.segmentCustomersRepository.delete({
       segment:{type:SegmentType.AUTOMATIC},
       customerId: customerId,
@@ -1135,10 +1073,7 @@ export class SegmentsService {
     if (segment.type !== SegmentType.MANUAL)
       throw new BadRequestException("This segment isn't manual");
 
-    console.log("_______________________________________________")
-    console.log("here...")
-    console.log("_______________________________________________")
-    await this.segmentUpdateQueue.add('update', {
+    await this.segmentUpdateQueue.add('updateManual', {
       account,
       segment,
       csvFile,

@@ -8,7 +8,7 @@ import {
   InjectQueue,
 } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
-import { DataSource } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
 import { Account } from '../../accounts/entities/accounts.entity';
@@ -19,13 +19,17 @@ import { CreateSegmentDTO } from '../dto/create-segment.dto';
 import { InjectConnection } from '@nestjs/mongoose';
 import mongoose from 'mongoose';
 import { SegmentCustomers } from '../entities/segment-customers.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { UpdateSegmentDTO } from '../dto/update-segment.dto';
+import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
 
 @Injectable()
 @Processor('segment_update')
 export class SegmentUpdateProcessor extends WorkerHost {
   private providerMap = {
-    update: this.handleUpdate,
-    create: this.handleCreate,
+    updateDynamic: this.handleUpdateDynamic,
+    updateManual: this.handleUpdateManual,
+    createDynamic: this.handleCreateDynamic,
   };
   constructor(
     private dataSource: DataSource,
@@ -36,7 +40,9 @@ export class SegmentUpdateProcessor extends WorkerHost {
     private customersService: CustomersService,
     @InjectConnection() private readonly connection: mongoose.Connection,
     @InjectQueue('customer_change')
-    private readonly customerChangeQueue: Queue
+    private readonly customerChangeQueue: Queue,
+    @InjectRepository(SegmentCustomers)
+    private segmentCustomersRepository: Repository<SegmentCustomers>,
   ) {
     super();
   }
@@ -116,7 +122,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
     );
   }
 
-  async handleCreate(
+  async handleCreateDynamic(
     job: Job<
       {
         account: Account;
@@ -225,7 +231,128 @@ export class SegmentUpdateProcessor extends WorkerHost {
     }
   }
 
-  async handleUpdate(
+
+  async handleUpdateDynamic(
+    job: Job<
+      {
+        account: Account;
+        id: string;
+        session: string;
+        updateSegmentDTO: UpdateSegmentDTO;
+        workspace: Workspaces;
+      },
+      any,
+      string
+    >
+  ) {
+    let err: any;
+    await this.customerChangeQueue.pause();
+    while (true) {
+      const jobCounts = await this.customerChangeQueue.getJobCounts('active');
+      const activeJobs = jobCounts.active;
+
+      if (activeJobs === 0) {
+        break; // Exit the loop if the number of waiting jobs is below the threshold
+      }
+
+      this.warn(
+        `Waiting for the queue to clear. Current active jobs: ${activeJobs}`,
+        this.process.name,
+        job.data.session
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
+    }
+    const queryRunner = await this.dataSource.createQueryRunner();
+    const client = await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const segment = await this.segmentsService.findOne(job.data.account, job.data.id, job.data.session);
+      const forDelete = await this.segmentCustomersRepository.findBy({
+        segment: segment.id,
+      });
+
+      for (const { customerId } of forDelete) {
+        const customer = await this.customersService.CustomerModel.findById(
+          customerId
+        ).exec();
+        await this.segmentsService.updateAutomaticSegmentCustomerInclusion(
+          job.data.account,
+          customer,
+          job.data.session
+        );
+        await this.customersService.recheckDynamicInclusion(
+          job.data.account,
+          customer,
+          job.data.session
+        );
+      }
+
+      const amount = await this.customersService.CustomerModel.count({
+        workspaceId: job.data.workspace.id,
+      });
+
+      const batchOptions = {
+        current: 0,
+        documentsCount: amount || 0,
+        batchSize: 500,
+      };
+
+      while (batchOptions.current < batchOptions.documentsCount) {
+        const batch = await this.customersService.CustomerModel.find({
+          workspaceId: job.data.workspace.id,
+        })
+          .skip(batchOptions.current)
+          .limit(batchOptions.batchSize)
+          .exec();
+
+        for (const customer of batch) {
+          await this.segmentsService.updateAutomaticSegmentCustomerInclusion(
+            job.data.account,
+            customer,
+            job.data.session
+          );
+        }
+
+        batchOptions.current += batchOptions.batchSize;
+      }
+
+      const records = await this.segmentCustomersRepository.findBy({
+        segment: segment.id, //{ id: segment.id },
+      });
+
+      for (const { customerId } of records) {
+        const customer = await this.customersService.CustomerModel.findById(
+          customerId
+        ).exec();
+        await this.customersService.recheckDynamicInclusion(
+          job.data.account,
+          customer,
+          job.data.session
+        );
+      }
+
+      await queryRunner.manager.save(Segment, {
+        ...segment,
+        isUpdating: false,
+      });
+      await queryRunner.commitTransaction();
+    } catch (e) {
+      this.error(
+        e,
+        this.process.name,
+        job.data.session,
+        job.data.account.email
+      );
+      await queryRunner.rollbackTransaction();
+      err = e;
+    } finally {
+      await queryRunner.release();
+      await this.customerChangeQueue.resume();
+      if (err) throw err;
+    }
+  }
+
+  async handleUpdateManual(
     job: Job<
       {
         account: Account;
@@ -263,7 +390,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
     } catch (e) {
       this.error(
         e,
-        this.handleUpdate.name,
+        this.handleUpdateManual.name,
         job.data.session,
         job.data.account.email
       );
