@@ -33,6 +33,46 @@ import { JourneyLocation } from '../journeys/entities/journey-location.entity';
 import { JourneysModule } from '../journeys/journeys.module';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { Requeue } from './entities/requeue.entity';
+import { CacheService } from '@/common/services/cache.service';
+import { ExitStepProcessor } from './processors/exit.step.processor';
+import { ExperimentStepProcessor } from './processors/experiment.step.processor';
+import { JumpToStepProcessor } from './processors/jump.to.step.processor';
+import { MessageStepProcessor } from './processors/message.step.processor';
+import { MultisplitStepProcessor } from './processors/multisplit.step.processor';
+import { StartStepProcessor } from './processors/start.step.processor';
+import { TimeDelayStepProcessor } from './processors/time.delay.step.processor';
+import { TimeWindowStepProcessor } from './processors/time.window.step.processor';
+import { WaitUntilStepProcessor } from './processors/wait.until.step.processor';
+
+function getProvidersList() {
+  let providerList: Array<any> = [
+    StepsService,
+    JobsService,
+    RedlockService,
+    JourneyLocationsService,
+    CacheService
+  ];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
+    providerList = [
+      ...providerList,
+      TransitionProcessor,
+      StartProcessor,
+      EnrollmentProcessor,
+      ExitStepProcessor,
+      ExperimentStepProcessor,
+      JumpToStepProcessor,
+      MessageStepProcessor,
+      MultisplitStepProcessor,
+      StartStepProcessor,
+      TimeDelayStepProcessor,
+      TimeWindowStepProcessor,
+      WaitUntilStepProcessor,
+    ];
+  }
+
+  return providerList;
+}
 
 @Module({
   imports: [
@@ -61,6 +101,33 @@ import { Requeue } from './entities/requeue.entity';
     BullModule.registerQueue({
       name: 'start',
     }),
+    BullModule.registerQueue({
+      name: 'start.step',
+    }),
+    BullModule.registerQueue({
+      name: 'wait.until.step',
+    }),
+    BullModule.registerQueue({
+      name: 'time.window.step',
+    }),
+    BullModule.registerQueue({
+      name: 'exit.step',
+    }),
+    BullModule.registerQueue({
+      name: 'jump.to.step',
+    }),
+    BullModule.registerQueue({
+      name: 'message.step',
+    }),
+    BullModule.registerQueue({
+      name: 'time.delay.step',
+    }),
+    BullModule.registerQueue({
+      name: 'multisplit.step',
+    }),
+    BullModule.registerQueue({
+      name: 'experiment.step',
+    }),
     forwardRef(() => CustomersModule),
     forwardRef(() => WebhooksModule),
     forwardRef(() => TemplatesModule),
@@ -72,15 +139,7 @@ import { Requeue } from './entities/requeue.entity';
     forwardRef(() => JourneysModule),
     SlackModule,
   ],
-  providers: [
-    StepsService,
-    JobsService,
-    TransitionProcessor,
-    StartProcessor,
-    RedlockService,
-    JourneyLocationsService,
-    EnrollmentProcessor,
-  ],
+  providers: getProvidersList(),
   controllers: [StepsController],
   exports: [StepsService],
 })

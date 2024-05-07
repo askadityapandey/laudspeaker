@@ -5,6 +5,7 @@ import {
   HttpException,
   forwardRef,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { Correlation, CustomersService } from '../customers/customers.service';
 import { CustomerDocument } from '../customers/schemas/customer.schema';
@@ -73,6 +74,8 @@ import {
 } from '../webhooks/webhooks.service';
 import { Liquid } from 'liquidjs';
 import { cleanTagsForSending } from '@/shared/utils/helpers';
+import { randomUUID } from 'crypto';
+import * as Sentry from '@sentry/node';
 
 @Injectable()
 export class EventsService {
@@ -110,6 +113,49 @@ export class EventsService {
     @Inject(forwardRef(() => JourneysService))
     private readonly journeysService: JourneysService
   ) {
+    this.tagEngine.registerTag('api_call', {
+      parse(token) {
+        this.items = token.args.split(' ');
+      },
+      async render(ctx) {
+        const url = this.liquid.parseAndRenderSync(
+          this.items[0],
+          ctx.getAll(),
+          ctx.opts
+        );
+
+        try {
+          const res = await fetch(url, { method: 'GET' });
+
+          if (res.status !== 200)
+            throw new Error('Error while processing api_call tag');
+
+          const data = res.headers
+            .get('Content-Type')
+            .includes('application/json')
+            ? await res.json()
+            : await res.text();
+
+          if (this.items[1] === ':save' && this.items[2]) {
+            ctx.push({ [this.items[2]]: data });
+          }
+        } catch (e) {
+          throw new Error('Error while processing api_call tag');
+        }
+      },
+    });
+
+    const session = randomUUID();
+    (async () => {
+      try {
+        const collection = this.connection.db.collection('events');
+        await collection.createIndex({ event: 1, workspaceId: 1 });
+        await collection.createIndex({ correlationKey: 1, workspaceId: 1 });
+        await collection.createIndex({ correlationValue: 1, workspaceId: 1 });
+      } catch (e) {
+        this.error(e, EventsService.name, session);
+      }
+    })();
     for (const { name, property_type } of defaultEventKeys) {
       if (name && property_type) {
         this.EventKeysModel.updateOne(
@@ -921,58 +967,64 @@ export class EventsService {
 
           const messaging = admin.messaging(firebaseApp);
 
-          await messaging.send({
-            token:
-              platform === PushPlatforms.ANDROID
-                ? customer.androidDeviceToken
-                : customer.iosDeviceToken,
-            notification: {
-              title: await this.tagEngine.parseAndRender(
-                settings.title,
-                filteredTags || {},
-                {
-                  strictVariables: true,
-                }
-              ),
-              body: await this.tagEngine.parseAndRender(
-                settings.description,
-                filteredTags || {},
-                {
-                  strictVariables: true,
-                }
-              ),
-            },
-            android:
-              platform === PushPlatforms.ANDROID
-                ? {
-                    notification: {
-                      sound: 'default',
-                      imageUrl: settings?.image?.imageSrc,
-                    },
+          try {
+            await messaging.send({
+              token:
+                platform === PushPlatforms.ANDROID
+                  ? customer.androidDeviceToken
+                  : customer.iosDeviceToken,
+              notification: {
+                title: await this.tagEngine.parseAndRender(
+                  settings.title,
+                  filteredTags || {},
+                  {
+                    strictVariables: true,
                   }
-                : undefined,
-            apns:
-              platform === PushPlatforms.IOS
-                ? {
-                    payload: {
-                      aps: {
-                        badge: 1,
+                ),
+                body: await this.tagEngine.parseAndRender(
+                  settings.description,
+                  filteredTags || {},
+                  {
+                    strictVariables: true,
+                  }
+                ),
+              },
+              android:
+                platform === PushPlatforms.ANDROID
+                  ? {
+                      notification: {
                         sound: 'default',
-                        category: settings.clickBehavior?.type,
-                        contentAvailable: true,
-                        mutableContent: true,
+                        imageUrl: settings?.image?.imageSrc,
                       },
-                    },
-                    fcmOptions: {
-                      imageUrl: settings?.image?.imageSrc,
-                    },
-                  }
-                : undefined,
-            data: body.pushObject.fields.reduce((acc, field) => {
-              acc[field.key] = field.value;
-              return acc;
-            }, {}),
-          });
+                    }
+                  : undefined,
+              apns:
+                platform === PushPlatforms.IOS
+                  ? {
+                      payload: {
+                        aps: {
+                          badge: 1,
+                          sound: 'default',
+                          category: settings.clickBehavior?.type,
+                          contentAvailable: true,
+                          mutableContent: true,
+                        },
+                      },
+                      fcmOptions: {
+                        imageUrl: settings?.image?.imageSrc,
+                      },
+                    }
+                  : undefined,
+              data: body.pushObject.fields.reduce((acc, field) => {
+                acc[field.key] = field.value;
+                return acc;
+              }, {}),
+            });
+          } catch (e) {
+            if (e instanceof Error) {
+              throw new BadRequestException(e.message);
+            }
+          }
         })
     );
   }
@@ -982,66 +1034,71 @@ export class EventsService {
     MobileBatchDto: MobileBatchDto,
     session: string
   ) {
-    let err: any;
+    return Sentry.startSpan(
+      { name: 'EventsService.batch' },
+      async () => {
+        let err: any;
 
-    try {
-      for (const thisEvent of MobileBatchDto.batch) {
-        if (thisEvent.source === 'message') {
-          const clickHouseRecord: ClickHouseMessage = {
-            workspaceId: thisEvent.payload.workspaceID,
-            stepId: thisEvent.payload.stepID,
-            customerId: thisEvent.payload.customerID,
-            templateId: String(thisEvent.payload.templateID),
-            messageId: thisEvent.payload.messageID,
-            event: thisEvent.event === '$delivered' ? 'delivered' : 'opened',
-            eventProvider: ClickHouseEventProvider.PUSH,
-            processed: false,
-            createdAt: new Date().toISOString(),
-          };
-          await this.webhooksService.insertMessageStatusToClickhouse(
-            [clickHouseRecord],
-            session
-          );
-        } else {
-          switch (thisEvent.event) {
-            case '$identify':
-              this.debug(
-                `Handling $identify event for correlationKey: ${thisEvent.correlationValue}`,
-                this.batch.name,
-                session,
-                auth.account.id
-              );
-              await this.handleIdentify(auth, thisEvent, session);
-              break;
-            case '$set':
-              this.debug(
-                `Handling $set event for correlationKey: ${thisEvent.correlationValue}`,
-                this.batch.name,
-                session,
-                auth.account.id
-              );
-              await this.handleSet(auth, thisEvent, session);
-              break;
-            default:
-              await this.customPayload(
-                { account: auth.account, workspace: auth.workspace },
-                thisEvent,
+        try {
+          for (const thisEvent of MobileBatchDto.batch) {
+            if (thisEvent.source === 'message') {
+              const clickHouseRecord: ClickHouseMessage = {
+                workspaceId: thisEvent.payload.workspaceID,
+                stepId: thisEvent.payload.stepID,
+                customerId: thisEvent.payload.customerID,
+                templateId: String(thisEvent.payload.templateID),
+                messageId: thisEvent.payload.messageID,
+                event: thisEvent.event === '$delivered' ? 'delivered' : 'opened',
+                eventProvider: ClickHouseEventProvider.PUSH,
+                processed: false,
+                createdAt: new Date().toISOString(),
+              };
+              await this.webhooksService.insertMessageStatusToClickhouse(
+                [clickHouseRecord],
                 session
               );
-              if (!thisEvent.correlationValue) {
-                throw new Error('correlation value is empty');
+            } else {
+              switch (thisEvent.event) {
+                case '$identify':
+                  this.debug(
+                    `Handling $identify event for correlationKey: ${thisEvent.correlationValue}`,
+                    this.batch.name,
+                    session,
+                    auth.account.id
+                  );
+                  await this.handleIdentify(auth, thisEvent, session);
+                  break;
+                case '$set':
+                  this.debug(
+                    `Handling $set event for correlationKey: ${thisEvent.correlationValue}`,
+                    this.batch.name,
+                    session,
+                    auth.account.id
+                  );
+                  await this.handleSet(auth, thisEvent, session);
+                  break;
+                default:
+                  await this.customPayload(
+                    { account: auth.account, workspace: auth.workspace },
+                    thisEvent,
+                    session
+                  );
+                  if (!thisEvent.correlationValue) {
+                    throw new Error('correlation value is empty');
+                  }
+                  break;
               }
-              break;
+            }
           }
+          //}
+        } catch (e) {
+          this.error(e, this.batch.name, session, auth.account.email);
+          err = e;
+        } finally {
+          if (err) throw err;
         }
       }
-      //}
-    } catch (e) {
-      this.error(e, this.batch.name, session);
-      err = e;
-    } finally {
-      if (err) throw err;
-    }
+    );
   }
 
   async handleSet(
@@ -1192,32 +1249,59 @@ export class EventsService {
     let customer;
     let findType;
 
+    const findConditions: Array<Object> = [];
+
     // Try to find by primary key if provided
     if (primaryKeyValue) {
-      customer = await this.customersService.CustomerModel.findOne({
+      findConditions.push({
         [primaryKeyName]: primaryKeyValue,
         workspaceId,
       });
-      if (customer) findType = 1;
     }
 
-    // If not found by primary key, try finding by _id
-    if (!customer && event.correlationValue) {
-      customer = await this.customersService.CustomerModel.findOne({
+    if (event.correlationValue) {
+      findConditions.push({
         _id: event.correlationValue,
         workspaceId,
-      });
-
-      if (customer) findType = 2;
-    }
-
-    // If still not found, try finding by other_ids array containing the correlationValue
-    if (!customer && event.correlationValue) {
-      customer = await this.customersService.CustomerModel.findOne({
-        other_ids: { $in: [event.correlationValue] },
+      }, {
+        other_ids: event.correlationValue,
         workspaceId,
       });
-      if (customer) findType = 3;
+    }
+
+    let customers = await this.customersService.CustomerModel.find({
+      $or: findConditions
+    });
+
+    for(let findTypeIndex = 1; findTypeIndex <= 3; findTypeIndex++) {
+      for(let i = 0; i < customers.length; i++) {
+        if (findTypeIndex == 1 && primaryKeyName && customers[i][primaryKeyName] == primaryKeyValue) {
+          findType = 1;
+          customer = customers[i];
+
+          break;
+        }
+        else if (findTypeIndex == 2 && customers[i]._id == event.correlationValue) {
+          findType = 2;
+          customer = customers[i];
+
+          break;
+        }
+        else if (findTypeIndex == 3 && event.correlationValue && customers[i].other_ids.includes(event.correlationValue.toString())) {
+          findType = 3;
+          customer = customers[i];
+
+          break;
+        }
+      }
+
+      if(findType == findTypeIndex)
+        break;
+    }
+
+    // our conditions were not inclusive, something's wrong
+    if (customers.length > 0 && !customer) {
+      this.error("MongoDB returned multiple customers but could not select one of them", this.findOrCreateCustomer.name, session);
     }
 
     // If customer still not found, create a new one

@@ -30,6 +30,42 @@ import { Segment } from '../segments/entities/segment.entity';
 import { SegmentCustomers } from '../segments/entities/segment-customers.entity';
 import { CustomerChangeProcessor } from './processors/customers.processor';
 
+function getProvidersList() {
+  let providerList: Array<any> = [
+    CustomersService,
+    AudiencesHelper,
+    S3Service,
+    JourneyLocationsService,
+  ];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
+    providerList = [
+      ...providerList,
+      CustomersProcessor,
+      ImportProcessor,
+      CustomersConsumerService,
+      CustomerChangeProcessor,
+    ];
+  }
+
+  return providerList;
+}
+
+function getExportsList() {
+  let exportList: Array<any> = [
+    CustomersService,
+  ];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
+    exportList = [
+      ...exportList,
+      CustomersConsumerService,
+    ];
+  }
+
+  return exportList;
+}
+
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -67,16 +103,7 @@ import { CustomerChangeProcessor } from './processors/customers.processor';
     JourneysModule,
   ],
   controllers: [CustomersController],
-  providers: [
-    CustomersService,
-    AudiencesHelper,
-    CustomersConsumerService,
-    S3Service,
-    ImportProcessor,
-    JourneyLocationsService,
-    CustomerChangeProcessor,
-  ],
-
-  exports: [CustomersService, CustomersConsumerService],
+  providers: getProvidersList(),
+  exports: getExportsList(),
 })
 export class CustomersModule {}
