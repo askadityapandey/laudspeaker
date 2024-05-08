@@ -132,3 +132,8 @@ export interface Workflow {
   latestChangerEmail?: string;
   enrolledCustomers?: number;
 }
+
+export interface JourneyResult {
+  entity: Workflow;
+  computed: Record<string, any>;
+}
