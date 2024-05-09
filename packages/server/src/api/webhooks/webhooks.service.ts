@@ -475,4 +475,37 @@ export class WebhooksService {
       }
     );
   }
+
+  public async processStripePayment(req: any, body: any, session: string) {
+    const step = await this.stepRepository.findOne({
+      where: {
+        id: body.data.tags.stepId,
+      },
+      relations: ['workspace'],
+    });
+
+    const payload = req.rawBody.toString('utf8');
+    const headers = req.headers;
+
+    const webhook = new Webhook(step.workspace.resendSigningSecret);
+
+    try {
+      const event: any = webhook.verify(payload, headers);
+      const clickHouseRecord: ClickHouseMessage = {
+        workspaceId: step.workspace.id,
+        stepId: event.data.tags.stepId,
+        customerId: event.data.tags.customerId,
+        templateId: String(event.data.tags.templateId),
+        messageId: event.data.email_id,
+        event: event.type.replace('email.', ''),
+        eventProvider: ClickHouseEventProvider.RESEND,
+        processed: false,
+        createdAt: new Date().toISOString(),
+      };
+      await this.insertMessageStatusToClickhouse([clickHouseRecord], session);
+    } catch (e) {
+      throw new ForbiddenException(e, 'Invalid signature');
+    }
+  }
+
 }

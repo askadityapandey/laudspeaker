@@ -146,4 +146,14 @@ export class WebhooksController {
     const session = randomUUID();
     await this.webhooksService.processResendData(request, body, session);
   }
+
+  @Post('stripe-payment')
+  @UseInterceptors(new RavenInterceptor())
+  public async processStripePayment(
+    @Req() request: RawBodyRequest<Request>,
+    @Body() body: any
+  ) {
+    const session = randomUUID();
+    await this.webhooksService.processResendData(request, body, session);
+  }
 }

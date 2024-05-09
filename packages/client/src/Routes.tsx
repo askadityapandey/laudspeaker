@@ -64,6 +64,7 @@ import ManualSegmentCreator from "pages/ManualSegmentCreator";
 import SegmentViewer from "pages/SegmentViewer";
 import DataTransferTable from "pages/DataTransferTable";
 import DataTransfer from "pages/DataTransfer";
+import SubscriptionPayment from "pages/SubscriptionPayment/SubscriptionPayment";
 
 interface IProtected {
   children: ReactElement;
@@ -321,6 +322,17 @@ const RouteComponent: React.FC = () => {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/reset-password/:id" element={<ResetPassword />} />
         <Route path="/company-setup" element={<CompanySetup />} />
+        <Route
+          path="/payment-gate"
+          element={
+            <Protected>
+              <VerificationProtected>
+                <SubscriptionPayment />
+              </VerificationProtected>
+            </Protected>
+          }
+        />
+        <Route path="/payment-gate2" element={<SubscriptionPayment />} />
         <Route
           path="/flow"
           element={
