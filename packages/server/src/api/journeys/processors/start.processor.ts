@@ -25,6 +25,15 @@ const BATCH_SIZE = +process.env.START_BATCH_SIZE;
 
 @Injectable()
 @Processor('start', {
+  stalledInterval: process.env.START_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.START_PROCESSOR_STALLED_INTERVAL
+    : 600000,
+  removeOnComplete: {
+    age: 0,
+    count: process.env.START_PROCESSOR_REMOVE_ON_COMPLETE
+      ? +process.env.START_PROCESSOR_REMOVE_ON_COMPLETE
+      : 0,
+  },
   metrics: {
     maxDataPoints: MetricsTime.ONE_WEEK,
   },
@@ -37,7 +46,7 @@ export class StartProcessor extends WorkerHost {
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('transition') private readonly transitionQueue: Queue,
+    @InjectQueue('start.step') private readonly startStepQueue: Queue,
     @InjectQueue('start') private readonly startQueue: Queue,
     @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(CustomersService)
@@ -180,7 +189,7 @@ export class StartProcessor extends WorkerHost {
           null
         );
         await queryRunner.commitTransaction();
-        if (jobs && jobs.length) await this.transitionQueue.addBulk(jobs);
+        if (jobs && jobs.length) await this.startStepQueue.addBulk(jobs);
       } catch (e) {
         this.error(e, this.process.name, job.data.session, job.data.owner.id);
         await queryRunner.rollbackTransaction();

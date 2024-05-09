@@ -84,6 +84,7 @@ import { RedisService } from '@liaoliaots/nestjs-redis';
 import { JourneyChange } from './entities/journey-change.entity';
 import isObjectDeepEqual from '@/utils/isObjectDeepEqual';
 import { JourneyLocation } from './entities/journey-location.entity';
+import { CacheService } from '@/common/services/cache.service';
 
 export enum JourneyStatus {
   ACTIVE = 'Active',
@@ -247,7 +248,8 @@ export class JourneysService {
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @Inject(RedisService) private redisService: RedisService,
-    @InjectQueue('enrollment') private readonly enrollmentQueue: Queue
+    @InjectQueue('enrollment') private readonly enrollmentQueue: Queue,
+    @Inject(CacheService) private cacheService: CacheService
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -1408,6 +1410,9 @@ export class JourneysService {
         }
       );
       await this.trackChange(account, id);
+
+      await this.cleanupJourneyCache({ workspaceId: workspace.id });
+
       return result;
     } catch (err) {
       this.error(err, this.markDeleted.name, session, account.email);
@@ -1457,6 +1462,8 @@ export class JourneysService {
 
       await this.trackChange(account, journeyResult.id);
 
+      await this.cleanupJourneyCache({ workspaceId: workspace.id });
+
       return journeyResult;
     } catch (error) {
       this.error(error, this.setPaused.name, session, account.email);
@@ -1499,6 +1506,8 @@ export class JourneysService {
           HttpStatus.PAYMENT_REQUIRED
         );
       }
+
+      await this.cleanupJourneyCache({ workspaceId: workspace.id });
 
       journey = await queryRunner.manager.findOne(Journey, {
         where: {
@@ -1549,13 +1558,6 @@ export class JourneysService {
       if (!alg.isAcyclic(graph))
         throw new Error('Flow has infinite loops, cannot start.');
 
-      const { collectionName, count } =
-        await this.customersService.getAudienceSize(
-          account,
-          journey.inclusionCriteria,
-          session,
-          null
-        );
       if (
         journey.journeyEntrySettings.entryTiming.type ===
         EntryTiming.WhenPublished
@@ -1582,8 +1584,6 @@ export class JourneysService {
       await this.enrollmentQueue.add('enroll', {
         account,
         journey,
-        count,
-        collectionName,
         session,
       });
     } catch (e) {
@@ -1623,6 +1623,8 @@ export class JourneysService {
       });
 
       await this.trackChange(account, journeyResult.id);
+
+      await this.cleanupJourneyCache({ workspaceId: workspace.id });
     } catch (err) {
       this.error(err, this.stop.name, session, account.email);
       throw err;
@@ -2732,5 +2734,12 @@ export class JourneysService {
       changedState: journey,
       previousChange: previousChange ? { id: previousChange.id } : undefined,
     });
+  }
+
+  async cleanupJourneyCache(data: { workspaceId: string }) {
+    // invalidate journeys cache entry set in eventPreprocessor
+    if (data.workspaceId) {
+      await this.cacheService.delete('Journeys', data.workspaceId);
+    }
   }
 }

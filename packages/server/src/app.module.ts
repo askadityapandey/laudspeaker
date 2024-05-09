@@ -61,6 +61,7 @@ import { OrganizationsModule } from './api/organizations/organizations.module';
 import { OrganizationInvites } from './api/organizations/entities/organization-invites.entity';
 import { redisStore } from 'cache-manager-redis-yet';
 import { CacheModule } from '@nestjs/cache-manager';
+import { HealthCheckService } from './app.healthcheck.service';
 
 const sensitiveKeys = [
   /cookie/i,
@@ -96,6 +97,23 @@ function redact(obj) {
   return copy;
 }
 
+function getProvidersList() {
+  let providerList: Array<any> = [
+    RedlockService,
+    JourneyLocationsService,
+    HealthCheckService
+  ];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "CRON") {
+    providerList = [
+      ...providerList,
+      CronService,
+    ];
+  }
+
+  return providerList;
+}
+
 const myFormat = winston.format.printf(function ({
   timestamp,
   context,
@@ -107,7 +125,7 @@ const myFormat = winston.format.printf(function ({
   try {
     ctx = JSON.parse(context);
   } catch (e) {}
-  return `[${timestamp}] [${level}]${
+  return `[${timestamp}] [${level}] [${process.env.LAUDSPEAKER_PROCESS_TYPE}]${
     ctx?.class ? ' [Class: ' + ctx?.class + ']' : ''
   }${ctx?.method ? ' [Method: ' + ctx?.method + ']' : ''}${
     ctx?.session ? ' [User: ' + ctx?.user + ']' : ''
@@ -153,8 +171,10 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
     CacheModule.registerAsync({
       isGlobal: true,
       useFactory: async () => ({
-        ttl: 5000,
         store: await redisStore({
+          ttl: process.env.REDIS_CACHE_TTL
+            ? +process.env.REDIS_CACHE_TTL
+            : 5000,
           url: `redis://default:${process.env.REDIS_PASSWORD}@${
             process.env.REDIS_HOST
           }:${parseInt(process.env.REDIS_PORT)}`,
@@ -240,6 +260,21 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
     BullModule.registerQueue({
       name: 'start',
     }),
+    BullModule.registerQueue({
+      name: 'wait.until.step',
+    }),
+    BullModule.registerQueue({
+      name: 'time.delay.step',
+    }),
+    BullModule.registerQueue({
+      name: 'time.window.step',
+    }),
+    BullModule.registerQueue({
+      name: 'customer_change',
+    }),
+    BullModule.registerQueue({
+      name: 'segment_update',
+    }),
     IntegrationsModule,
     CustomersModule,
     TemplatesModule,
@@ -258,7 +293,7 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
     OrganizationsModule,
   ],
   controllers: [AppController],
-  providers: [CronService, RedlockService, JourneyLocationsService],
+  providers: getProvidersList(),
 })
 export class AppModule {
   configure(consumer: MiddlewareConsumer) {

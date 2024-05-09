@@ -30,6 +30,7 @@ import * as Sentry from '@sentry/node';
 import { JourneyLocationsService } from '../journeys/journey-locations.service';
 import { Workspace } from 'aws-sdk/clients/workspaces';
 import { InjectRepository } from '@nestjs/typeorm';
+import { CacheService } from '@/common/services/cache.service';
 
 export enum EventType {
   EVENT = 'event',
@@ -39,6 +40,15 @@ export enum EventType {
 
 @Injectable()
 @Processor('events', {
+  stalledInterval: process.env.EVENTS_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.EVENTS_PROCESSOR_STALLED_INTERVAL
+    : 600000,
+  removeOnComplete: {
+    age: 0,
+    count: process.env.EVENTS_PROCESSOR_REMOVE_ON_COMPLETE
+      ? +process.env.EVENTS_PROCESSOR_REMOVE_ON_COMPLETE
+      : 0,
+  },
   metrics: {
     maxDataPoints: MetricsTime.ONE_WEEK,
   },
@@ -65,10 +75,11 @@ export class EventsProcessor extends WorkerHost {
     private readonly audiencesHelper: AudiencesHelper,
     @Inject(WebsocketGateway)
     private websocketGateway: WebsocketGateway,
-    @InjectQueue('transition') private readonly transitionQueue: Queue,
+    @InjectQueue('wait.until.step') private readonly waitUntilStepQueue: Queue,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
-    @InjectRepository(Step) private readonly stepsRepository: Repository<Step>
+    @InjectRepository(Step) private readonly stepsRepository: Repository<Step>,
+    @Inject(CacheService) private cacheService: CacheService
   ) {
     super();
   }
@@ -200,15 +211,22 @@ export class EventsProcessor extends WorkerHost {
       job.data.account
     );
     // All steps in `journey` that might be listening for this event
-    const steps = (
-      await this.stepsRepository.find({
-        where: {
-          type: StepType.WAIT_UNTIL_BRANCH,
-          journey: { id: job.data.journey.id },
-        },
-        relations: ['workspace.organization.owner', 'journey'],
-      })
-    ).filter((el) => el?.metadata?.branches !== undefined);
+    const steps = await this.cacheService.get(
+      'WaitUntilSteps',
+      job.data.journey.id,
+      async () => {
+        return (
+          await this.stepsRepository.find({
+            where: {
+              type: StepType.WAIT_UNTIL_BRANCH,
+              journey: { id: job.data.journey.id },
+            },
+            relations: ['workspace.organization.owner', 'journey'],
+          })
+        ).filter((el) => el?.metadata?.branches !== undefined);
+      }
+    );
+
     for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
       for (
         let branchIndex = 0;
@@ -483,7 +501,7 @@ export class EventsProcessor extends WorkerHost {
         }
       }
       if (stepToQueue) {
-        await this.transitionQueue.add(stepToQueue.type, {
+        await this.waitUntilStepQueue.add(stepToQueue.type, {
           step: stepToQueue,
           branch: branch,
           customer: job.data.customer,

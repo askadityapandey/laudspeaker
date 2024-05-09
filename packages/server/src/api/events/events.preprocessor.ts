@@ -33,6 +33,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { EventsService } from './events.service';
+import { CacheService } from '@/common/services/cache.service';
 
 export enum ProviderType {
   LAUDSPEAKER = 'laudspeaker',
@@ -42,6 +43,15 @@ export enum ProviderType {
 
 @Injectable()
 @Processor('events_pre', {
+  stalledInterval: process.env.EVENTS_PRE_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.EVENTS_PRE_PROCESSOR_STALLED_INTERVAL
+    : 600000,
+  removeOnComplete: {
+    age: 0,
+    count: process.env.EVENTS_PRE_PROCESSOR_REMOVE_ON_COMPLETE
+      ? +process.env.EVENTS_PRE_PROCESSOR_REMOVE_ON_COMPLETE
+      : 0,
+  },
   metrics: {
     maxDataPoints: MetricsTime.ONE_WEEK,
   },
@@ -70,7 +80,8 @@ export class EventsPreProcessor extends WorkerHost {
     private eventModel: Model<EventDocument>,
     @InjectQueue('events') private readonly eventsQueue: Queue,
     @InjectRepository(Journey)
-    private readonly journeysRepository: Repository<Journey>
+    private readonly journeysRepository: Repository<Journey>,
+    @Inject(CacheService) private cacheService: CacheService
   ) {
     super();
   }
@@ -158,8 +169,6 @@ export class EventsPreProcessor extends WorkerHost {
       any
     >
   ): Promise<any> {
-    const transactionSession = await this.connection.startSession();
-    transactionSession.startTransaction();
     let err: any;
     try {
       //find customer associated with event or create new customer if not found
@@ -178,59 +187,57 @@ export class EventsPreProcessor extends WorkerHost {
       //console.timeEnd(`handleCustom - findOrCreateCustomer ${job.data.session}`)
       //get all the journeys that are active, and pipe events to each journey in case they are listening for event
       //console.time(`handleCustom - find journeys ${job.data.session}`)
-      const journeys = await this.journeysRepository.find({
-        where: {
-          workspace: {
-            id: job.data.workspace.id,
-          },
-          isActive: true,
-          isPaused: false,
-          isStopped: false,
-          isDeleted: false,
-        },
-      });
+      let journeys: Journey[] = await this.cacheService.get(
+        'Journeys',
+        job.data.workspace.id,
+        async () => {
+          return await this.journeysRepository.find({
+            where: {
+              workspace: {
+                id: job.data.workspace.id,
+              },
+              isActive: true,
+              isPaused: false,
+              isStopped: false,
+              isDeleted: false,
+            },
+          });
+        }
+      );
+
       //console.timeEnd(`handleCustom - find journeys ${job.data.session}`)
       // add event to event database for visibility
       if (job.data.event) {
         //console.time(`handleCustom - create event ${job.data.session}`)
-        await this.eventModel.create(
-          [
-            {
-              ...job.data.event,
-              workspaceId: job.data.workspace.id,
-              createdAt: new Date().toISOString(),
-            },
-          ],
-          { session: transactionSession }
-        );
+        await this.eventModel.create([
+          {
+            ...job.data.event,
+            workspaceId: job.data.workspace.id,
+            createdAt: new Date().toISOString(),
+          },
+        ]);
         //console.timeEnd(`handleCustom - create event ${job.data.session}`)
       }
 
-      await transactionSession.commitTransaction();
-
       // Always add jobs after committing transactions, otherwise there could be race conditions
-      for (let i = 0; i < journeys.length; i++) {
-        //console.time(`handleCustom - adding to queue ${job.data.session}`)
-        await this.eventsQueue.add(
-          EventType.EVENT,
-          {
-            account: job.data.owner,
-            workspace: job.data.workspace,
-            event: job.data.event,
-            journey: journeys[i],
-            customer: customer,
-            session: job.data.session,
-          },
-          {
-            attempts: Number.MAX_SAFE_INTEGER,
-            backoff: { type: 'fixed', delay: 1000 },
-          }
-        );
-        //console.timeEnd(`handleCustom - adding to queue ${job.data.session}`)
-      }
+      let eventJobs = journeys.map((journey) => ({
+        name: EventType.EVENT,
+        data: {
+          account: job.data.owner,
+          workspace: job.data.workspace,
+          event: job.data.event,
+          journey: journey,
+          customer: customer,
+          session: job.data.session,
+        },
+        opts: {
+          attempts: Number.MAX_SAFE_INTEGER,
+          backoff: { type: 'fixed', delay: 1000 },
+        },
+      }));
+
+      await this.eventsQueue.addBulk(eventJobs);
     } catch (e) {
-      if (transactionSession.inTransaction())
-        transactionSession.abortTransaction();
       this.error(
         e,
         this.handleCustom.name,
@@ -238,9 +245,8 @@ export class EventsPreProcessor extends WorkerHost {
         job.data.owner.email
       );
       err = e;
-    } finally {
-      await transactionSession.endSession();
     }
+
     if (err?.code === 11000) {
       this.warn(
         `${JSON.stringify({

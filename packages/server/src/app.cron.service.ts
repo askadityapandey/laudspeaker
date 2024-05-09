@@ -120,6 +120,9 @@ export class CronService {
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(JourneyLocationsService)
     private journeyLocationsService: JourneyLocationsService,
+    @InjectQueue('wait.until.step') private readonly waitUntilStepQueue: Queue,
+    @InjectQueue('time.delay.step') private readonly timeDelayStep: Queue,
+    @InjectQueue('time.window.step') private readonly timeWindowStep: Queue,
     @InjectQueue('transition') private readonly transitionQueue: Queue,
     @InjectQueue('start') private readonly startQueue: Queue,
     @Inject(RedlockService)
@@ -502,7 +505,23 @@ export class CronService {
       } finally {
         await queryRunner.release();
       }
-      if (!timeBasedErr) await this.transitionQueue.addBulk(timeBasedJobs);
+      if (!timeBasedErr) {
+        await this.waitUntilStepQueue.addBulk(
+          timeBasedJobs.filter((job) => {
+            return job.name === String(StepType.WAIT_UNTIL_BRANCH);
+          })
+        );
+        await this.timeDelayStep.addBulk(
+          timeBasedJobs.filter((job) => {
+            return job.name === String(StepType.TIME_DELAY);
+          })
+        );
+        await this.timeWindowStep.addBulk(
+          timeBasedJobs.filter((job) => {
+            return job.name === String(StepType.TIME_WINDOW);
+          })
+        );
+      }
 
       // Handle expiry of recovery emails
       let recoveryErr: any;
@@ -622,6 +641,7 @@ export class CronService {
     return Sentry.startSpan(
       { name: 'CronService.handleEventKeysCron' },
       async () => {
+        if (process.env.ENABLE_HANDLEEVENTKEYSCRON !== 'true') return;
         const session = randomUUID();
         try {
           let current = 0;
@@ -1314,6 +1334,22 @@ export class CronService {
     );
   }
 
+  /*
+   * Helper for clean up
+   */
+  async deleteCollectionIfNeeded(collectionName) {
+    if (collectionName.includes('_FullDetails')) {
+      // Remove '_FullDetails' from the collection name
+      const modifiedCollectionName = collectionName.replace('_FullDetails', '');
+      await this.segmentsService.deleteCollectionsWithPrefix(
+        modifiedCollectionName
+      );
+    } else {
+      // If '_FullDetails' is not part of the name, use the original collection name
+      await this.segmentsService.deleteCollectionsWithPrefix(collectionName);
+    }
+  }
+
   @Cron(CronExpression.EVERY_MINUTE)
   async handleEntryTiming() {
     return Sentry.startSpan(
@@ -1427,8 +1463,8 @@ export class CronService {
                 session,
                 collectionName
               );
-              // if (triggerStartTasks.collectionName)
-              //   collectionNames.push(triggerStartTasks.collectionName);
+              // drop the collections after adding customer segments
+              await this.deleteCollectionIfNeeded(collectionName);
             }
           }
           await queryRunner.commitTransaction();
