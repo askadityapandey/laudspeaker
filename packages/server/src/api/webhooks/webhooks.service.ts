@@ -27,6 +27,8 @@ import { Webhook } from 'svix';
 import fetch from 'node-fetch'; // Ensure you have node-fetch if you're using Node.js
 import { ProviderType } from '../events/events.preprocessor';
 import * as Sentry from '@sentry/node';
+import Stripe from 'stripe';
+
 
 export enum ClickHouseEventProvider {
   MAILGUN = 'mailgun',
@@ -68,6 +70,8 @@ export class WebhooksService {
     click: 'clicked',
     open: 'opened',
   };
+
+  private stripeClient = new Stripe.Stripe(process.env.STRIPE_SECRET_KEY);
 
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -475,36 +479,47 @@ export class WebhooksService {
     );
   }
 
-  public async processStripePayment(req: any, body: any, session: string) {
-    const step = await this.stepRepository.findOne({
-      where: {
-        id: body.data.tags.stepId,
-      },
-      relations: ['workspace'],
-    });
+  public async processStripePayment(payload: Buffer, signature: string, session: string): Promise<any> {
+    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-    const payload = req.rawBody.toString('utf8');
-    const headers = req.headers;
-
-    const webhook = new Webhook(step.workspace.resendSigningSecret);
+    let event: Stripe.Event;
+    try {
+      // Verify the event by constructing it using the Stripe library
+      event = this.stripeClient.webhooks.constructEvent(payload, signature, endpointSecret);
+    } catch (err) {
+      // If the event is unverified, throw an error with a suggestion to retry
+      //throw new HttpException('Webhook Error: Unable to verify Stripe signature.', HttpStatus.BAD_REQUEST);
+    }
 
     try {
-      const event: any = webhook.verify(payload, headers);
-      const clickHouseRecord: ClickHouseMessage = {
-        workspaceId: step.workspace.id,
-        stepId: event.data.tags.stepId,
-        customerId: event.data.tags.customerId,
-        templateId: String(event.data.tags.templateId),
-        messageId: event.data.email_id,
-        event: event.type.replace('email.', ''),
-        eventProvider: ClickHouseEventProvider.RESEND,
-        processed: false,
-        createdAt: new Date().toISOString(),
-      };
-      await this.insertMessageStatusToClickhouse([clickHouseRecord], session);
-    } catch (e) {
-      throw new ForbiddenException(e, 'Invalid signature');
+      // Handle the verified event type
+      switch (event.type) {
+        case 'payment_intent.succeeded':
+          const paymentIntent: Stripe.PaymentIntent = event.data.object as Stripe.PaymentIntent;
+          //this.handlePaymentIntentSucceeded(paymentIntent);
+          break;
+        case 'payment_intent.payment_failed':
+          const paymentIntentFailed: Stripe.PaymentIntent = event.data.object as Stripe.PaymentIntent;
+          //this.handlePaymentIntentFailed(paymentIntentFailed);
+          break;
+        // Add more handlers as necessary
+        case 'checkout.session.completed':
+          console.log('this is the event we care about');
+          /*
+           * we now update the account info with paid
+           */
+          //this.handlePaymentIntentFailed(paymentIntentFailed);
+          break;
+        default:
+          console.log(`Unhandled event type: ${event.type}`);
+      }
+    } catch (err) {
+      // Handle errors that arise during event processing
+      // throw new HttpException(`Webhook Handler Error: ${err.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
+    // Return a generic response or something more specific if you prefer
+    return { received: true };
   }
 
 }

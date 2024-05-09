@@ -96,7 +96,7 @@ const SubscriptionPayment = () => {
         </div>
         <div className="mt-14 p-10 rounded-xl bg-white">
           <div className="text-[#111827] text-3xl font-roboto font-medium mb-5">
-            You selected the start up plan
+            You selected the start up plan!
           </div>
           <StripeButton />
         </div>

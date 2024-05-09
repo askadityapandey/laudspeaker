@@ -4,16 +4,22 @@ import {
   Logger,
   Post,
   Req,
+  Res,
   Inject,
   Query,
   UseInterceptors,
   RawBodyRequest,
+  HttpStatus,
+  HttpCode,
+  Headers,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { WebhooksService } from './webhooks.service';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { randomUUID } from 'crypto';
 import { RavenInterceptor } from 'nest-raven';
+import { raw } from 'body-parser'; // Ensure you're using raw body parser for Stripe webhooks
+
 
 @Controller('webhooks')
 export class WebhooksController {
@@ -147,13 +153,24 @@ export class WebhooksController {
     await this.webhooksService.processResendData(request, body, session);
   }
 
-  @Post('stripe-payment')
+  @Post('stripe')
+  @HttpCode(HttpStatus.OK) // Always respond quickly to webhook events
   @UseInterceptors(new RavenInterceptor())
-  public async processStripePayment(
-    @Req() request: RawBodyRequest<Request>,
-    @Body() body: any
+  public async handleStripeWebhook(
+    @Req() req: any,
+    @Res() res: Response,
   ) {
     const session = randomUUID();
-    await this.webhooksService.processResendData(request, body, session);
+    const signature = req.headers['stripe-signature'];
+    const payload = req.rawBody
+    //const payload = req.body; // Directly accessing raw buffer
+
+    try {
+      // Assuming `processStripeEvent` expects a raw buffer and a signature
+      const event = await this.webhooksService.processStripePayment(payload, signature, session);
+      res.status(200).json({ received: true });
+    } catch (error) {
+      res.status(400).json({ error: error});
+    }
   }
 }
