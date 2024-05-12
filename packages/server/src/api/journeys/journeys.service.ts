@@ -85,6 +85,7 @@ import isObjectDeepEqual from '@/utils/isObjectDeepEqual';
 import { JourneyLocation } from './entities/journey-location.entity';
 import { CacheService } from '@/common/services/cache.service';
 import { EntityComputedFieldsHelper } from '@/common/helper/entityComputedFields.helper';
+import { EntityWithComputedFields } from '@/common/entities/entityWithComputedFields.entity';
 
 export enum JourneyStatus {
   ACTIVE = 'Active',
@@ -932,7 +933,7 @@ export class JourneysService {
     showDisabled?: boolean,
     search = '',
     filterStatusesString = ''
-  ): Promise<{ data: EntityComputedFieldsHelper[]; totalPages: number }> {
+  ): Promise<{ data: EntityWithComputedFields<Journey>[]; totalPages: number }> {
     try {
       const filterStatusesParts = filterStatusesString.split(',');
       const isActive = filterStatusesParts.includes(JourneyStatus.ACTIVE);
@@ -1019,7 +1020,6 @@ export class JourneysService {
         query = query.addOrderBy(`journey.${orderBy}`, orderType == 'desc' ? 'DESC' : 'ASC')
 
       const journeys = await query.getRawAndEntities();
-
       const computedFieldsList = ['latestChangerEmail', 'totalEnrolled'];
 
       const result = EntityComputedFieldsHelper.processCollection<Journey>(journeys, computedFieldsList);

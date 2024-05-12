@@ -133,7 +133,7 @@ export interface Workflow {
   enrolledCustomers?: number;
 }
 
-export interface JourneyResult {
-  entity: Workflow;
+export interface EntityWithComputedFields<T> {
+  entity: T;
   computed: Record<string, any>;
 }

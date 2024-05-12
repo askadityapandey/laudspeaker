@@ -8,8 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useDebounce } from "react-use";
 import ApiService from "services/api.service";
-import { Workflow } from "types/Workflow";
-import { JourneyResult } from "types/Workflow";
+import { Workflow, EntityWithComputedFields } from "types/Workflow";
 import NameJourneyModal from "./Modals/NameJourneyModal";
 import searchIconImage from "./svg/search-icon.svg";
 import threeDotsIcon from "./svg/three-dots-icon.svg";
@@ -136,7 +135,7 @@ const JourneyTablev2 = () => {
     try {
       const {
         data: { data, totalPages },
-      } = await ApiService.get<{ data: JourneyResult[]; totalPages: number }>({
+      } = await ApiService.get<{ data: EntityWithComputedFields<Workflow>[]; totalPages: number }>({
         url: `/journeys?take=${ITEMS_PER_PAGE}&skip=${
           (currentPage - 1) * ITEMS_PER_PAGE
         }&search=${search}&orderBy=${sortOptions.sortBy}&orderType=${
@@ -153,7 +152,7 @@ const JourneyTablev2 = () => {
       setRows(
         data.map((journeyResult) => {
           const journey = journeyResult.entity;
-          const computed = journeyResult.computed;
+          const { computed } = journeyResult;
 
           let status: JourneyStatus = JourneyStatus.DRAFT;
 
