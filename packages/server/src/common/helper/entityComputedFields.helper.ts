@@ -1,7 +1,9 @@
 import { EntityWithComputedFields } from '@/common/entities/entityWithComputedFields.entity';
 
 export class EntityComputedFieldsHelper {
-  public static processCollection<T>(collection, computedFieldNames) {
+  public static processCollection<T>(
+    collection: {entities: any[], raw: any[]},
+    computedFieldNames: string[]): EntityWithComputedFields<T>[] {
     const result: EntityWithComputedFields<T>[] = [];
 
     for(var i = 0; i < collection.entities.length; i++) {
