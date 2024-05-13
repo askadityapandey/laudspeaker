@@ -7,7 +7,7 @@ import {
   OnWorkerEvent,
   InjectQueue,
 } from '@nestjs/bullmq';
-import { Job, Queue } from 'bullmq';
+import { Job, MetricsTime, Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
@@ -22,9 +22,26 @@ import { SegmentCustomers } from '../entities/segment-customers.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UpdateSegmentDTO } from '../dto/update-segment.dto';
 import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
+import { SegmentCustomersService } from '../segment-customers.service';
 
 @Injectable()
-@Processor('segment_update')
+@Processor('segment_update', {
+  stalledInterval: process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
+    : 600000,
+  removeOnComplete: {
+    age: 0,
+    count: process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
+      ? +process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
+      : 0,
+  },
+  metrics: {
+    maxDataPoints: MetricsTime.ONE_WEEK,
+  },
+  concurrency: process.env.SEGMENT_UPDATE_PROCESSOR_CONCURRENCY
+    ? +process.env.SEGMENT_UPDATE_PROCESSOR_CONCURRENCY
+    : 1,
+})
 export class SegmentUpdateProcessor extends WorkerHost {
   private providerMap = {
     updateDynamic: this.handleUpdateDynamic,
@@ -41,6 +58,8 @@ export class SegmentUpdateProcessor extends WorkerHost {
     @InjectConnection() private readonly connection: mongoose.Connection,
     @InjectQueue('customer_change')
     private readonly customerChangeQueue: Queue,
+    @Inject(SegmentCustomersService)
+    private segmentCustomersService: SegmentCustomersService,
     @InjectRepository(SegmentCustomers)
     private segmentCustomersRepository: Repository<SegmentCustomers>
   ) {
@@ -166,37 +185,38 @@ export class SegmentUpdateProcessor extends WorkerHost {
           collectionPrefix
         );
 
-      const batchSize = 500; // Set an appropriate batch size
-      const collectionName = customersInSegment; // Name of the MongoDB collection
-      const mongoCollection = this.connection.db.collection(collectionName);
-      let processedCount = 0;
+      const CUSTOMERS_PER_BATCH = 50000;
+      let batch = 0;
+      const mongoCollection = this.connection.db.collection(customersInSegment);
       const totalDocuments = await mongoCollection.countDocuments();
 
-      while (processedCount < totalDocuments) {
-        // Fetch a batch of documents
-        const customerDocuments = await mongoCollection
-          .find({})
-          .skip(processedCount)
-          .limit(batchSize)
-          .toArray();
-        // Map the MongoDB documents to SegmentCustomers entities
-        const segmentCustomersArray: SegmentCustomers[] = customerDocuments.map(
-          (doc) => {
-            const segmentCustomer = new SegmentCustomers();
-            segmentCustomer.customerId = doc._id.toString();
-            segmentCustomer.segment = job.data.segment.id;
-            segmentCustomer.workspace =
-              job.data.account?.teams?.[0]?.organization?.workspaces?.[0];
-            // Set other properties as needed
-            return segmentCustomer;
-          }
+      while (batch * CUSTOMERS_PER_BATCH <= totalDocuments) {
+        const customers = await this.customersService.find(
+          job.data.account,
+          job.data.createSegmentDTO.inclusionCriteria.query,
+          job.data.session,
+          null,
+          batch * CUSTOMERS_PER_BATCH,
+          CUSTOMERS_PER_BATCH,
+          customersInSegment
         );
-        // Batch insert into PostgreSQL database
-        await queryRunner.manager.save(SegmentCustomers, segmentCustomersArray);
-        // Update the count of processed documents
-        processedCount += customerDocuments.length;
-      }
+        this.log(
+          `Skip ${batch * CUSTOMERS_PER_BATCH}, limit: ${CUSTOMERS_PER_BATCH}`,
+          this.handleCreateDynamic.name,
+          job.data.session
+        );
+        batch++;
 
+        await this.segmentCustomersService.addBulk(
+          job.data.segment.id,
+          customers.map((document) => {
+            return document._id.toString();
+          }),
+          job.data.session,
+          job.data.account,
+          client
+        );
+      }
       try {
         await this.segmentsService.deleteCollectionsWithPrefix(
           collectionPrefix
