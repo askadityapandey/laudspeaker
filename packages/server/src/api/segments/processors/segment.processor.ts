@@ -212,7 +212,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
       while (batch * CUSTOMERS_PER_BATCH <= totalDocuments) {
         const customers = await this.customersService.find(
           job.data.account,
-          job.data.createSegmentDTO.inclusionCriteria.query,
+          job.data.createSegmentDTO.inclusionCriteria,
           job.data.session,
           null,
           batch * CUSTOMERS_PER_BATCH,
