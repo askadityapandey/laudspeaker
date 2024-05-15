@@ -14,6 +14,7 @@ const SubscriptionPayment = () => {
   const navigate = useNavigate();
   const [loaded, setLoaded] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isPaymentComplete, setIsPaymentComplete] = useState(false);
   const [name, setName] = useState("");
   const [selectedTimeZone, setSelectedTimeZone] = useState("");
 
@@ -53,6 +54,16 @@ const SubscriptionPayment = () => {
   useEffect(() => {
     load();
   }, []);
+
+  useInterval(() => {
+    load();
+  }, 2000);
+
+  useEffect(() => {
+    if (!isVerified) return;
+
+    setTimeout(() => navigate("/"), 2000);
+  }, [isVerified]);
 
 
   if (!loaded) return <></>;
