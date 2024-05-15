@@ -3,11 +3,11 @@ import { useNavigate } from "react-router-dom";
 import laudspeakerLogo from "../../assets/images/laudspeaker.svg";
 import ApiService from "services/api.service";
 import Input from "components/Elements/Inputv2";
-import { getTimezonesWithOffset } from "pages/Settingsv2/tabs/OrganizationTab";
 import Select from "components/Elements/Selectv2";
 import Button, { ButtonType } from "components/Elements/Buttonv2";
 import { toast } from "react-toastify";
 import StripeButton from "components/StripeButton/StripeButton";
+import { useInterval } from "react-use";
 
 
 const SubscriptionPayment = () => {
