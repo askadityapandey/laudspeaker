@@ -87,12 +87,12 @@ const EventTracker = () => {
       });
       const {
         data: fetchedCustomEvents,
-        showNext,
-        showPrev,
-        showLast,
-        showNextCursorEventId,
-        showPrevCursorEventId,
-        anchor,
+        showNext: showNextData,
+        showPrev: showPrevData,
+        showLast: showLastData,
+        showNextCursorEventId: showNextCursorEventIdData,
+        showPrevCursorEventId: showPrevCursorEventIdData,
+        anchor: anchorData,
       }: {
         data: CustomEvent[];
         showNext: boolean;
@@ -114,12 +114,12 @@ const EventTracker = () => {
           )
       );
 
-      setShowNext(showNext);
-      setShowPrev(showPrev);
-      setShowNextCursorEventId(showNextCursorEventId);
-      setShowPrevCursorEventId(showPrevCursorEventId);
-      setShowLast(showLast);
-      setCurrentAnchor(anchor);
+      setShowNext(showNextData);
+      setShowPrev(showPrevData);
+      setShowNextCursorEventId(showNextCursorEventIdData);
+      setShowPrevCursorEventId(showPrevCursorEventIdData);
+      setShowLast(showLastData);
+      setCurrentAnchor(anchorData);
       
       /*
       setPagesCount(totalPages);
