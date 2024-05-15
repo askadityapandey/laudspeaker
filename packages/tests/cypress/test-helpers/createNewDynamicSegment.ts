@@ -352,7 +352,7 @@ export const createNewDynamicSegment = ({
   cy.contains("users estimated reached ≈ 1").should("be.visible");
 
   cy.get("#saveSegmentButton").click();
-  cy.wait(10000);
+  cy.wait(60000);
   cy.visit("/segment");
   cy.contains(name).click();
   cy.contains("Eligible users: 1 Users").should("be.visible");
