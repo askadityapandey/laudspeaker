@@ -14,7 +14,6 @@ const LOCATION_LOCK_TIMEOUT_MS = +process.env.LOCATION_LOCK_TIMEOUT_MS;
 @Injectable()
 export class SegmentCustomersService {
   constructor(
-    private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
     @InjectRepository(SegmentCustomers)
@@ -83,7 +82,7 @@ export class SegmentCustomersService {
   }
 
   /**
-   * Add a customer to an automatic (dynamic) segment.
+   * Add a customer to a segment.
    *
    * @param {Account} account Associated Account
    * @param {Segment} journey Associated Journey
@@ -153,7 +152,7 @@ export class SegmentCustomersService {
     }
   }
 
-  async delete(
+  async deleteFromSingleSegment(
     segment: Segment,
     customer: CustomerDocument,
     session: string,
@@ -164,7 +163,7 @@ export class SegmentCustomersService {
       JSON.stringify({
         info: `Removing customer ${customer._id} from segment ${segment.id}`,
       }),
-      this.delete.name,
+      this.deleteFromSingleSegment.name,
       session,
       account.email
     );
@@ -214,26 +213,67 @@ export class SegmentCustomersService {
     }
   }
 
-  /**
-   * Creates a Journey Location.
-   *
-   * This method should only be called by the start processor when
-   * a customer is added to the start step of a journey.
-   *
-   * Takes a write lock on
-   * (journey, customer) and sets row
-   * to (journey, customer, step), marking the
-   * time when it's finished updating the
-   * step.
-   *
-   * @param {Account} account Associated Account
-   * @param {Journey} journey Associated Journey
-   * @param {Step} step Step customer is located in
-   * @param {CustomerDocument} customer Associated Customer
-   * @param {string} session HTTP session token
-   * @param {QueryRunner} [queryRunner]  Postgres Transaction
-   * @returns
-   */
+  async deleteFromAllSegments(
+    segment: Segment,
+    customer: CustomerDocument,
+    session: string,
+    account: Account,
+    queryRunner?: QueryRunner
+  ) {
+    this.log(
+      JSON.stringify({
+        info: `Removing customer ${customer._id} from segment ${segment.id}`,
+      }),
+      this.deleteFromAllSegments.name,
+      session,
+      account.email
+    );
+
+    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+
+    if (queryRunner) {
+      // Step 1: Check if customer is already enrolled in Journey; if so, throw error
+      const location = await queryRunner.manager.findOne(SegmentCustomers, {
+        where: {
+          segment: segment.id,
+          workspace: { id: workspace.id },
+          customerId: customer._id,
+        },
+      });
+
+      if (location)
+        throw new Error(
+          `Customer ${customer._id} already a part of segment ${segment.id}`
+        );
+
+      // Step 2: Create new journey Location row, add time that user entered the journey
+      await queryRunner.manager.save(SegmentCustomers, {
+        segment: segment.id,
+        workspace,
+        customerId: customer._id,
+        segmentEntry: Date.now(),
+      });
+    } else {
+      const location = await this.segmentCustomersRepository.findOne({
+        where: {
+          segment: segment.id,
+          workspace: { id: workspace.id },
+          customerId: customer._id,
+        },
+      });
+      if (location)
+        throw new Error(
+          `Customer ${customer._id} already a part of segment ${segment.id}`
+        );
+      await this.segmentCustomersRepository.save({
+        segment: segment.id,
+        workspace,
+        customerId: customer._id,
+        segmentEntry: Date.now(),
+      });
+    }
+  }
+
   async addBulk(
     segmentID: string,
     customers: string[],
@@ -329,12 +369,12 @@ export class SegmentCustomersService {
   }
 
   /**
-   * Get the number of unique customers enrolled in a specific journey
+   * Get the number of unique customers enrolled in a specific segment
    *
    * @param account
    * @param journey
    * @param runner
-   * @returns number of unique customers enrolled in a specific journey
+   * @returns number of unique customers enrolled in a specific segment
    */
   async getNumberOfCustomersInSegment(
     account: Account,
@@ -355,4 +395,62 @@ export class SegmentCustomersService {
     }
     return count;
   }
+
+  /**
+   * Get the number of unique customers enrolled in a specific segment
+   *
+   * @param account
+   * @param journey
+   * @param runner
+   * @returns number of unique customers enrolled in a specific segment
+   */
+  async getSegmentsForCustomer(
+    account: Account,
+    segment: Segment,
+    runner?: QueryRunner
+  ) {
+    const queryCriteria: FindManyOptions<SegmentCustomers> = {
+      where: {
+        workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
+        segment: segment.id,
+      },
+    };
+    let count: number;
+    if (runner) {
+      count = await runner.manager.count(SegmentCustomers, queryCriteria);
+    } else {
+      count = await this.segmentCustomersRepository.count(queryCriteria);
+    }
+    return count;
+  }
+
+  /**
+   * Get the number of unique customers enrolled in a specific segment
+   *
+   * @param account
+   * @param journey
+   * @param runner
+   * @returns number of unique customers enrolled in a specific segment
+   */
+  async getCustomersInSegment(
+    account: Account,
+    segment: Segment,
+    runner?: QueryRunner
+  ) {
+    const queryCriteria: FindManyOptions<SegmentCustomers> = {
+      where: {
+        workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
+        segment: segment.id,
+      },
+    };
+    let count: number;
+    if (runner) {
+      count = await runner.manager.count(SegmentCustomers, queryCriteria);
+    } else {
+      count = await this.segmentCustomersRepository.count(queryCriteria);
+    }
+    return count;
+  }
+
+  async isCustomerInSegment() {}
 }

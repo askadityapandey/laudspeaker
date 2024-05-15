@@ -10,8 +10,8 @@ import {
   JourneyEntrySettings,
   JourneySettings,
 } from '../types/additional-journey-settings.interface';
-import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
-import { Account } from '@/api/accounts/entities/accounts.entity';
+import { Workspaces } from '../../workspaces/entities/workspaces.entity';
+import { Account } from '../../accounts/entities/accounts.entity';
 
 @Entity()
 export class Journey {

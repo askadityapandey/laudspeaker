@@ -26,21 +26,21 @@ import { SegmentCustomersService } from '../segment-customers.service';
 
 @Injectable()
 @Processor('segment_update', {
-  stalledInterval: process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: {
-    age: 0,
-    count: process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.SEGMENT_UPDATE_PROCESSOR_CONCURRENCY
-    ? +process.env.SEGMENT_UPDATE_PROCESSOR_CONCURRENCY
-    : 1,
+  // stalledInterval: process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
+  //   ? +process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
+  //   : 600000,
+  // removeOnComplete: {
+  //   age: 0,
+  //   count: process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
+  //     ? +process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
+  //     : 0,
+  // },
+  // metrics: {
+  //   maxDataPoints: MetricsTime.ONE_WEEK,
+  // },
+  // concurrency: process.env.SEGMENT_UPDATE_PROCESSOR_CONCURRENCY
+  //   ? +process.env.SEGMENT_UPDATE_PROCESSOR_CONCURRENCY
+  //   : 1,
 })
 export class SegmentUpdateProcessor extends WorkerHost {
   private providerMap = {
@@ -58,6 +58,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
     @InjectConnection() private readonly connection: mongoose.Connection,
     @InjectQueue('customer_change')
     private readonly customerChangeQueue: Queue,
+    @InjectQueue('imports') private readonly importsQueue: Queue,
     @Inject(SegmentCustomersService)
     private segmentCustomersService: SegmentCustomersService,
     @InjectRepository(SegmentCustomers)
@@ -164,12 +165,30 @@ export class SegmentUpdateProcessor extends WorkerHost {
       }
 
       this.warn(
-        `Waiting for the queue to clear. Current active jobs: ${activeJobs}`,
+        `Waiting for the customer change queue to clear. Current active jobs: ${activeJobs}`,
         this.process.name,
         job.data.session
       );
       await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
     }
+
+    await this.importsQueue.pause();
+    while (true) {
+      const jobCounts = await this.importsQueue.getJobCounts('active');
+      const activeJobs = jobCounts.active;
+
+      if (activeJobs === 0) {
+        break; // Exit the loop if the number of waiting jobs is below the threshold
+      }
+
+      this.warn(
+        `Waiting for the import queue to clear. Current active jobs: ${activeJobs}`,
+        this.process.name,
+        job.data.session
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
+    }
+
     const queryRunner = await this.dataSource.createQueryRunner();
     const client = await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -247,6 +266,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
     } finally {
       await queryRunner.release();
       await this.customerChangeQueue.resume();
+      await this.importsQueue.resume();
       if (err) throw err;
     }
   }

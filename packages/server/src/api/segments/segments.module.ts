@@ -59,6 +59,9 @@ function getExportList() {
     BullModule.registerQueue({
       name: 'customer_change',
     }),
+    BullModule.registerQueue({
+      name: 'imports',
+    }),
     TypeOrmModule.forFeature([Segment, SegmentCustomers, Account]),
     forwardRef(() => CustomersModule),
     forwardRef(() => WorkflowsModule),

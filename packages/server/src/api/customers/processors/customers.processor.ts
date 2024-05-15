@@ -71,21 +71,21 @@ const copyMessageWithFilteredUpdateDescription = (message) => {
 
 @Injectable()
 @Processor('customer_change', {
-  stalledInterval: process.env.CUSTOMER_CHANGE_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.CUSTOMER_CHANGE_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: {
-    age: 0,
-    count: process.env.CUSTOMER_CHANGE_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.CUSTOMER_CHANGE_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.CUSTOMER_CHANGE_PROCESSOR_CONCURRENCY
-    ? +process.env.CUSTOMER_CHANGE_PROCESSOR_CONCURRENCY
-    : 50,
+  // stalledInterval: process.env.CUSTOMER_CHANGE_PROCESSOR_STALLED_INTERVAL
+  //   ? +process.env.CUSTOMER_CHANGE_PROCESSOR_STALLED_INTERVAL
+  //   : 100,
+  // removeOnComplete: {
+  //   age: 0,
+  //   count: process.env.CUSTOMER_CHANGE_PROCESSOR_REMOVE_ON_COMPLETE
+  //     ? +process.env.CUSTOMER_CHANGE_PROCESSOR_REMOVE_ON_COMPLETE
+  //     : 1000000,
+  // },
+  // metrics: {
+  //   maxDataPoints: MetricsTime.ONE_WEEK,
+  // },
+  // concurrency: process.env.CUSTOMER_CHANGE_PROCESSOR_CONCURRENCY
+  //   ? +process.env.CUSTOMER_CHANGE_PROCESSOR_CONCURRENCY
+  //   : 50,
 })
 export class CustomerChangeProcessor extends WorkerHost {
   constructor(
