@@ -52,7 +52,8 @@ describe("upload from csv", () => {
     //cy.get("#segments > div").click();
     //cy.get("tbody.relative > * > :nth-child(1) > :first").click();
     cy.wait(10000);
-    cy.reload();
+    cy.visit("/segment");
+    cy.contains("Segment 1").click();
     cy.contains("Eligible users: 41 Users").should("exist");
   });
 });

@@ -89,7 +89,9 @@ describe("otherids and segment events", () => {
               cy.get("input:nth(1)").type("eventA");
               cy.contains("Save").click();
 
-              cy.wait(1000);
+              cy.wait(10000);
+              cy.visit("/segment");
+              cy.contains("1").click();
               cy.contains("Eligible users: 1 Users").should("exist");
             });
           });
