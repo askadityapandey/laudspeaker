@@ -4,7 +4,7 @@ import {
   PrimaryGeneratedColumn,
   JoinColumn,
   ManyToOne,
-  OneToMany
+  OneToMany,
 } from 'typeorm';
 import { VisualLayout } from '../types/visual-layout.interface';
 import {
@@ -97,5 +97,5 @@ export class Journey {
   last_enrollment_timestamp?: number;
 
   @OneToMany(() => JourneyLocation, (location) => location.journey)
-  journeyLocations: Promise<JourneyLocation[]>
+  journeyLocations: Promise<JourneyLocation[]>;
 }
