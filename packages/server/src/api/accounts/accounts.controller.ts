@@ -333,4 +333,11 @@ export class AccountsController {
   async deleteMedia(@Req() { user }: Request, @Param('key') key: string) {
     return this.s3Service.deleteFile(key, <Account>user);
   }
+
+  @Post('/fetch-payment')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
+  async createPaymentLink(@Req() { user }: Request, @Param('key') key: string) {
+    return this.s3Service.deleteFile(key, <Account>user);
+  }
 }

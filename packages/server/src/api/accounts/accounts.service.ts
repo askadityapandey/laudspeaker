@@ -40,11 +40,14 @@ import {
   DEFAULT_PLAN,
   OrganizationPlan,
 } from '../organizations/entities/organization-plan.entity';
+import Stripe from 'stripe';
 
 @Injectable()
 export class AccountsService extends BaseJwtHelper {
   private sgMailService = new MailService();
   private sgClient = new Client();
+
+  private stripeClient = new Stripe.Stripe(process.env.STRIPE_SECRET_KEY);
 
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -830,6 +833,71 @@ export class AccountsService extends BaseJwtHelper {
         'Error during message processing.',
         HttpStatus.BAD_REQUEST
       );
+    }
+  }
+
+  /*
+   * Get the priceId from stripe by searcing for a product
+   */
+  async findPriceIdByProductName(productName: string): Promise<string | null> {
+    try {
+      // List all products (consider pagination if you have many products)
+      const products = await this.stripeClient.products.list({
+        limit: 100, // Adjust based on your needs
+      });
+
+      // Find the product by name
+      const product = products.data.find(p => p.name === productName);
+
+      if (!product) {
+        throw new Error('Product not found');
+      }
+
+      // Now, get the prices associated with this product
+      const prices = await this.stripeClient.prices.list({
+        product: product.id,
+        limit: 1, // You can adjust this based on how you structure your prices
+      });
+
+      // Return the first price's ID or null if no prices
+      return prices.data.length > 0 ? prices.data[0].id : null;
+    } catch (error) {
+      throw new Error('Failed to find price ID: ' + error);
+    }
+  }
+
+  async createPaymentLink(customerId: string, priceId: string, trialDays: number) {
+    try {
+      const paymentLink = await this.stripeClient.paymentLinks.create({
+        line_items: [{
+          price: priceId,
+          quantity: 1,
+        }],
+        metadata: {
+          customerId,
+        },
+        payment_method_collection: 'if_required',
+        allow_promotion_codes: true,
+        automatic_tax: {enabled: true},
+        // Set up subscription details
+        subscription_data: {
+          trial_period_days: trialDays,
+          trial_settings: {
+            end_behavior: {
+              missing_payment_method: 'pause'
+            }
+          }
+        },
+        after_completion: {
+          type: 'hosted_confirmation'
+        }
+        //success_url: 'http://your_success_url_here',
+        //cancel_url: 'http://your_cancel_url_here',
+      });
+
+      return paymentLink.url;
+    } catch (error) {
+      throw new Error('Failed to create payment link: ' + error);
     }
   }
 }

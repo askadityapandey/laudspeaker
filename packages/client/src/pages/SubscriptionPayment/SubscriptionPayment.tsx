@@ -60,10 +60,10 @@ const SubscriptionPayment = () => {
   }, 2000);
 
   useEffect(() => {
-    if (!isVerified) return;
+    if (!isPaymentComplete) return;
 
     setTimeout(() => navigate("/"), 2000);
-  }, [isVerified]);
+  }, [isPaymentComplete]);
 
 
   if (!loaded) return <></>;

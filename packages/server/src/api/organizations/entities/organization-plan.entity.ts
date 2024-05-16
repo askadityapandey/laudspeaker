@@ -9,12 +9,16 @@ import {
 import { Organization } from './organization.entity';
 
 export const DEFAULT_PLAN: Partial<OrganizationPlan> = {
-  segmentLimit: 100,
-  activeJourneyLimit: 100,
+  planName: "startup-may-2024",
+  subscribed: false,
+  activePlan: false,
+  billingEmail: "none",
+  segmentLimit: 50,
+  activeJourneyLimit: 50,
   messageLimit: 100000000,
-  customerLimit: 10000000,
-  seatLimit: 100,
-  workspaceLimit: 20,
+  customerLimit: 100000,
+  seatLimit: 3,
+  workspaceLimit: 2,
 };
 
 @Entity()
@@ -28,6 +32,18 @@ export class OrganizationPlan extends BaseEntity {
     nullable: false,
   })
   public organization: Organization;
+
+  @Column({ default: DEFAULT_PLAN.planName })
+  planName: string;
+
+  @Column({ default: DEFAULT_PLAN.subscribed })
+  subscribed: boolean;
+
+  @Column({ default: DEFAULT_PLAN.activePlan })
+  activePlan: boolean;
+
+  @Column({ default: DEFAULT_PLAN.activePlan })
+  billingEmail: string;
 
   @Column({ default: DEFAULT_PLAN.segmentLimit })
   segmentLimit: number;
