@@ -57,6 +57,10 @@ export class AccountsService extends BaseJwtHelper {
     public accountsRepository: Repository<Account>,
     @InjectRepository(Workspaces)
     public workspacesRepository: Repository<Workspaces>,
+    @InjectRepository(Organization)
+    private organizationRepository: Repository<Organization>,
+    @InjectRepository(OrganizationPlan)
+    private organizationPlanRepository: Repository<OrganizationPlan>,
     @Inject(forwardRef(() => CustomersService))
     private customersService: CustomersService,
     @Inject(forwardRef(() => AuthService)) private authService: AuthService,
@@ -868,7 +872,7 @@ export class AccountsService extends BaseJwtHelper {
     }
   }
 
-  async createCheckoutSession(customerId: string, productName: string, trialDays: number) {
+  async createCheckoutSession(accountId: string, productName: string, trialDays: number) {
 
     const priceId = await this.findPriceIdByProductName(productName);
     console.log("price id is", priceId);
@@ -895,7 +899,10 @@ export class AccountsService extends BaseJwtHelper {
           }
         },
         after_completion: {
-          type: 'hosted_confirmation'
+          type: 'redirect', 
+          redirect: {
+            url: "http://" + process.env.FRONTEND_URL + "/payment-gate"
+          }
         }
         //success_url: 'http://your_success_url_here',
         //cancel_url: 'http://your_cancel_url_here',
@@ -904,6 +911,29 @@ export class AccountsService extends BaseJwtHelper {
       return paymentLink.url;
     } catch (error) {
       throw new Error('Failed to create payment link: ' + error);
+    }
+  }
+
+  async checkActivePlanForUser(userId: string, session: string): Promise<boolean> {
+    this.debug(`Checking active plan for user ${userId}`, this.checkActivePlanForUser.name, session, userId);
+    try {
+      // Find the related organization using the userId as the owner
+      const organization = await this.organizationRepository.findOne({
+        where: { owner: { id: userId } },
+        relations: ['plan'],
+      });
+  
+      if (!organization) {
+        this.warn('User does not own any organization', this.checkActivePlanForUser.name, session, userId);
+        return false;
+      }
+  
+      // Check if the organization's plan is active
+      const isActive = organization.plan && organization.plan.activePlan == true;
+      return isActive;
+    } catch (error) {
+      this.error(error, this.checkActivePlanForUser.name, session, userId);
+      throw new HttpException('Error checking active plan', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

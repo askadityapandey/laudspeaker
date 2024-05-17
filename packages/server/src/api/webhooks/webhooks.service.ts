@@ -84,6 +84,10 @@ export class WebhooksService {
     private stepRepository: Repository<Step>,
     @InjectRepository(Account)
     private accountRepository: Repository<Account>,
+    @InjectRepository(Organization)
+    private organizationRepository: Repository<Organization>,
+    @InjectRepository(OrganizationPlan)
+    private organizationPlanRepository: Repository<OrganizationPlan>,
     @Inject(KafkaProducerService)
     private kafkaService: KafkaProducerService,
     @InjectQueue('events_pre')
@@ -510,12 +514,28 @@ export class WebhooksService {
         case 'checkout.session.completed':
           console.log('this is the event we care about');
           console.log(JSON.stringify(event,null, 2));
-          event.data.object.metadata.accountId
           console.log('^^ is the event we care about');
-          /*
-           * we now update the account info with paid
-           */
-          //this.handlePaymentIntentFailed(paymentIntentFailed);
+          const accountId = event.data.object.metadata.accountId
+          if (!accountId) {
+            this.logger.warn('No accountId found in metadata for checkout.session.completed');
+            return;
+          }
+          // Find the related organization using the accountId
+          const organization = await this.organizationRepository.findOne({
+            where: { owner: { id: accountId } },
+            relations: ['plan']
+          });
+
+          if (!organization) {
+            this.logger.warn(`No organization found for accountId: ${accountId}`);
+            return;
+          }
+          // Update the plan to subscribed and active
+          const plan = organization.plan;
+          plan.subscribed = true;
+          plan.activePlan = true;
+          await this.organizationPlanRepository.save(plan);
+          this.logger.log(`Updated plan for organization ${organization.id} to active and subscribed`);
           break;
         default:
           console.log(`Unhandled event type: ${event.type}`);

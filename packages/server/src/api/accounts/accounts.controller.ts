@@ -358,4 +358,24 @@ export class AccountsController {
       throw e;
     }
   }
+
+  @Get('/check-active-plan')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
+  async checkActiveOrganizationPlan(@Req() { user }: Request) {
+    const session = randomUUID();
+    this.debug(
+      `Checking active organization plan for user ${JSON.stringify({ id: (<Account>user).id })}`,
+      this.checkActiveOrganizationPlan.name,
+      session,
+      (<Account>user).id
+    );
+    try {
+      const isActive = await this.accountsService.checkActivePlanForUser((<Account>user).id, session);
+      return { isActive };
+    } catch (e) {
+      this.error(e, this.checkActiveOrganizationPlan.name, session, (<Account>user).id);
+      throw e;
+    }
+  }
 }

@@ -16,13 +16,14 @@ const SubscriptionPayment = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [isCreated, setIsCreated] = useState(false);
   const [isPaymentComplete, setIsPaymentComplete] = useState(false);
-  const [name, setName] = useState("");
-  const [selectedTimeZone, setSelectedTimeZone] = useState("");
 
   const load = async () => {
     try {
-      const { data } = await ApiService.get({ url: "/accounts" });
-      const { workspace } = data;
+      const { data: planData } = await ApiService.get({ url: '/accounts/check-active-plan' });
+      if (planData.isActive) {
+        setIsPaymentComplete(true);  // If active, set payment as complete
+        navigate("/");
+      }
 
       /*
       if (workspace.id) {
@@ -31,7 +32,7 @@ const SubscriptionPayment = () => {
       */
       setLoaded(true);
     } catch (error) {
-      navigate("/");
+      //navigate("/");
     }
   };
 
@@ -49,6 +50,7 @@ const SubscriptionPayment = () => {
       });
       console.log("the data is", data);
       // Redirect the user to the Stripe Checkout page
+      //window.open(data.url, '_blank');
       window.location.href = data.url;
       setIsCreated(true);
     } catch (error) {
