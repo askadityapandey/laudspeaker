@@ -334,10 +334,28 @@ export class AccountsController {
     return this.s3Service.deleteFile(key, <Account>user);
   }
 
-  @Post('/fetch-payment')
+  @Post('/create-checkout-session')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  async createPaymentLink(@Req() { user }: Request, @Param('key') key: string) {
-    return this.s3Service.deleteFile(key, <Account>user);
+  async createCheckoutSession(@Req() { user }: Request) {
+    const session = randomUUID();
+    this.debug(
+      `Creating checkout session for ${JSON.stringify({ id: (<Account>user).id })}`,
+      this.createCheckoutSession.name,
+      session,
+      (<Account>user).id
+    );
+
+    try {
+      const url = await this.accountsService.createCheckoutSession(
+        (<Account>user).id,
+        "start up plan",
+        14
+      );
+      return { url };
+    } catch (e) {
+      this.error(e, this.createCheckoutSession.name, session, (<Account>user).id);
+      throw e;
+    }
   }
 }

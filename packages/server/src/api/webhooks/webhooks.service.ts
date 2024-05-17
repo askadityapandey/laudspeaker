@@ -510,6 +510,7 @@ export class WebhooksService {
         case 'checkout.session.completed':
           console.log('this is the event we care about');
           console.log(JSON.stringify(event,null, 2));
+          event.data.object.metadata.accountId
           console.log('^^ is the event we care about');
           /*
            * we now update the account info with paid
