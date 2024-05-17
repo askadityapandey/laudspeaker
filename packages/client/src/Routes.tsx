@@ -151,6 +151,7 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
   const [isLoaded, setIsLoaded] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [isCompanySetuped, setIsCompanySetuped] = useState(false);
+  const [isPlanActive, setIsPlanActive] = useState(false);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -159,6 +160,12 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       const { verified, workspace } = data;
       setIsVerified(verified);
       setIsCompanySetuped(!!workspace?.id);
+
+      const { data: planData } = await ApiService.get({
+        url: "/accounts/check-active-plan",
+      });
+      setIsPlanActive(planData.isActive);
+
       setIsLoaded(true);
     } catch (e) {
       toast.error("Error while loading data");
@@ -174,6 +181,7 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
   useEffect(() => {
     if (isLoaded && !isCompanySetuped) navigate("/company-setup");
     if (isLoaded && !isVerified) navigate("/verification");
+    if (isLoaded && !isPlanActive) navigate("/payment-gate");
   }, [isLoaded]);
 
   return isVerified && isCompanySetuped ? <>{children}</> : <></>;
@@ -323,6 +331,14 @@ const RouteComponent: React.FC = () => {
         <Route path="/reset-password/:id" element={<ResetPassword />} />
         <Route path="/company-setup" element={<CompanySetup />} />
         <Route
+          path="/verification"
+          element={
+            <Protected>
+              <Verificationv2 />
+            </Protected>
+          }
+        />
+        <Route
           path="/payment-gate"
           element={
             <Protected>
@@ -332,7 +348,6 @@ const RouteComponent: React.FC = () => {
             </Protected>
           }
         />
-        <Route path="/payment-gate2" element={<SubscriptionPayment />} />
         <Route
           path="/flow"
           element={
@@ -772,14 +787,6 @@ const RouteComponent: React.FC = () => {
             </Protected>
           }
         /> */}
-        <Route
-          path="/verification"
-          element={
-            <Protected>
-              <Verificationv2 />
-            </Protected>
-          }
-        />
         <Route
           path="/settings"
           element={

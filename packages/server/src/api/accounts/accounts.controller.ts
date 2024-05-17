@@ -371,6 +371,10 @@ export class AccountsController {
       (<Account>user).id
     );
     try {
+      //env flag so self-deploy do not need to pay
+      if(process.env.PAYMENTS_OFF == 'true'){
+        return { isActive: true };
+      }
       const isActive = await this.accountsService.checkActivePlanForUser((<Account>user).id, session);
       return { isActive };
     } catch (e) {
