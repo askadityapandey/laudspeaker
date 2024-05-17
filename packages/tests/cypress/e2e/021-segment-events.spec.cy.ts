@@ -1,4 +1,5 @@
 import credentials from "../fixtures/credentials";
+import { checkSegmentFinishedUpdating } from "../test-helpers/checkSegmentFinishedUpdating";
 import createTestCustomer from "../test-helpers/createTestCustomer";
 import drag from "../test-helpers/drag";
 import { loginFunc } from "../test-helpers/loginFunc";
@@ -89,8 +90,8 @@ describe("otherids and segment events", () => {
               cy.get("input:nth(1)").type("eventA");
               cy.contains("Save").click();
 
-              cy.wait(60000);
               cy.visit("/segment");
+              checkSegmentFinishedUpdating("1", 5000, 12);
               cy.contains("1").click();
               cy.contains("Eligible users: 1 Users").should("exist");
             });
