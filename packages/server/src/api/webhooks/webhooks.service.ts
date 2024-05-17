@@ -512,14 +512,21 @@ export class WebhooksService {
           break;
         // Add more handlers as necessary
         case 'checkout.session.completed':
-          console.log('this is the event we care about');
-          console.log(JSON.stringify(event,null, 2));
-          console.log('^^ is the event we care about');
+          //console.log('this is the event we care about');
+          //console.log(JSON.stringify(event,null, 2));
+          
+          //console.log('^^ is the event we care about');
           const accountId = event.data.object.metadata.accountId
           if (!accountId) {
             this.logger.warn('No accountId found in metadata for checkout.session.completed');
             return;
           }
+          this.debug(
+            `the checkout session event is ${JSON.stringify(event,null, 2)})}`,
+            this.processStripePayment.name,
+            session,
+            accountId
+          );
           // Find the related organization using the accountId
           const organization = await this.organizationRepository.findOne({
             where: { owner: { id: accountId } },
@@ -538,7 +545,8 @@ export class WebhooksService {
           this.logger.log(`Updated plan for organization ${organization.id} to active and subscribed`);
           break;
         default:
-          console.log(`Unhandled event type: ${event.type}`);
+          //console.log(`Unhandled event type: ${event.type}`);
+          this.logger.log(`Unhandled event type: ${event.type}`);
       }
     } catch (err) {
       // Handle errors that arise during event processing

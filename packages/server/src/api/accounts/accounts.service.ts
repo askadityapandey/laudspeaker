@@ -849,7 +849,7 @@ export class AccountsService extends BaseJwtHelper {
       const products = await this.stripeClient.products.list({
         limit: 100, // Adjust based on your needs
       });
-      console.log("products are",JSON.stringify(products,null, 2))
+      //console.log("products are",JSON.stringify(products,null, 2))
 
       // Find the product by name
       const product = products.data.find(p => p.name === productName);
@@ -863,7 +863,7 @@ export class AccountsService extends BaseJwtHelper {
         product: product.id,
         limit: 1, // You can adjust this based on how you structure your prices
       });
-      console.log("prices are",JSON.stringify(prices,null, 2))
+      //console.log("prices are",JSON.stringify(prices,null, 2))
 
       // Return the first price's ID or null if no prices
       return prices.data.length > 0 ? prices.data[0].id : null;
@@ -872,10 +872,10 @@ export class AccountsService extends BaseJwtHelper {
     }
   }
 
-  async createCheckoutSession(accountId: string, productName: string, trialDays: number) {
+  async createCheckoutSession(accountId: string, productName: string, trialDays: number, session: string) {
 
     const priceId = await this.findPriceIdByProductName(productName);
-    console.log("price id is", priceId);
+    //console.log("price id is", priceId);
     
     try {
       const paymentLink = await this.stripeClient.paymentLinks.create({
@@ -907,7 +907,13 @@ export class AccountsService extends BaseJwtHelper {
         //success_url: 'http://your_success_url_here',
         //cancel_url: 'http://your_cancel_url_here',
       });
-      console.log("the created payment link is", paymentLink.url);
+      this.debug(
+        `the created payment link is ${paymentLink.url})}`,
+        this.createCheckoutSession.name,
+        session,
+        accountId
+      );
+      //console.log("the created payment link is", paymentLink.url);
       return paymentLink.url;
     } catch (error) {
       throw new Error('Failed to create payment link: ' + error);

@@ -349,8 +349,9 @@ export class AccountsController {
     try {
       const url = await this.accountsService.createCheckoutSession(
         (<Account>user).id,
-        "start up plan",
-        14
+        process.env.PRODUCT_NAME,
+        +process.env.PRODUCT_TRIAL,
+        session
       );
       return { url };
     } catch (e) {
@@ -372,7 +373,7 @@ export class AccountsController {
     );
     try {
       //env flag so self-deploy do not need to pay
-      if(process.env.PAYMENTS_OFF == 'true'){
+      if(process.env.PAYMENTS_OFF === 'true'){
         return { isActive: true };
       }
       const isActive = await this.accountsService.checkActivePlanForUser((<Account>user).id, session);

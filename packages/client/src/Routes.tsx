@@ -161,10 +161,13 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       setIsVerified(verified);
       setIsCompanySetuped(!!workspace?.id);
 
-      const { data: planData } = await ApiService.get({
-        url: "/accounts/check-active-plan",
-      });
-      setIsPlanActive(planData.isActive);
+      //we should only check this after an organization is set up
+      if (isCompanySetuped) {
+        const { data: planData } = await ApiService.get({
+          url: "/accounts/check-active-plan",
+        });
+        setIsPlanActive(planData.isActive);
+      }
 
       setIsLoaded(true);
     } catch (e) {
@@ -179,10 +182,16 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
   }, []);
 
   useEffect(() => {
-    if (isLoaded && !isCompanySetuped) navigate("/company-setup");
-    if (isLoaded && !isVerified) navigate("/verification");
-    if (isLoaded && !isPlanActive) navigate("/payment-gate");
-  }, [isLoaded]);
+    if (isLoaded) {
+      if (!isVerified) {
+        navigate("/verification");
+      } else if (!isCompanySetuped) {
+        navigate("/company-setup");
+      } else if (!isPlanActive) {
+        navigate("/payment-gate");
+      }
+    }
+  }, [isLoaded, isVerified, isCompanySetuped, isPlanActive]);
 
   return isVerified && isCompanySetuped ? <>{children}</> : <></>;
 };
