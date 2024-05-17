@@ -9,7 +9,6 @@ import { toast } from "react-toastify";
 import StripeButton from "components/StripeButton/StripeButton";
 import { useInterval } from "react-use";
 
-
 const SubscriptionPayment = () => {
   const navigate = useNavigate();
   const [loaded, setLoaded] = useState(false);
@@ -17,28 +16,9 @@ const SubscriptionPayment = () => {
   const [isCreated, setIsCreated] = useState(false);
   const [isPaymentComplete, setIsPaymentComplete] = useState(false);
 
-  const load = async () => {
-    try {
-      const { data: planData } = await ApiService.get({ url: '/accounts/check-active-plan' });
-      if (planData.isActive) {
-        setIsPaymentComplete(true);  // If active, set payment as complete
-        navigate("/");
-      }
-
-      /*
-      if (workspace.id) {
-        navigate("/");
-      }
-      */
-      setLoaded(true);
-    } catch (error) {
-      //navigate("/");
-    }
-  };
-
   // Function to initiate the creation of a Stripe Checkout session
   const handleCreateCheckoutSession = async () => {
-    if(isCreated){
+    if (isCreated) {
       return;
     }
     setIsCreating(true);
@@ -46,7 +26,7 @@ const SubscriptionPayment = () => {
     try {
       // Call your backend to create the Stripe Checkout session
       const { data } = await ApiService.post({
-        url: '/accounts/create-checkout-session'
+        url: "/accounts/create-checkout-session",
       });
       console.log("the data is", data);
       // Redirect the user to the Stripe Checkout page
@@ -54,30 +34,50 @@ const SubscriptionPayment = () => {
       window.location.href = data.url;
       setIsCreated(true);
     } catch (error) {
-      toast.error('Failed to initiate payment: ' + (error || 'Unknown error'));
+      toast.error("Failed to initiate payment: " + (error || "Unknown error"));
       setIsCreating(false);
     }
   };
 
+  const load = async () => {
+    try {
+      const { data: planData } = await ApiService.get({
+        url: "/accounts/check-active-plan",
+      });
+      if (planData.isActive) {
+        setIsPaymentComplete(true); // If active, redirect to home page
+        return;
+      } else {
+        // Initiate payment only if the plan is not active
+        handleCreateCheckoutSession();
+      }
+      setLoaded(true);
+    } catch (error) {
+      toast.error("Error loading plan data: " + (error || "Unknown error"));
+      navigate("/");
+    }
+  };
+
   useEffect(() => {
-    handleCreateCheckoutSession();
+    load();
   }, []);
 
   useInterval(() => {
-    load();
+    if (!isPaymentComplete) {
+      load();
+    }
   }, 2000);
 
   useEffect(() => {
-    if (!isPaymentComplete) return;
-
-    setTimeout(() => navigate("/"), 2000);
-  }, [isPaymentComplete]);
-
+    if (isPaymentComplete) {
+      setTimeout(() => navigate("/"), 2000);
+    }
+  }, [isPaymentComplete, navigate]);
 
   if (!loaded) return <></>;
 
-    return (
-      <div className="bg-[#F3F4F6] w-full h-screen relative">
+  return (
+    <div className="bg-[#F3F4F6] w-full h-screen relative">
       <div className="max-w-[480px] w-full absolute left-1/2 top-[8%] -translate-x-1/2 ">
         <div className="flex pb-1 w-full items-center justify-center">
           <img
@@ -106,7 +106,7 @@ const SubscriptionPayment = () => {
         </div>
       </div>
     </div>
-    );
+  );
 
   /*
   return (
@@ -142,7 +142,6 @@ const SubscriptionPayment = () => {
     </div>
   );
   */
-  
 };
 
 export default SubscriptionPayment;
