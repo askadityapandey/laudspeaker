@@ -358,5 +358,4 @@ export const createNewDynamicSegment = ({
   checkSegmentFinishedUpdating(name, 5000, 12);
   cy.contains(name).click();
   cy.contains("Eligible users: 1 Users").should("be.visible");
-  cy.wait(2000);
 };
