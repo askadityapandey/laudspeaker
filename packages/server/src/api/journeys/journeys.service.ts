@@ -1036,11 +1036,12 @@ export class JourneysService {
   async getJourneyStatistics(
     account: Account,
     id: string,
+    session: string,
     startTime?: Date,
     endTime?: Date,
     frequency?: 'daily' | 'weekly'
   ) {
-    const journey = await this.findByID(account, id, '');
+    const journey = await this.findByID(account, id, session);
     if (!journey) throw new NotFoundException('Journey not found');
 
     if (!startTime || startTime > endTime) {
@@ -1117,6 +1118,7 @@ export class JourneysService {
   async getJourneyCustomers(
     account: Account,
     id: string,
+    session: string,
     take = 100,
     skip = 0,
     search?: string,
@@ -1124,7 +1126,7 @@ export class JourneysService {
     sortType?: string,
     filter?: 'all' | 'in-progress' | 'finished'
   ) {
-    const journey = await this.findByID(account, id, '');
+    const journey = await this.findByID(account, id, session);
     if (!journey) throw new NotFoundException('Journey not found');
 
     if (take > 100) take = 100;

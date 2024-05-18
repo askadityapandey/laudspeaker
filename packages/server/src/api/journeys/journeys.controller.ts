@@ -103,12 +103,14 @@ export class JourneysController {
     @Query('endTime') endTime?: string,
     @Query('frequency') frequency?: string
   ) {
+    const session = randomUUID();
     const startDate = isNaN(+startTime) ? undefined : new Date(+startTime);
     const endDate = isNaN(+endTime) ? undefined : new Date(+endTime);
 
     return await this.journeysService.getJourneyStatistics(
       <Account>user,
       id,
+      session,
       startDate,
       endDate,
       frequency === 'daily' ? 'daily' : 'weekly'
@@ -128,9 +130,12 @@ export class JourneysController {
     @Query('sortType') sortType?: string,
     @Query('filter') filter?: string
   ) {
+    const session = randomUUID();
+
     return await this.journeysService.getJourneyCustomers(
       <Account>user,
       id,
+      session,
       isNaN(+take) ? 100 : +take,
       isNaN(+skip) ? 0 : +skip,
       search,
