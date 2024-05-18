@@ -26,7 +26,7 @@ describe("text exactly 2x batch size", () => {
     setupOrganization(organizationName, timeZone);
 
     createPrimaryKey("user_id");
-    uploadCSV("./20k.csv");
+    uploadCSV("20k.csv");
 
     verifyTotalNumberOfCustomerPages(2000);
   });
@@ -48,7 +48,7 @@ describe("text exactly 2.5x batch size", () => {
     setupOrganization(organizationName, timeZone);
 
     createPrimaryKey("user_id");
-    uploadCSV("./25k.csv", 30000);
+    uploadCSV("./25k.csv", null, 30000);
 
     verifyTotalNumberOfCustomerPages(2500);
   });
