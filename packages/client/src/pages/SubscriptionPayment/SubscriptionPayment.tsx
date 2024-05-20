@@ -6,7 +6,7 @@ import Input from "components/Elements/Inputv2";
 import Select from "components/Elements/Selectv2";
 import Button, { ButtonType } from "components/Elements/Buttonv2";
 import { toast } from "react-toastify";
-import StripeButton from "components/StripeButton/StripeButton";
+//import StripeButton from "components/StripeButton/StripeButton";
 import { useInterval } from "react-use";
 
 const SubscriptionPayment = () => {
