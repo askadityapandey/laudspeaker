@@ -21,6 +21,9 @@ const { RangePicker } = DatePicker;
 interface GetJourneyStatisticsDto {
   enrolledDataPoints: number[];
   finishedDataPoints: number[];
+
+  enrolledCount: number;
+  finishedCount: number;
 }
 
 const FlowBuilderOverview = () => {
@@ -38,14 +41,8 @@ const FlowBuilderOverview = () => {
   const [enrolledDataPoints, setEnrolledDataPoints] = useState<number[]>([]);
   const [finishedDataPoints, setFinishedDataPoints] = useState<number[]>([]);
 
-  const enrolledCount = useMemo(
-    () => enrolledDataPoints.reduce((acc, el) => acc + el, 0),
-    [enrolledDataPoints]
-  );
-  const finishedCount = useMemo(
-    () => finishedDataPoints.reduce((acc, el) => acc + el, 0),
-    [finishedDataPoints]
-  );
+  const [enrolledCount, setEnrolledCount] = useState<number>(0);
+  const [finishedCount, setFinishedCount] = useState<number>(0);
 
   const loadData = async () => {
     try {
@@ -59,6 +56,9 @@ const FlowBuilderOverview = () => {
 
       setEnrolledDataPoints(data.enrolledDataPoints);
       setFinishedDataPoints(data.finishedDataPoints);
+
+      setEnrolledCount(data.enrolledCount);
+      setFinishedCount(data.finishedCount);
     } catch (e) {
       let message = "Unexpected error while loading statistics";
 
@@ -138,7 +138,7 @@ const FlowBuilderOverview = () => {
           <div className="flex gap-4 items-center">
             <span className="text-xl font-semibold">Conversion rate</span>
             <span className="text-sm font-normal text-[#4B5563]">
-              Total 120K
+              Coming Soon!
             </span>
           </div>
 

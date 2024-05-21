@@ -1053,24 +1053,49 @@ export class JourneysService {
 
     if (!frequency) frequency = 'daily';
 
-    const locations =
-      await this.journeyLocationsService.journeyLocationsRepository.find({
-        where: {
-          journey: journey.id,
-          journeyEntry: Between(startTime.getTime(), endTime.getTime()),
-        },
-        relations: ['journey', 'step'],
-        order: {
-          journeyEntry: 'ASC',
-        },
-      });
+    const dbFrequency = frequency == 'weekly' ? 'week' : 'day';
 
     const pointDates =
       frequency === 'daily'
         ? eachDayOfInterval({ start: startTime, end: endTime })
-        : eachWeekOfInterval({ start: startTime, end: endTime });
+        // Postgres' week starts on Monday
+        : eachWeekOfInterval({ start: startTime, end: endTime }, { weekStartsOn: 1 });
 
     const totalPoints = pointDates.length;
+
+    const enrollementGroupedByDate = await this.journeyLocationsService.journeyLocationsRepository
+          .createQueryBuilder('location')
+          .where({
+            journey: journey.id,
+            journeyEntryAt: Between(startTime.toISOString(), endTime.toISOString()),
+          })
+          .select([`date_trunc('${dbFrequency}', "journeyEntryAt") as "date"`,`count(*)::INTEGER as group_count`])
+          .groupBy("date")
+          .orderBy('date', 'ASC')
+          .getRawMany()
+
+    const terminalSteps = await this.stepsService.findAllTerminalInJourney(journey.id, session, ["step.id"]);
+    const terminalStepIds = terminalSteps.map(step => step.id);
+
+    const finishedGroupedByDate = await this.journeyLocationsService.journeyLocationsRepository
+          .createQueryBuilder('location')
+          .where({
+            journey: journey.id,
+            stepEntryAt: Between(startTime.toISOString(), endTime.toISOString()),
+            step: In(terminalStepIds)
+          })
+          .select([`date_trunc('${dbFrequency}', "journeyEntryAt") as "date"`,`count(*)::INTEGER as group_count`])
+          .groupBy("date")
+          .orderBy('date', 'ASC')
+          .getRawMany()
+
+    const enrolledCount = enrollementGroupedByDate.reduce((acc, group) => {
+      return acc + group['group_count'];
+    }, 0);
+
+    const finishedCount = finishedGroupedByDate.reduce((acc, group) => {
+      return acc + group['group_count'];
+    }, 0);
 
     const enrolledDataPoints: number[] = new Array(totalPoints).fill(
       0,
@@ -1083,36 +1108,21 @@ export class JourneysService {
       totalPoints
     );
 
-    for (const location of locations) {
-      const isFinished = location.step.metadata?.destination
-        ? false
-        : (!location.step.metadata?.branches &&
-            !location.step.metadata?.timeBranch) ||
-          (location.step.metadata?.branches?.length === 0 &&
-            !location.step.metadata?.timeBranch) ||
-          (location.step.metadata?.branches?.every(
-            (branch) => !branch?.destination
-          ) &&
-            !location.step.metadata?.timeBranch?.destination);
-
-      const dataPoints = isFinished ? finishedDataPoints : enrolledDataPoints;
-      const enrollmentDate = new Date(+location.journeyEntry);
-
-      let isLastPoint = true;
-      for (let i = 1; i < pointDates.length; i++) {
-        const dayDate = pointDates[i];
-
-        if (enrollmentDate < dayDate) {
-          dataPoints[i - 1]++;
-          isLastPoint = false;
-          break;
-        }
+    for(const group of enrollementGroupedByDate) {
+      for(var i = 0; i < pointDates.length; i++) {
+        if(group.date.getTime() == pointDates[i].getTime())
+          enrolledDataPoints[i] += group.group_count;
       }
-
-      if (isLastPoint) dataPoints[pointDates.length - 1]++;
     }
 
-    return { enrolledDataPoints, finishedDataPoints };
+    for(const group of finishedGroupedByDate) {
+      for(var i = 0; i < pointDates.length; i++) {
+        if(group.date.getTime() == pointDates[i].getTime())
+          finishedDataPoints[i] += group.group_count;
+      }
+    }
+
+    return { enrolledDataPoints, finishedDataPoints, enrolledCount, finishedCount };
   }
 
   async getJourneyCustomers(
