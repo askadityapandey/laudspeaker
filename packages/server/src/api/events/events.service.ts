@@ -1392,7 +1392,7 @@ export class EventsService {
     event?: EventDto
   ): Promise<{ customer: any; findType: FindType }> {
 
-    let { customer, findType } = await this.customersService.findCustomerBySearchOptions(
+    let { customer, findType } = await this.customersService.findOrCreateCustomerBySearchOptions(
       workspaceId,
       {
         primaryKey: { name: primaryKeyName, value: primaryKeyValue },
@@ -1400,63 +1400,6 @@ export class EventsService {
       session,
       event
     );
-    // If customer still not found, create a new one
-    if (!customer) {
-      const upsertData = {
-        $setOnInsert: {
-          _id: event.correlationValue,
-          workspaceId,
-          createdAt: new Date(),
-        },
-      };
-
-      if (primaryKeyValue && primaryKeyName) {
-        upsertData.$setOnInsert[primaryKeyName] = primaryKeyValue;
-        upsertData.$setOnInsert['isAnonymous'] = false;
-      }
-
-      try {
-        customer = await this.customersService.CustomerModel.findOneAndUpdate(
-          { _id: event.correlationValue, workspaceId },
-          upsertData,
-          { upsert: true, new: true }
-        );
-        findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
-      } catch (error: any) {
-        // Check if the error is a duplicate key error
-        if (error.code === 11000) {
-          customer = await this.customersService.CustomerModel.findOne({
-            _id: event.correlationValue,
-            workspaceId,
-          });
-          findType = FindType.DUPLICATE_KEY_ERROR; // Optionally, set a different findType to indicate handling of a duplicate key error
-        } else {
-          this.error(error, this.findOrCreateCustomer.name, session);
-        }
-      }
-    }
-
-    if (event.$fcm) {
-      const { iosDeviceToken, androidDeviceToken } = event.$fcm;
-      const deviceTokenField = iosDeviceToken
-        ? 'iosDeviceToken'
-        : 'androidDeviceToken';
-      const deviceTokenValue = iosDeviceToken || androidDeviceToken;
-      const deviceTokenSetAtField = iosDeviceToken
-        ? 'iosDeviceTokenSetAt'
-        : 'androidDeviceTokenSetAt';
-      if (customer[deviceTokenField] !== deviceTokenValue)
-        customer = await this.customersService.CustomerModel.findOneAndUpdate(
-          { _id: customer._id, workspaceId },
-          {
-            $set: {
-              [deviceTokenField]: deviceTokenValue,
-              [deviceTokenSetAtField]: new Date(), // Dynamically sets the appropriate deviceTokenSetAt field
-            },
-          },
-          { new: true }
-        );
-    }
 
     return { customer, findType };
   }

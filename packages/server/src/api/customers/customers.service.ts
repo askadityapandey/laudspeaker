@@ -1273,6 +1273,7 @@ export class CustomersService {
 
   async extractSearchOptionsFromObject(
     workspaceId: string,
+    searchOptionsInitial: CustomerSearchOptions,
     session: string,
     object: Record<string, any>
   ): Promise<CustomerSearchOptions> {
@@ -1295,6 +1296,8 @@ export class CustomersService {
     }
 
     result.correlationValue = object.correlationValue;
+
+    _.merge(result, searchOptionsInitial);
 
     return result;
   }
@@ -1324,9 +1327,11 @@ export class CustomersService {
   ): Promise<CustomerSearchOptionResult[]> {
     let result: CustomerSearchOptionResult[] = [];
 
-    const searchOptions = await this.extractSearchOptionsFromObject(workspaceId, session, object);
-
-    _.merge(searchOptions, searchOptionsInitial);
+    const searchOptions = await this.extractSearchOptionsFromObject(
+      workspaceId,
+      searchOptionsInitial,
+      session,
+      object);
 
     const findConditions: Array<Object> = [];
 
@@ -1445,9 +1450,13 @@ export class CustomersService {
     searchOptionsInitial: CustomerSearchOptions,
     session: string,
     object?: Record<string, any>
-  ): Promise<{customer: CustomerDocument, findType: FindType}> {
+  ): Promise<CustomerSearchOptionResult> {
     let customer: CustomerDocument;
     let findType: FindType;
+    let result: CustomerSearchOptionResult = {
+      customer: null,
+      findType: null
+    };
 
     const searchResults = await this.findCustomersBySearchOptions(
       workspaceId,
@@ -1456,10 +1465,10 @@ export class CustomersService {
       object);
 
     if(searchResults.length > 0) {
-      ({customer, findType} = searchResults[0]);
+      result = searchResults[0];
     }
 
-    return { customer, findType };
+    return result;
   }
 
   /**
@@ -1475,15 +1484,80 @@ export class CustomersService {
     searchOptionsInitial: CustomerSearchOptions,
     session: string,
     object?: Record<string, any>
-  ): Promise<CustomerDocument> {
-    let { customer, findType } = await this.findCustomerBySearchOptions(
+  ): Promise<CustomerSearchOptionResult> {
+
+    const searchOptions = await this.extractSearchOptionsFromObject(
       workspaceId,
       searchOptionsInitial,
+      session,
+      object);
+
+    let result = await this.findCustomerBySearchOptions(
+      workspaceId,
+      searchOptions,
       session,
       object
       );
 
-    return customer;
+    // If customer still not found, create a new one
+    if (!result.customer) {
+      const upsertData = {
+        $setOnInsert: {
+          _id: searchOptions.correlationValue,
+          workspaceId,
+          createdAt: new Date(),
+        },
+      };
+
+      if (searchOptions.primaryKey.value && searchOptions.primaryKey.name) {
+        upsertData.$setOnInsert[searchOptions.primaryKey.name] = searchOptions.primaryKey.value;
+        upsertData.$setOnInsert['isAnonymous'] = false;
+      }
+
+      try {
+        result.customer = await this.CustomerModel.findOneAndUpdate(
+          { _id: searchOptions.correlationValue, workspaceId },
+          upsertData,
+          { upsert: true, new: true }
+        );
+        result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
+      } catch (error: any) {
+        // Check if the error is a duplicate key error
+        if (error.code === 11000) {
+          result.customer = await this.CustomerModel.findOne({
+            _id: searchOptions.correlationValue,
+            workspaceId,
+          });
+          result.findType = FindType.DUPLICATE_KEY_ERROR; // Optionally, set a different findType to indicate handling of a duplicate key error
+        } else {
+          this.error(error, this.findOrCreateCustomerBySearchOptions.name, session);
+        }
+      }
+    }
+
+    if (object.$fcm) {
+      const { iosDeviceToken, androidDeviceToken } = object.$fcm;
+      const deviceTokenField = iosDeviceToken
+        ? 'iosDeviceToken'
+        : 'androidDeviceToken';
+      const deviceTokenValue = iosDeviceToken || androidDeviceToken;
+      const deviceTokenSetAtField = iosDeviceToken
+        ? 'iosDeviceTokenSetAt'
+        : 'androidDeviceTokenSetAt';
+      if (result.customer[deviceTokenField] !== deviceTokenValue)
+        result.customer = await this.CustomerModel.findOneAndUpdate(
+          { _id: result.customer._id, workspaceId },
+          {
+            $set: {
+              [deviceTokenField]: deviceTokenValue,
+              [deviceTokenSetAtField]: new Date(), // Dynamically sets the appropriate deviceTokenSetAt field
+            },
+          },
+          { new: true }
+        );
+    }
+
+    return result;
   }
 
   /**
