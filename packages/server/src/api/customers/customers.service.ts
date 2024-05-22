@@ -70,8 +70,6 @@ import {
 } from '@/utils/customer-key-name-validator';
 import { UpsertCustomerDto } from './dto/upsert-customer.dto';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
-import { Cache } from 'cache-manager';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { DeleteCustomerDto } from './dto/delete-customer.dto';
 import { ReadCustomerDto } from './dto/read-customer.dto';
 import {
@@ -88,6 +86,10 @@ import { SetCustomerPropsDTO } from './dto/set-customer-props.dto';
 import { SendFCMDto } from './dto/send-fcm.dto';
 import { PushPlatforms } from '../templates/entities/template.entity';
 import * as Sentry from '@sentry/node';
+import { CacheService } from '@/common/services/cache.service';
+
+import { CustomerSearchOptions } from './interfaces/CustomerSearchOptions.interface'
+import { CustomerSearchOptionResult } from './interfaces/CustomerSearchOptionResult.interface'
 
 export type Correlation = {
   cust: CustomerDocument;
@@ -228,7 +230,7 @@ export class CustomersService {
     private readonly s3Service: S3Service,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache
+    @Inject(CacheService) private cacheService: CacheService
   ) {
     const session = randomUUID();
     (async () => {
@@ -1217,6 +1219,273 @@ export class CustomersService {
     */
   }
 
+  // get keys that weren't marked as primary but may be used
+  // as channels for sending messages (e.g. email, email_address,
+  // phone, phone_number, etc..)
+  async getMessageChannelsCustomerKeys(
+    workspaceId: string
+  ): Promise<string[]> {
+    let keys = [];
+
+    const customerKeys = await this.CustomerKeysModel.find({ workspaceId });
+
+    const rules = {
+      email: ["^email",  "^email_address"],
+      phone: ["^phone",  "^phone_number"],
+      ios: ["^iosDeviceToken"],
+      android: ["^androidDeviceToken"]
+    };
+
+    for(const customerKey of customerKeys) {
+      if(customerKey.isPrimary || ( customerKey.type !== AttributeType.STRING && customerKey.type !== AttributeType.EMAIL ) )
+        continue;
+
+      let customKeyName = customerKey.key;
+
+      for(const [channel, channelRules] of Object.entries(rules)) {
+        let matchFound = false;
+
+        for(const regexRule of channelRules) {
+          let regex = new RegExp(regexRule, "i");
+          let result = regex.exec(customKeyName);
+
+          if(result) {
+            matchFound = true;
+            break;
+          }
+        }
+
+        if(matchFound) {
+          keys.push(customKeyName);
+
+          this.logger.log(
+            `Matched channel ${channel} with customerKey ${customKeyName}`,
+            this.getMessageChannelsCustomerKeys.name
+          );
+          break;
+        }
+      }
+    }
+
+    return keys;
+  }
+
+  async extractSearchOptionsFromObject(
+    workspaceId: string,
+    session: string,
+    object: Record<string, any>
+  ): Promise<CustomerSearchOptions> {
+    let result: CustomerSearchOptions = {
+      primaryKey: {},
+      messageChannels: {},
+      correlationValue: ""
+    };
+
+    if(!object)
+      return result;
+
+    result.primaryKey.name = object.primaryKeyName;
+    result.primaryKey.value = object.primaryKeyValue;
+
+    if(result.primaryKey.value && !result.primaryKey.name)
+    {
+      let primaryKey = await this.getPrimaryKeyStrict(workspaceId, session);
+      result.primaryKey.name = primaryKey?.key;
+    }
+
+    result.correlationValue = object.correlationValue;
+
+    return result;
+  }
+
+  getFieldValueFromObject(object: any, fieldName: string): any {
+    let objectToUse:any = object;
+
+    if(fieldName == 'iosDeviceToken' || fieldName == 'androidDeviceToken')
+      objectToUse = object.$fcm;
+
+    return objectToUse[fieldName]
+  }
+
+  /**
+   * Finds customers with a CustomerSearchOptions object
+   * @param workspaceId
+   * @param searchOptionsInitial
+   * @param session
+   * @param object (e.g. event)
+   * @returns CustomerSearchOptionResult[]
+   */
+  async findCustomersBySearchOptions(
+    workspaceId: string,
+    searchOptionsInitial: CustomerSearchOptions,
+    session: string,
+    object?: Record<string, any>
+  ): Promise<CustomerSearchOptionResult[]> {
+    let result: CustomerSearchOptionResult[] = [];
+    let findType: number;
+
+    const searchOptions = await this.extractSearchOptionsFromObject(workspaceId, session, object);
+
+    _.merge(searchOptions, searchOptionsInitial);
+
+    const findConditions: Array<Object> = [];
+
+    // Try to find by primary key if provided
+    if (searchOptions.primaryKey.value) {
+      findConditions.push({
+        [searchOptions.primaryKey.name]: searchOptions.primaryKey.value,
+        workspaceId: workspaceId,
+      });
+    }
+
+    // try to find customers via message channel fields
+    const messageChannelsKeys = await this.getMessageChannelsCustomerKeys(workspaceId);
+    // subset of the keys that are currently present in the object and used in findConditions
+    const objectMessageChannelsKeys = [];
+
+    for(const messageChannelsKey of messageChannelsKeys) {
+      let objectFieldValue = this.getFieldValueFromObject(object, messageChannelsKey);
+
+      if(objectFieldValue) {
+        findConditions.push({
+          [messageChannelsKey]: objectFieldValue,
+          workspaceId,
+        });
+        objectMessageChannelsKeys.push(messageChannelsKey);
+      }
+    }
+
+    if (searchOptions.correlationValue) {
+      findConditions.push(
+        {
+          _id: searchOptions.correlationValue,
+          workspaceId,
+        },
+        {
+          other_ids: searchOptions.correlationValue,
+          workspaceId,
+        }
+      );
+    }
+
+    let customers = await this.CustomerModel.find({
+      $or: findConditions,
+    });
+
+    for (let findTypeIndex = 1; findTypeIndex <= 4; findTypeIndex++) {
+      for (let i = 0; i < customers.length; i++) {
+        if (
+          findTypeIndex == 1 &&
+          searchOptions.primaryKey.name &&
+          customers[i][searchOptions.primaryKey.name] == searchOptions.primaryKey.value
+        ) {
+          result.push({
+            customer: customers[i],
+            findType: findTypeIndex
+          });
+        } else if (
+          findTypeIndex == 2
+        ) {
+          // find which field from the customer matches the object's
+          for(const attribute of objectMessageChannelsKeys) {
+            let objectFieldValue = this.getFieldValueFromObject(object, attribute);
+
+            if(objectFieldValue == customers[i][attribute]) {
+              result.push({
+                customer: customers[i],
+                findType: findTypeIndex
+              });
+
+              break;
+            }
+          }
+        } else if (
+          findTypeIndex == 3 &&
+          customers[i]._id == searchOptions.correlationValue
+        ) {
+          result.push({
+            customer: customers[i],
+            findType: findTypeIndex
+          });
+        } else if (
+          findTypeIndex == 4 &&
+          searchOptions.correlationValue &&
+          customers[i].other_ids.includes(searchOptions.correlationValue.toString())
+        ) {
+          result.push({
+            customer: customers[i],
+            findType: findTypeIndex
+          });
+        }
+      }
+    }
+
+    // our conditions were not inclusive, something's wrong
+    if (customers.length > 0 && result.length == 0) {
+      this.error(
+        'MongoDB returned multiple customers but could not select one of them',
+        this.findCustomersBySearchOptions.name,
+        session
+      );
+    }
+
+    return result;
+  }
+
+  /**
+   * Finds a customer with a CustomerSearchOptions object
+   * @param workspaceId
+   * @param searchOptionsInitial
+   * @param session
+   * @param object (e.g. event)
+   * @returns customer
+   */
+  async findCustomerBySearchOptions(
+    workspaceId: string,
+    searchOptionsInitial: CustomerSearchOptions,
+    session: string,
+    object?: Record<string, any>
+  ): Promise<{customer: CustomerDocument, findType: number}> {
+    let customer: CustomerDocument;
+    let findType: number;
+
+    const searchResults = await this.findCustomersBySearchOptions(
+      workspaceId,
+      searchOptionsInitial,
+      session,
+      object);
+
+    if(searchResults.length > 0) {
+      ({customer, findType} = searchResults[0]);
+    }
+
+    return { customer, findType };
+  }
+
+  /**
+   * Finds a customer by CustomerSearchOptions and creates one if none was found
+   * @param workspaceId
+   * @param searchOptionsInitial
+   * @param session
+   * @param object (e.g. event)
+   * @returns customer
+   */
+  async findOrCreateCustomerBySearchOptions(
+    workspaceId: string,
+    searchOptionsInitial: CustomerSearchOptions,
+    session: string,
+    object?: Record<string, any>
+  ): Promise<CustomerDocument> {
+    let { customer, findType } = await this.findCustomerBySearchOptions(
+      workspaceId,
+      searchOptionsInitial,
+      session,
+      object
+      );
+
+    return customer;
+  }
+
   /**
    * Upsert a customer into the customer database. Requires a primary key
    * to have been set.
@@ -1225,26 +1494,13 @@ export class CustomersService {
    * @param session
    * @returns
    */
-
   async upsert(
     auth: { account: Account; workspace: Workspaces },
     upsertCustomerDto: UpsertCustomerDto,
     session: string
   ): Promise<{ id: string }> {
     try {
-      let primaryKey: CustomerKeysDocument = await this.cacheManager.get(
-        `${auth.workspace.id}-primary-key`
-      );
-      if (!primaryKey) {
-        primaryKey = await this.CustomerKeysModel.findOne({
-          workspaceId: auth.workspace.id,
-          isPrimary: true,
-        });
-        await this.cacheManager.set(
-          `${auth.workspace.id}-primary-key`,
-          primaryKey
-        );
-      }
+      let primaryKey = await this.getPrimaryKeyStrict(auth.workspace.id, session);
 
       if (!primaryKey)
         throw new HttpException(
@@ -1287,19 +1543,7 @@ export class CustomersService {
     deleteCustomerDto: DeleteCustomerDto,
     session: string
   ): Promise<{ primary_key: any }> {
-    let primaryKey: CustomerKeysDocument = await this.cacheManager.get(
-      `${auth.workspace.id}-primary-key`
-    );
-    if (!primaryKey) {
-      primaryKey = await this.CustomerKeysModel.findOne({
-        workspaceId: auth.workspace.id,
-        isPrimary: true,
-      });
-      await this.cacheManager.set(
-        `${auth.workspace.id}-primary-key`,
-        primaryKey
-      );
-    }
+    let primaryKey = await this.getPrimaryKeyStrict(auth.workspace.id, session);
 
     if (!primaryKey)
       throw new HttpException(
@@ -1338,19 +1582,7 @@ export class CustomersService {
     readCustomerDto: ReadCustomerDto,
     session: string
   ): Promise<CustomerDocument> {
-    let primaryKey: CustomerKeysDocument = await this.cacheManager.get(
-      `${auth.workspace.id}-primary-key`
-    );
-    if (!primaryKey) {
-      primaryKey = await this.CustomerKeysModel.findOne({
-        workspaceId: auth.workspace.id,
-        isPrimary: true,
-      });
-      await this.cacheManager.set(
-        `${auth.workspace.id}-primary-key`,
-        primaryKey
-      );
-    }
+    let primaryKey = await this.getPrimaryKeyStrict(auth.workspace.id, session);
 
     if (!primaryKey)
       throw new HttpException(
@@ -3712,6 +3944,26 @@ export class CustomersService {
       //return currentPK;
       return 'email';
     }
+  }
+
+  /**
+   * Gets the primary key for a given user
+   *
+   * @returns string
+   */
+  async getPrimaryKeyStrict(workspaceId: string, session: string): Promise<CustomerKeysDocument> {
+    let primaryKey: CustomerKeysDocument = await this.cacheService.getIgnoreError(
+      "PrimaryKey",
+      workspaceId,
+      async () => {
+        return await this.CustomerKeysModel.findOne({
+          workspaceId,
+          isPrimary: true,
+        });
+      }
+    );
+
+    return primaryKey;
   }
 
   /**

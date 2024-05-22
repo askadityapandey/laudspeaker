@@ -1383,190 +1383,6 @@ export class EventsService {
     });
   }
 
-  // find keys that weren't marked as primary but may be used
-  // as channels for sending messages (e.g. email, email_address,
-  // phone, phone_number, etc..)
-  async findMessageChannelsPrimaryKeys(workspaceId: string): Promise<string[]> {
-    let keys = [];
-
-    const customerKeys = await this.CustomerKeysModel.find({ workspaceId });
-
-    // some of these fields are nested inside events (e.g. event.$fcm.iosDeviceToken)
-    const rules = {
-      email: ['^email', '^email_address'],
-      phone: ['^phone', '^phone_number'],
-      ios: ['^iosDeviceToken'],
-      android: ['^androidDeviceToken'],
-    };
-
-    for (const customerKey of customerKeys) {
-      if (
-        customerKey.isPrimary ||
-        (customerKey.type !== AttributeType.STRING &&
-          customerKey.type !== AttributeType.EMAIL)
-      )
-        continue;
-
-      let customKeyName = customerKey.key;
-
-      for (const [channel, channelRules] of Object.entries(rules)) {
-        let matchFound = false;
-
-        for (const regexRule of channelRules) {
-          let regex = new RegExp(regexRule, 'i');
-          let result = regex.exec(customKeyName);
-
-          if (result) {
-            matchFound = true;
-            break;
-          }
-        }
-
-        if (matchFound) {
-          keys.push(customKeyName);
-
-          this.logger.log(
-            `Matched channel ${channel} with customerKey ${customKeyName}`,
-            this.findMessageChannelsPrimaryKeys.name
-          );
-          break;
-        }
-      }
-    }
-
-    return keys;
-  }
-
-  getFieldValueFromEvent(event: EventDto, fieldName: string): any {
-    let objectToUse: any = event;
-
-    if (fieldName == 'iosDeviceToken' || fieldName == 'androidDeviceToken')
-      objectToUse = event.$fcm;
-
-    return objectToUse[fieldName];
-  }
-
-  async findCustomer(
-    workspaceId: string,
-    session: string,
-    primaryKeyValue?: string,
-    primaryKeyName?: string,
-    event?: EventDto
-  ): Promise<{ customer: any; findType: number }> {
-    let customer;
-    let findType;
-    const findConditions: Array<Object> = [];
-
-    // Try to find by primary key if provided
-    if (primaryKeyValue) {
-      findConditions.push({
-        [primaryKeyName]: primaryKeyValue,
-        workspaceId,
-      });
-    }
-
-    // try to find customers via message channel fields
-    const messageChannelsKeys = await this.findMessageChannelsPrimaryKeys(
-      workspaceId
-    );
-    // subset of the keys that are currently present in the event and used in findConditions
-    const eventMessageChannelsKeys = [];
-
-    for (const messageChannelsKey of messageChannelsKeys) {
-      let eventFieldValue = this.getFieldValueFromEvent(
-        event,
-        messageChannelsKey
-      );
-
-      if (eventFieldValue) {
-        findConditions.push({
-          [messageChannelsKey]: eventFieldValue,
-          workspaceId,
-        });
-        eventMessageChannelsKeys.push(messageChannelsKey);
-      }
-    }
-
-    if (event.correlationValue) {
-      findConditions.push(
-        {
-          _id: event.correlationValue,
-          workspaceId,
-        },
-        {
-          other_ids: event.correlationValue,
-          workspaceId,
-        }
-      );
-    }
-
-    let customers = await this.customersService.CustomerModel.find({
-      $or: findConditions,
-    });
-
-    for (let findTypeIndex = 1; findTypeIndex <= 4; findTypeIndex++) {
-      for (let i = 0; i < customers.length; i++) {
-        if (
-          findTypeIndex == 1 &&
-          primaryKeyName &&
-          customers[i][primaryKeyName] == primaryKeyValue
-        ) {
-          findType = findTypeIndex;
-          customer = customers[i];
-
-          break;
-        } else if (findTypeIndex == 2) {
-          // find which field from the customer matches the event's
-          for (const eventMessageField of eventMessageChannelsKeys) {
-            let eventFieldValue = this.getFieldValueFromEvent(
-              event,
-              eventMessageField
-            );
-
-            if (eventFieldValue == customers[i][eventMessageField]) {
-              findType = findTypeIndex;
-              customer = customers[i];
-
-              break;
-            }
-          }
-
-          if (findType == findTypeIndex) break;
-        } else if (
-          findTypeIndex == 3 &&
-          customers[i]._id == event.correlationValue
-        ) {
-          findType = findTypeIndex;
-          customer = customers[i];
-
-          break;
-        } else if (
-          findTypeIndex == 4 &&
-          event.correlationValue &&
-          customers[i].other_ids.includes(event.correlationValue.toString())
-        ) {
-          findType = findTypeIndex;
-          customer = customers[i];
-
-          break;
-        }
-      }
-
-      if (findType == findTypeIndex) break;
-    }
-
-    // our conditions were not inclusive, something's wrong
-    if (customers.length > 0 && !customer) {
-      this.error(
-        'MongoDB returned multiple customers but could not select one of them',
-        this.findOrCreateCustomer.name,
-        session
-      );
-    }
-
-    return { customer, findType };
-  }
-
   async findOrCreateCustomer(
     workspaceId: string,
     session: string,
@@ -1574,14 +1390,15 @@ export class EventsService {
     primaryKeyName?: string,
     event?: EventDto
   ): Promise<{ customer: any; findType: number }> {
-    let { customer, findType } = await this.findCustomer(
+
+    let { customer, findType } = await this.customersService.findCustomerBySearchOptions(
       workspaceId,
+      {
+        primaryKey: { name: primaryKeyName, value: primaryKeyValue },
+      },
       session,
-      primaryKeyValue,
-      primaryKeyName,
       event
     );
-
     // If customer still not found, create a new one
     if (!customer) {
       const upsertData = {
