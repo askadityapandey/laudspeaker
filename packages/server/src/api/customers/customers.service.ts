@@ -88,8 +88,9 @@ import { PushPlatforms } from '../templates/entities/template.entity';
 import * as Sentry from '@sentry/node';
 import { CacheService } from '@/common/services/cache.service';
 
-import { CustomerSearchOptions } from './interfaces/CustomerSearchOptions.interface'
-import { CustomerSearchOptionResult } from './interfaces/CustomerSearchOptionResult.interface'
+import { CustomerSearchOptions } from './interfaces/CustomerSearchOptions.interface';
+import { CustomerSearchOptionResult } from './interfaces/CustomerSearchOptionResult.interface';
+import { FindType } from './enums/FindType.enum';
 
 export type Correlation = {
   cust: CustomerDocument;
@@ -1322,7 +1323,6 @@ export class CustomersService {
     object?: Record<string, any>
   ): Promise<CustomerSearchOptionResult[]> {
     let result: CustomerSearchOptionResult[] = [];
-    let findType: number;
 
     const searchOptions = await this.extractSearchOptionsFromObject(workspaceId, session, object);
 
@@ -1372,19 +1372,19 @@ export class CustomersService {
       $or: findConditions,
     });
 
-    for (let findTypeIndex = 1; findTypeIndex <= 4; findTypeIndex++) {
+    for (const findType of Object.values(FindType)) {
       for (let i = 0; i < customers.length; i++) {
         if (
-          findTypeIndex == 1 &&
+          findType == FindType.PRIMARY_KEY &&
           searchOptions.primaryKey.name &&
           customers[i][searchOptions.primaryKey.name] == searchOptions.primaryKey.value
         ) {
           result.push({
             customer: customers[i],
-            findType: findTypeIndex
+            findType
           });
         } else if (
-          findTypeIndex == 2
+          findType == FindType.MESSAGE_CHANNEL
         ) {
           // find which field from the customer matches the object's
           for(const attribute of objectMessageChannelsKeys) {
@@ -1393,28 +1393,28 @@ export class CustomersService {
             if(objectFieldValue == customers[i][attribute]) {
               result.push({
                 customer: customers[i],
-                findType: findTypeIndex
+                findType
               });
 
               break;
             }
           }
         } else if (
-          findTypeIndex == 3 &&
+          findType == FindType.CORRELATION_VALUE &&
           customers[i]._id == searchOptions.correlationValue
         ) {
           result.push({
             customer: customers[i],
-            findType: findTypeIndex
+            findType
           });
         } else if (
-          findTypeIndex == 4 &&
+          findType == FindType.OTHER_IDS &&
           searchOptions.correlationValue &&
           customers[i].other_ids.includes(searchOptions.correlationValue.toString())
         ) {
           result.push({
             customer: customers[i],
-            findType: findTypeIndex
+            findType
           });
         }
       }
@@ -1445,9 +1445,9 @@ export class CustomersService {
     searchOptionsInitial: CustomerSearchOptions,
     session: string,
     object?: Record<string, any>
-  ): Promise<{customer: CustomerDocument, findType: number}> {
+  ): Promise<{customer: CustomerDocument, findType: FindType}> {
     let customer: CustomerDocument;
-    let findType: number;
+    let findType: FindType;
 
     const searchResults = await this.findCustomersBySearchOptions(
       workspaceId,

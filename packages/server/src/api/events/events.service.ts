@@ -76,6 +76,7 @@ import { Liquid } from 'liquidjs';
 import { cleanTagsForSending } from '@/shared/utils/helpers';
 import { randomUUID } from 'crypto';
 import * as Sentry from '@sentry/node';
+import { FindType } from '../customers/enums/FindType.enum';
 
 @Injectable()
 export class EventsService {
@@ -1389,7 +1390,7 @@ export class EventsService {
     primaryKeyValue?: string,
     primaryKeyName?: string,
     event?: EventDto
-  ): Promise<{ customer: any; findType: number }> {
+  ): Promise<{ customer: any; findType: FindType }> {
 
     let { customer, findType } = await this.customersService.findCustomerBySearchOptions(
       workspaceId,
@@ -1420,7 +1421,7 @@ export class EventsService {
           upsertData,
           { upsert: true, new: true }
         );
-        findType = 100; // Set findType to 100 to indicate an upsert operation
+        findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
       } catch (error: any) {
         // Check if the error is a duplicate key error
         if (error.code === 11000) {
@@ -1428,7 +1429,7 @@ export class EventsService {
             _id: event.correlationValue,
             workspaceId,
           });
-          findType = 200; // Optionally, set a different findType to indicate handling of a duplicate key error
+          findType = FindType.DUPLICATE_KEY_ERROR; // Optionally, set a different findType to indicate handling of a duplicate key error
         } else {
           this.error(error, this.findOrCreateCustomer.name, session);
         }
@@ -1525,7 +1526,7 @@ export class EventsService {
       event
     );
     //check the customer does not have another primary key already if it does this is not supported right now
-    if (findType == 3) {
+    if (findType == FindType.CORRELATION_VALUE) {
       if (
         customer.primaryKeyName &&
         customer.primaryKeyName !== primaryKeyValue
