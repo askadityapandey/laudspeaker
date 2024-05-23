@@ -20,6 +20,7 @@ describe("login", () => {
 
   it("passes", () => {
     loginFunc(email, password);
+    cy.wait(1000);
     cy.url().then((url: string) => {  
       expect(url).to.satisfy((url: string) =>  
         url.includes("/company-setup") || 
