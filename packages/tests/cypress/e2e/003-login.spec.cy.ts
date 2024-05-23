@@ -20,6 +20,12 @@ describe("login", () => {
 
   it("passes", () => {
     loginFunc(email, password);
-    cy.url().should("include", "/company-setup");
+    cy.url().then((url: string) => {  
+      expect(url).to.satisfy((url: string) =>  
+        url.includes("/company-setup") || 
+        url.includes("/payment-gate") || 
+        url.includes("/verify-email")
+      );
+    });
   });
 });

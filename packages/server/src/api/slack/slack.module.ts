@@ -19,6 +19,8 @@ import { WebhooksService } from '../webhooks/webhooks.service';
 import { Step } from '../steps/entities/step.entity';
 import { KafkaModule } from '../kafka/kafka.module';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
+import { Organization } from '../organizations/entities/organization.entity';
+import { OrganizationPlan } from '../organizations/entities/organization-plan.entity';
 
 function getProvidersList() {
   let providerList: Array<any> = [SlackService, WebhooksService];
@@ -51,6 +53,8 @@ function getProvidersList() {
       State,
       Step,
       Workspaces,
+      Organization,
+      OrganizationPlan,
     ]),
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },

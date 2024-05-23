@@ -889,6 +889,7 @@ export class EventsService {
     if (!body.token)
       throw new HttpException('No FCM token given', HttpStatus.BAD_REQUEST);
 
+    const organization = auth.account.teams[0].organization;
     const workspace = auth.workspace;
 
     let customer = await this.customersService.CustomerModel.findOne({
@@ -898,6 +899,8 @@ export class EventsService {
 
     if (!customer) {
       this.error('Customer not found', this.sendFCMToken.name, session);
+
+      await this.customersService.checkCustomerLimit(organization);
 
       customer = await this.customersService.CustomerModel.create({
         isAnonymous: true,
@@ -932,6 +935,7 @@ export class EventsService {
       return;
     }
 
+    const organization = auth.account.teams[0].organization;
     const workspace = auth.workspace;
 
     let customer = await this.customersService.CustomerModel.findOne({
@@ -940,6 +944,8 @@ export class EventsService {
     });
 
     if (!customer) {
+      await this.customersService.checkCustomerLimit(organization);
+
       this.error(
         'Invalid customer id. Creating new anonymous customer...',
         this.identifyCustomer.name,

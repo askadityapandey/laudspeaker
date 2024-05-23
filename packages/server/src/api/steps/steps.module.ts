@@ -33,6 +33,7 @@ import { JourneyLocation } from '../journeys/entities/journey-location.entity';
 import { JourneysModule } from '../journeys/journeys.module';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { Requeue } from './entities/requeue.entity';
+import { OrganizationsModule } from '../organizations/organizations.module';
 import { CacheService } from '@/common/services/cache.service';
 import { ExitStepProcessor } from './processors/exit.step.processor';
 import { ExperimentStepProcessor } from './processors/experiment.step.processor';
@@ -137,6 +138,7 @@ function getProvidersList() {
     forwardRef(() => WebsocketsModule),
     forwardRef(() => RedlockModule),
     forwardRef(() => JourneysModule),
+    forwardRef(() => OrganizationsModule),
     SlackModule,
   ],
   providers: getProvidersList(),
