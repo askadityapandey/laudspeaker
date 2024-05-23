@@ -54,7 +54,11 @@ function getExportsList() {
   let exportList: Array<any> = [CustomersService];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
-    exportList = [...exportList, CustomersConsumerService, CustomerChangeProcessor];
+    exportList = [
+      ...exportList,
+      CustomersConsumerService,
+      CustomerChangeProcessor,
+    ];
   }
 
   return exportList;
@@ -69,16 +73,16 @@ function getExportsList() {
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
     BullModule.registerQueue({
-      name: 'customers',
+      name: '{customers}',
     }),
     BullModule.registerQueue({
-      name: 'customer_change',
+      name: '{customer_change}',
     }),
     BullModule.registerQueue({
-      name: 'imports',
+      name: '{imports}',
     }),
     BullModule.registerQueue({
-      name: 'events_pre',
+      name: '{events_pre}',
     }),
     AccountsModule,
     SegmentsModule,

@@ -1,6 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Injectable } from '@nestjs/common';
-import { Job } from 'bullmq';
+import { Job, MetricsTime } from 'bullmq';
 import { Account } from '../accounts/entities/accounts.entity';
 import { S3Service } from '../s3/s3.service';
 import { CustomersService } from './customers.service';
@@ -18,7 +18,23 @@ import { SegmentCustomers } from '../segments/entities/segment-customers.entity'
 import { randomUUID } from 'crypto';
 
 @Injectable()
-@Processor('imports', { removeOnComplete: { count: 100 } })
+@Processor('{imports}', {
+  stalledInterval: process.env.IMPORTS_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.IMPORTS_PROCESSOR_STALLED_INTERVAL
+    : 30000,
+  removeOnComplete: {
+    age: 0,
+    count: process.env.IMPORTS_PROCESSOR_REMOVE_ON_COMPLETE
+      ? +process.env.IMPORTS_PROCESSOR_REMOVE_ON_COMPLETE
+      : 0,
+  },
+  metrics: {
+    maxDataPoints: MetricsTime.ONE_WEEK,
+  },
+  concurrency: process.env.IMPORTS_PROCESSOR_CONCURRENCY
+    ? +process.env.IMPORTS_PROCESSOR_CONCURRENCY
+    : 1,
+})
 export class ImportProcessor extends WorkerHost {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -106,6 +122,8 @@ export class ImportProcessor extends WorkerHost {
     try {
       let batchNumber = 0;
       let batch = [];
+      let promiseSet = new Set();
+
       const readPromise = new Promise<void>(async (resolve, reject) => {
         const s3CSVStream = await this.s3Service.getImportedCSVReadStream(
           fileData.fileKey
@@ -159,42 +177,75 @@ export class ImportProcessor extends WorkerHost {
             });
             if (batch.length >= 10000) {
               csvStream.pause();
+              let batchId = randomUUID();
+
               this.warn(
-                `Processing batch # ${batchNumber}. Batch size: ${batch.length}`,
+                `Processing batch # ${batchNumber} - ${batchId}. Batch size: ${batch.length}`,
                 this.process.name,
                 session
               );
+              promiseSet.add(batchId);
               batchNumber++;
-              await this.processImportRecord(
+
+              this.processImportRecord(
                 account,
                 settings.importOption,
                 passedPK.asAttribute.key,
                 batch,
                 segmentId,
                 session
-              );
+              )
+                .catch((error) => {
+                  throw error;
+                })
+                .finally(() => {
+                  promiseSet.delete(batchId);
+                });
+              await new Promise((resolve) => setTimeout(resolve, 10000));
               batch = [];
               csvStream.resume();
             }
           })
           .on('end', async () => {
-            if (batch.length > 0) {
-              this.warn(
-                `Processing ending batch. Batch size: ${batch.length}`,
-                this.process.name,
-                session
-              );
-              await this.processImportRecord(
-                account,
-                settings.importOption,
-                passedPK.asAttribute.key,
-                batch,
-                segmentId,
-                session
-              );
-              batch = [];
-            }
-            resolve();
+            // end() might be called while the last record of the last
+            // batch is still being processed. batch array might
+            // still have the records in the last batch, so we
+            // need to ensure all promises have been resolved
+            // before checking on the batch array
+            let interval: NodeJS.Timeout | undefined = undefined;
+            const checkAllBatchesCompleted = async () => {
+              if (promiseSet.size === 0) {
+                if (interval) clearInterval(interval);
+
+                if (batch.length > 0) {
+                  this.warn(
+                    `Processing ending batch. Batch size: ${batch.length}`,
+                    this.process.name,
+                    session
+                  );
+
+                  await this.processImportRecord(
+                    account,
+                    settings.importOption,
+                    passedPK.asAttribute.key,
+                    batch,
+                    segmentId,
+                    session
+                  );
+
+                  batch = [];
+                }
+                resolve();
+                return;
+              }
+            };
+            await checkAllBatchesCompleted();
+
+            setInterval(checkAllBatchesCompleted, 200);
+            setTimeout(() => {
+              if (interval) clearInterval(interval);
+              reject('Timeout while waiting for all batches to complete');
+            }, 5000);
           })
           .on('error', (err) => {
             reject(err);
@@ -203,10 +254,13 @@ export class ImportProcessor extends WorkerHost {
       });
       await readPromise;
       await this.customersService.removeImportFile(account);
-      await this.segmentRepository.save({
-        id: segmentId,
-        isUpdating: false
-      })
+
+      if (segmentId) {
+        await this.segmentRepository.save({
+          id: segmentId,
+          isUpdating: false,
+        });
+      }
     } catch (error) {
       this.error(error, 'Processing customer import', session);
       throw error;

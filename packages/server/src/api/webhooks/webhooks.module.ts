@@ -18,15 +18,10 @@ import { Organization } from '../organizations/entities/organization.entity';
 import { OrganizationPlan } from '../organizations/entities/organization-plan.entity';
 
 function getProvidersList() {
-  let providerList: Array<any> = [
-    WebhooksService,
-  ];
+  let providerList: Array<any> = [WebhooksService];
 
-  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
-    providerList = [
-      ...providerList,
-      WebhooksProcessor,
-    ];
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
+    providerList = [...providerList, WebhooksProcessor];
   }
 
   return providerList;
@@ -36,10 +31,10 @@ function getProvidersList() {
   imports: [
     TypeOrmModule.forFeature([Account, Step, Organization, OrganizationPlan]),
     BullModule.registerQueue({
-      name: 'webhooks',
+      name: '{webhooks}',
     }),
     BullModule.registerQueue({
-      name: 'events_pre',
+      name: '{events_pre}',
     }),
     TemplatesModule,
     KafkaModule,

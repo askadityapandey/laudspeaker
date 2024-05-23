@@ -46,8 +46,8 @@ export class StepsService {
     public stepsRepository: Repository<Step>,
     @InjectRepository(Requeue)
     public requeueRepository: Repository<Requeue>,
-    @InjectQueue('transition') private readonly transitionQueue: Queue,
-    @InjectQueue('start') private readonly startQueue: Queue,
+    @InjectQueue('{transition}') private readonly transitionQueue: Queue,
+    @InjectQueue('{start}') private readonly startQueue: Queue,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @Inject(forwardRef(() => CustomersService))
@@ -362,9 +362,10 @@ export class StepsService {
 
   /**
    * Find all steps of a certain type using db transaction(owner optional).
-   * @param account
    * @param type
+   * @param journeyID
    * @param session
+   * @param queryRunner
    * @returns
    */
   async transactionalFindAllActiveByTypeAndJourney(
@@ -383,6 +384,48 @@ export class StepsService {
       });
     } catch (e) {
       this.error(e, this.findAllByType.name, session);
+      throw e;
+    }
+  }
+
+  /**
+   * Find all steps that are terminal in a journey
+   * @param journeyID
+   * @param session
+   * @param select
+   * @returns
+   */
+  async findAllTerminalInJourney(
+    journeyID: string,
+    session: string,
+    select?: string[]
+  ): Promise<Step[]> {
+    try {
+      let query = this.stepsRepository
+        .createQueryBuilder('step')
+        .where({ journey: journeyID })
+        .andWhere("metadata -> 'destination' IS NULL")
+        .andWhere("metadata -> 'timeBranch' -> 'destination' IS NULL")
+        .andWhere(`NOT EXISTS (
+                  select branch ->> 'destination' AS "destination"
+                  from jsonb_array_elements(metadata -> 'branches') AS "branch"
+                  WHERE 'destination' IS NOT NULL)`);
+
+      if (select) query = query.select(select);
+
+      let res = await query.getMany();
+
+      return res;
+
+      // return await queryRunner.manager.find(Step, {
+      //   where: {
+      //     journey: { id: journeyID },
+      //     type: type,
+      //   },
+      //   relations: ['journey'],
+      // });
+    } catch (e) {
+      this.error(e, this.findAllTerminalInJourney.name, session);
       throw e;
     }
   }

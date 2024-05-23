@@ -7,6 +7,7 @@ module.exports = defineConfig({
   e2e: {
     retries: {
       runMode: 2,
+      openMode: 0,
     },
     screenshotOnRunFailure: false,
     baseUrl: process.env.TESTS_BASE_URL || "http://localhost:3000",

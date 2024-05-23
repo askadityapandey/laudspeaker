@@ -23,16 +23,10 @@ import { Organization } from '../organizations/entities/organization.entity';
 import { OrganizationPlan } from '../organizations/entities/organization-plan.entity';
 
 function getProvidersList() {
-  let providerList: Array<any> = [
-    SlackService,
-    WebhooksService,
-  ];
+  let providerList: Array<any> = [SlackService, WebhooksService];
 
-  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
-    providerList = [
-      ...providerList,
-      SlackProcessor,
-    ];
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
+    providerList = [...providerList, SlackProcessor];
   }
 
   return providerList;
@@ -41,16 +35,16 @@ function getProvidersList() {
 @Module({
   imports: [
     BullModule.registerQueue({
-      name: 'slack',
+      name: '{slack}',
     }),
     BullModule.registerQueue({
-      name: 'message',
+      name: '{message}',
     }),
     BullModule.registerQueue({
-      name: 'customers',
+      name: '{customers}',
     }),
     BullModule.registerQueue({
-      name: 'events_pre',
+      name: '{events_pre}',
     }),
     TypeOrmModule.forFeature([
       Account,

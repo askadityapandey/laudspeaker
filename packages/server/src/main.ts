@@ -1,5 +1,4 @@
-// DO NOT IMPORT ANYTHING BEFORE TRACER
-import './tracer';
+import p from '../package.json';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import {
@@ -24,7 +23,7 @@ const numCPUs = process.env.NODE_ENV === 'development' ? 1 : os.cpus().length;
 
 if (cluster.isPrimary) {
   console.log(`Primary ${process.pid} is running`);
-  console.log(`[${process.env.LAUDSPEAKER_PROCESS_TYPE}] Starting.`)
+  console.log(`[${process.env.LAUDSPEAKER_PROCESS_TYPE}] Starting.`);
   // Fork workers.
   for (let i = 0; i < numCPUs; i++) {
     cluster.fork();
@@ -42,7 +41,10 @@ if (cluster.isPrimary) {
 
   Sentry.init({
     dsn: process.env.SENTRY_DSN_URL_BACKEND,
-    environment: process.env.SENTRY_ENVIRONMENT || process.env.ENVIRONMENT,
+    environment:
+      process.env.SENTRY_ENVIRONMENT ||
+      process.env.NODE_ENV ||
+      process.env.ENVIRONMENT,
     release: process.env.SENTRY_RELEASE,
     integrations: [
       new Sentry.Integrations.Express({
@@ -56,7 +58,7 @@ if (cluster.isPrimary) {
     ],
     debug: false,
     // Performance Monitoring
-    tracesSampleRate: 1.0, // Capture 100% of the transactions, reduce in production!
+    tracesSampleRate: process.env.NODE_ENV == 'production' ? 0.25 : 1.0,
     // Set sampling rate for profiling - this is relative to tracesSampleRate
     profilesSampleRate: 1.0, // Capture 100% of the transactions, reduce in production!
     maxBreadcrumbs: Number.MAX_SAFE_INTEGER,
@@ -69,79 +71,10 @@ if (cluster.isPrimary) {
     );
   }
 
-  global.timeoutIds = new Map<
-    NodeJS.Timeout,
-    { callback: Function; delay: number; args: any[] }
-  >();
-
-  function customSetTimeout(
-    callback: (...args: any[]) => void,
-    delay: number,
-    ...args: any[]
-  ): NodeJS.Timeout {
-    const id: any = originalSetTimeout(
-      () => {
-        callback(...args);
-        global.timeoutIds.delete(id);
-      },
-      delay,
-      ...args
-    );
-
-    global.timeoutIds.set(id, { callback, delay, args });
-    return id;
-  }
-
-  // Assuming you want to add __promisify__
-  (customSetTimeout as any).__promisify__ = (delay: number, ...args: any[]) => {
-    return new Promise((resolve) =>
-      originalSetTimeout(resolve, delay, ...args)
-    );
-  };
-
-  // Replace the global setTimeout
-  global.setTimeout = customSetTimeout as any;
-
-  global.intervalIds = new Map<
-    NodeJS.Timeout,
-    { callback: Function; delay: number; args: any[] }
-  >();
-
-  function customSetInterval(
-    callback: (...args: any[]) => void,
-    delay: number,
-    ...args: any[]
-  ): NodeJS.Timeout {
-    const id: any = originalSetInterval(
-      () => {
-        callback(...args);
-        global.intervalIds.delete(id);
-      },
-      delay,
-      ...args
-    );
-
-    global.intervalIds.set(id, { callback, delay, args });
-    return id;
-  }
-
-  // Assuming you want to add __promisify__
-  (customSetInterval as any).__promisify__ = (
-    delay: number,
-    ...args: any[]
-  ) => {
-    return new Promise((resolve) =>
-      originalSetInterval(resolve, delay, ...args)
-    );
-  };
-
-  // Replace the global setTimeout
-  global.setInterval = customSetInterval as any;
-
   async function initializeApp() {
     let app;
 
-    if (process.env.LAUDSPEAKER_PROCESS_TYPE == "WEB") {
+    if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'WEB') {
       const httpsOptions = {
         key:
           parseInt(process.env.PORT) == 443
@@ -192,8 +125,7 @@ if (cluster.isPrimary) {
             console.log(JSON.stringify(errors, null, 2)),
         })
       );
-    }
-    else {
+    } else {
       app = await NestFactory.createApplicationContext(AppModule);
     }
 
@@ -212,13 +144,13 @@ if (cluster.isPrimary) {
     const app: NestExpressApplication = await initializeApp();
     const port: number = parseInt(process.env.PORT);
 
-    if (process.env.LAUDSPEAKER_PROCESS_TYPE == "WEB") {
+    if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'WEB') {
       await app.listen(port, () => {
         console.log('[WEB]', `http://localhost:${port}`);
       });
     }
 
-    console.log(`[${process.env.LAUDSPEAKER_PROCESS_TYPE}] Started.`)
+    console.log(`[${process.env.LAUDSPEAKER_PROCESS_TYPE}] Started.`);
   }
 
   bootstrap();

@@ -51,10 +51,10 @@ function getProvidersList() {
     JobsService,
     RedlockService,
     JourneyLocationsService,
-    CacheService
+    CacheService,
   ];
 
-  if (process.env.LAUDSPEAKER_PROCESS_TYPE == "QUEUE") {
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
     providerList = [
       ...providerList,
       TransitionProcessor,
@@ -94,40 +94,40 @@ function getProvidersList() {
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
     BullModule.registerQueue({
-      name: 'transition',
+      name: '{transition}',
     }),
     BullModule.registerQueue({
-      name: 'webhooks',
+      name: '{webhooks}',
     }),
     BullModule.registerQueue({
-      name: 'start',
+      name: '{start}',
     }),
     BullModule.registerQueue({
-      name: 'start.step',
+      name: '{start.step}',
     }),
     BullModule.registerQueue({
-      name: 'wait.until.step',
+      name: '{wait.until.step}',
     }),
     BullModule.registerQueue({
-      name: 'time.window.step',
+      name: '{time.window.step}',
     }),
     BullModule.registerQueue({
-      name: 'exit.step',
+      name: '{exit.step}',
     }),
     BullModule.registerQueue({
-      name: 'jump.to.step',
+      name: '{jump.to.step}',
     }),
     BullModule.registerQueue({
-      name: 'message.step',
+      name: '{message.step}',
     }),
     BullModule.registerQueue({
-      name: 'time.delay.step',
+      name: '{time.delay.step}',
     }),
     BullModule.registerQueue({
-      name: 'multisplit.step',
+      name: '{multisplit.step}',
     }),
     BullModule.registerQueue({
-      name: 'experiment.step',
+      name: '{experiment.step}',
     }),
     forwardRef(() => CustomersModule),
     forwardRef(() => WebhooksModule),

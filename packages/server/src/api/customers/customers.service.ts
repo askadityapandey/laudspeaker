@@ -205,8 +205,8 @@ export class CustomersService {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('customers') private readonly customersQueue: Queue,
-    @InjectQueue('imports') private readonly importsQueue: Queue,
+    @InjectQueue('{customers}') private readonly customersQueue: Queue,
+    @InjectQueue('{imports}') private readonly importsQueue: Queue,
     @InjectModel(Customer.name) public CustomerModel: Model<CustomerDocument>,
     @InjectModel(CustomerKeys.name)
     public CustomerKeysModel: Model<CustomerKeysDocument>,
@@ -2506,19 +2506,6 @@ export class CustomersService {
     return Sentry.startSpan(
       { name: 'CustomersService.getSegmentCustomersFromQuery' },
       async () => {
-        this.debug(
-          'Creating segment from query',
-          this.getSegmentCustomersFromQuery.name,
-          session
-        );
-
-        this.debug(
-          `top level query is: ${JSON.stringify(query, null, 2)}`,
-          this.getSegmentCustomersFromQuery.name,
-          session,
-          account.id
-        );
-
         //create collectionName
         let collectionName: string;
         let thisCollectionName: string;
@@ -2547,24 +2534,6 @@ export class CustomersService {
                 collectionName + count
               );
             })
-          );
-          this.debug(
-            `the sets are: ${sets}`,
-            this.getSegmentCustomersFromQuery.name,
-            session,
-            account.id
-          );
-          this.debug(
-            `about to reduce the sets`,
-            this.getSegmentCustomersFromQuery.name,
-            session,
-            account.id
-          );
-          this.debug(
-            `the sets length: ${sets.length}`,
-            this.getSegmentCustomersFromQuery.name,
-            session,
-            account.id
           );
           await Sentry.startSpan(
             {
@@ -2657,26 +2626,6 @@ export class CustomersService {
           { $group: { _id: "$customerId" } }
         ];
         */
-
-          this.debug(
-            `the sets are: ${sets}`,
-            this.getSegmentCustomersFromQuery.name,
-            session,
-            account.id
-          );
-          this.debug(
-            `about to union the sets`,
-            this.getSegmentCustomersFromQuery.name,
-            session,
-            account.id
-          );
-          this.debug(
-            `the sets length: ${sets.length}`,
-            this.getSegmentCustomersFromQuery.name,
-            session,
-            account.id
-          );
-
           // Add each additional collection to the pipeline
           if (sets.length > 1) {
             sets.forEach((collName) => {

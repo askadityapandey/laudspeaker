@@ -58,7 +58,7 @@ export class OrganizationService {
     public organizationTeamRepository: Repository<OrganizationTeam>,
     @InjectRepository(Account)
     public accountRepository: Repository<Account>,
-    @InjectQueue('message') private readonly messageQueue: Queue,
+    @InjectQueue('{message}') private readonly messageQueue: Queue,
     @Inject(AuthHelper)
     public readonly authHelper: AuthHelper
   ) {}

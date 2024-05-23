@@ -44,9 +44,9 @@ export class SegmentsService {
     private workflowsService: WorkflowsService,
     private readonly audiencesHelper: AudiencesHelper,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @InjectQueue('segment_update')
-    private readonly segmentUpdateQueue: Queue,
-  ) { }
+    @InjectQueue('{segment_update}')
+    private readonly segmentUpdateQueue: Queue
+  ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
@@ -603,7 +603,11 @@ export class SegmentsService {
     );
 
     await this.segmentUpdateQueue.add('updateDynamic', {
-      account, id, updateSegmentDTO, session, workspace
+      account,
+      id,
+      updateSegmentDTO,
+      session,
+      workspace,
     });
   }
 
@@ -691,7 +695,7 @@ export class SegmentsService {
     for (const segment of segments) {
       try {
         // We skip manual segments and empty inclusion criteria
-        if (segment.type && segment.type === 'manual') {
+        if (segment.type && (segment.type === 'manual' || segment.isUpdating)) {
           continue;
         }
         if (

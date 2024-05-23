@@ -1,5 +1,5 @@
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
-import { Job, Queue } from 'bullmq';
+import { Job, MetricsTime, Queue } from 'bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { KEYS_TO_SKIP } from '@/utils/customer-key-name-validator';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
@@ -70,7 +70,23 @@ const copyMessageWithFilteredUpdateDescription = (message) => {
 };
 
 @Injectable()
-@Processor('customer_change')
+@Processor('{customer_change}', {
+  stalledInterval: process.env.CUSTOMER_CHANGE_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.CUSTOMER_CHANGE_PROCESSOR_STALLED_INTERVAL
+    : 30000,
+  removeOnComplete: {
+    age: 0,
+    count: process.env.CUSTOMER_CHANGE_PROCESSOR_REMOVE_ON_COMPLETE
+      ? +process.env.CUSTOMER_CHANGE_PROCESSOR_REMOVE_ON_COMPLETE
+      : 0,
+  },
+  metrics: {
+    maxDataPoints: MetricsTime.ONE_WEEK,
+  },
+  concurrency: process.env.CUSTOMER_CHANGE_PROCESSOR_CONCURRENCY
+    ? +process.env.CUSTOMER_CHANGE_PROCESSOR_CONCURRENCY
+    : 1,
+})
 export class CustomerChangeProcessor extends WorkerHost {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -79,7 +95,7 @@ export class CustomerChangeProcessor extends WorkerHost {
     private readonly journeysService: JourneysService,
     private readonly accountsService: AccountsService,
     private readonly segmentsService: SegmentsService,
-    @InjectQueue('events_pre')
+    @InjectQueue('{events_pre}')
     private readonly eventPreprocessorQueue: Queue,
     @InjectConnection() private readonly connection: mongoose.Connection,
     private dataSource: DataSource
@@ -160,7 +176,9 @@ export class CustomerChangeProcessor extends WorkerHost {
     const clientSession = await this.connection.startSession();
     await clientSession.startTransaction();
     try {
-      const messObj = JSON.parse(Buffer.from(job.data.changeMessage.message.value).toString());
+      const messObj = JSON.parse(
+        Buffer.from(job.data.changeMessage.message.value).toString()
+      );
       let message: ChangeStreamDocument<Customer> = JSON.parse(messObj);
       if (typeof message === 'string') {
         message = JSON.parse(message); //double parse if kafka record is published as string not object
