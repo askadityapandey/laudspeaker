@@ -1300,6 +1300,17 @@ export class CustomersService {
 
     result.correlationValue = object.correlationValue;
 
+    // try to find customers via message channel fields
+    const messageChannelsKeys = await this.getMessageChannelsCustomerKeys(workspaceId);
+
+    for(const messageChannelsKey of messageChannelsKeys) {
+      let objectFieldValue = this.getFieldValueFromObject(object, messageChannelsKey);
+
+      if(objectFieldValue) {
+        result.messageChannels[messageChannelsKey] = objectFieldValue;
+      }
+    }
+
     _.merge(result, searchOptionsInitial);
 
     return result;
@@ -1349,21 +1360,11 @@ export class CustomersService {
       });
     }
 
-    // try to find customers via message channel fields
-    const messageChannelsKeys = await this.getMessageChannelsCustomerKeys(workspaceId);
-    // subset of the keys that are currently present in the object and used in findConditions
-    const objectMessageChannelsKeys = [];
-
-    for(const messageChannelsKey of messageChannelsKeys) {
-      let objectFieldValue = this.getFieldValueFromObject(object, messageChannelsKey);
-
-      if(objectFieldValue) {
-        findConditions.push({
-          [messageChannelsKey]: objectFieldValue,
-          workspaceId,
-        });
-        objectMessageChannelsKeys.push(messageChannelsKey);
-      }
+    for(const attributeName in searchOptions.messageChannels) {
+      findConditions.push({
+        [attributeName]: searchOptions.messageChannels[attributeName],
+        workspaceId,
+      });
     }
 
     if (searchOptions.correlationValue) {
@@ -1398,10 +1399,10 @@ export class CustomersService {
           findType == FindType.MESSAGE_CHANNEL
         ) {
           // find which field from the customer matches the object's
-          for(const attribute of objectMessageChannelsKeys) {
-            let objectFieldValue = this.getFieldValueFromObject(object, attribute);
+          for(const attributeName in searchOptions.messageChannels) {
+            let objectFieldValue = searchOptions.messageChannels[attributeName];
 
-            if(objectFieldValue == customers[i][attribute]) {
+            if(objectFieldValue == customers[i][attributeName]) {
               result.push({
                 customer: customers[i],
                 findType
