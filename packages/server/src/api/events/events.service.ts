@@ -1398,6 +1398,7 @@ export class EventsService {
         primaryKey: { name: primaryKeyName, value: primaryKeyValue },
       },
       session,
+      {},
       event
     );
 

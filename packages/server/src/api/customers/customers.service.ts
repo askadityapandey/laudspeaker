@@ -1241,14 +1241,14 @@ export class CustomersService {
       if(customerKey.isPrimary || ( customerKey.type !== AttributeType.STRING && customerKey.type !== AttributeType.EMAIL ) )
         continue;
 
-      let customKeyName = customerKey.key;
+      let customerKeyName = customerKey.key;
 
       for(const [channel, channelRules] of Object.entries(rules)) {
         let matchFound = false;
 
         for(const regexRule of channelRules) {
           let regex = new RegExp(regexRule, "i");
-          let result = regex.exec(customKeyName);
+          let result = regex.exec(customerKeyName);
 
           if(result) {
             matchFound = true;
@@ -1257,10 +1257,10 @@ export class CustomersService {
         }
 
         if(matchFound) {
-          keys.push(customKeyName);
+          keys.push(customerKeyName);
 
           this.logger.log(
-            `Matched channel ${channel} with customerKey ${customKeyName}`,
+            `Matched channel ${channel} with customerKey ${customerKeyName}`,
             this.getMessageChannelsCustomerKeys.name
           );
           break;
@@ -1284,7 +1284,10 @@ export class CustomersService {
     };
 
     if(!object)
+    {
+      _.merge(result, searchOptionsInitial);
       return result;
+    }
 
     result.primaryKey.name = object.primaryKeyName;
     result.primaryKey.value = object.primaryKeyValue;
@@ -1303,9 +1306,12 @@ export class CustomersService {
   }
 
   getFieldValueFromObject(object: any, fieldName: string): any {
+    if(!object)
+      return null;
+
     let objectToUse:any = object;
 
-    if(fieldName == 'iosDeviceToken' || fieldName == 'androidDeviceToken')
+    if(object.$fcm && (fieldName == 'iosDeviceToken' || fieldName == 'androidDeviceToken'))
       objectToUse = object.$fcm;
 
     return objectToUse[fieldName]
@@ -1476,6 +1482,7 @@ export class CustomersService {
    * @param workspaceId
    * @param searchOptionsInitial
    * @param session
+   * @param customerUpsertData
    * @param object (e.g. event)
    * @returns customer
    */
@@ -1483,6 +1490,7 @@ export class CustomersService {
     workspaceId: string,
     searchOptionsInitial: CustomerSearchOptions,
     session: string,
+    customerUpsertData: Record<string, any>,
     object?: Record<string, any>
   ): Promise<CustomerSearchOptionResult> {
 
@@ -1501,23 +1509,25 @@ export class CustomersService {
 
     // If customer still not found, create a new one
     if (!result.customer) {
+      const newId = searchOptions.correlationValue || randomUUID();
+
       const upsertData = {
-        $setOnInsert: {
-          _id: searchOptions.correlationValue,
-          workspaceId,
-          createdAt: new Date(),
-        },
+        _id: newId,
+        workspaceId,
+        createdAt: new Date(),
       };
 
       if (searchOptions.primaryKey.value && searchOptions.primaryKey.name) {
-        upsertData.$setOnInsert[searchOptions.primaryKey.name] = searchOptions.primaryKey.value;
-        upsertData.$setOnInsert['isAnonymous'] = false;
+        upsertData[searchOptions.primaryKey.name] = searchOptions.primaryKey.value;
+        upsertData['isAnonymous'] = false;
       }
+
+      _.merge(upsertData, customerUpsertData);
 
       try {
         result.customer = await this.CustomerModel.findOneAndUpdate(
-          { _id: searchOptions.correlationValue, workspaceId },
-          upsertData,
+          { _id: newId, workspaceId },
+          { $setOnInsert: { ...upsertData }},
           { upsert: true, new: true }
         );
         result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
@@ -1525,7 +1535,7 @@ export class CustomersService {
         // Check if the error is a duplicate key error
         if (error.code === 11000) {
           result.customer = await this.CustomerModel.findOne({
-            _id: searchOptions.correlationValue,
+            _id: newId,
             workspaceId,
           });
           result.findType = FindType.DUPLICATE_KEY_ERROR; // Optionally, set a different findType to indicate handling of a duplicate key error
@@ -1535,7 +1545,7 @@ export class CustomersService {
       }
     }
 
-    if (object.$fcm) {
+    if (object && object.$fcm) {
       const { iosDeviceToken, androidDeviceToken } = object.$fcm;
       const deviceTokenField = iosDeviceToken
         ? 'iosDeviceToken'
@@ -1582,21 +1592,19 @@ export class CustomersService {
           HttpStatus.BAD_REQUEST
         );
 
-      // Generate a new UUID to be used only if a new document is being inserted
-      const newId = randomUUID();
-
-      const ret: CustomerDocument = await this.CustomerModel.findOneAndUpdate(
+      let { customer, findType } = await this.findOrCreateCustomerBySearchOptions(
+        auth.workspace.id,
         {
-          workspaceId: auth.workspace.id,
-          [primaryKey.key]: upsertCustomerDto.primary_key,
+          primaryKey: { name: primaryKey.key, value: upsertCustomerDto.primary_key },
         },
-        {
-          $set: { ...upsertCustomerDto.properties },
-          $setOnInsert: { _id: newId }, // This will ensure _id is set to newId only on insert
-        },
-        { upsert: true, new: true, projection: { _id: 1 } }
+        session,
+        { ...upsertCustomerDto.properties },
+        // send the upsert proprties once for upsert data and another for 
+        // trying to find customers via message channels
+        { ...upsertCustomerDto.properties }
       );
-      return Promise.resolve({ id: ret._id });
+
+      return Promise.resolve({ id: customer._id });
     } catch (err) {
       this.error(err, this.upsert.name, session, auth.account.email);
       throw err;
