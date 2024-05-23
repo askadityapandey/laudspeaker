@@ -160,15 +160,11 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       const { verified, workspace } = data;
       setIsVerified(verified);
       setIsCompanySetuped(!!workspace?.id);
-
-      //we should only check this after an organization is set up
-      if (isCompanySetuped) {
-        const { data: planData } = await ApiService.get({
-          url: "/accounts/check-active-plan",
-        });
-        setIsPlanActive(planData.isActive);
-      }
-
+      const { isActive } = data;
+      //console.log("here is the whole data", JSON.stringify(data, null, 2));
+      //console.log("is Active from data is", isActive);
+      setIsPlanActive(isActive);
+      //console.log("is loaded");
       setIsLoaded(true);
     } catch (e) {
       toast.error("Error while loading data");
@@ -176,6 +172,24 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       setIsLoading(false);
     }
   };
+
+  /*
+  const loadPlanStatus = async () => {
+    try {
+      const { data: planData } = await ApiService.get({
+        url: "/accounts/check-active-plan",
+      });
+      console.log("after setup")
+      console.log(JSON.stringify(planData, null, 2))
+      console.log("plandata is a ", planData.isActive)
+      setIsPlanActive(planData.isActive);
+      console.log("isPlanActive is a", isPlanActive)
+      console.log("is loaded");
+    } catch (e) {
+      toast.error("Error while loading data");
+    }
+  }
+  */
 
   useEffect(() => {
     loadData();
@@ -188,6 +202,8 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       } else if (!isCompanySetuped) {
         navigate("/company-setup");
       } else if (!isPlanActive) {
+        //console.log("am i getting here");
+        //console.log(isPlanActive)
         navigate("/payment-gate");
       }
     }

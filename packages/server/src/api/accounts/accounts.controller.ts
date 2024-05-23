@@ -158,12 +158,27 @@ export class AccountsController {
       delete workspace?.pushPlatforms?.Android?.credentials;
       delete workspace?.pushPlatforms?.iOS?.credentials;
 
+      if(process.env.PAYMENTS_ENABLED !== 'true'){
+        return {
+          ...data?.[0],
+          workspace: {
+            ...workspace,
+            pk,
+          },
+          isActive: true,
+        };
+        //return { isActive: true };
+      }
+      const isActive = await this.accountsService.checkActivePlanForUser((<Account>user).id, session);
+
+      //to do
       return {
         ...data?.[0],
         workspace: {
           ...workspace,
           pk,
         },
+        isActive,
       };
     } catch (e) {
       this.error(e, this.findOne.name, session, (<Account>user).id);

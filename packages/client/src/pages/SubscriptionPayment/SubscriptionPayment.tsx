@@ -44,7 +44,9 @@ const SubscriptionPayment = () => {
       const { data: planData } = await ApiService.get({
         url: "/accounts/check-active-plan",
       });
+      //console.log("plandData is", JSON.stringify(planData,null, 2));
       if (planData.isActive) {
+        //console.log("about to set to true");
         setIsPaymentComplete(true); // If active, redirect to home page
         return;
       } else {
