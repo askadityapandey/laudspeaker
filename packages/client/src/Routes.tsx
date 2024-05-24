@@ -197,6 +197,12 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
   }, []);
 
   useEffect(() => {
+    if (isLoaded && !isCompanySetuped) navigate("/company-setup");
+    if (isLoaded && !isVerified) navigate("/verification");
+  }, [isLoaded]);
+
+  /*
+  useEffect(() => {
     if (isLoaded) {
       if (!isVerified) {
         navigate("/verification");
@@ -209,6 +215,7 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       }
     }
   }, [isLoaded, isVerified, isCompanySetuped, isPlanActive]);
+  */
 
   return isVerified && isCompanySetuped ? <>{children}</> : <></>;
 };
