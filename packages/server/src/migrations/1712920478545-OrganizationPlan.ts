@@ -5,7 +5,7 @@ export class OrganizationPlan1712920478545 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TABLE "organization_plan" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "segmentLimit" integer NOT NULL DEFAULT '0', "activeJourneyLimit" integer NOT NULL DEFAULT '0', "messageLimit" integer NOT NULL DEFAULT '0', "customerLimit" integer NOT NULL DEFAULT '0', "seatLimit" integer NOT NULL DEFAULT '0', "workspaceLimit" integer NOT NULL DEFAULT '0', "organizationId" uuid, CONSTRAINT "REL_21ae195d43ff98edcbedcae720" UNIQUE ("organizationId"), CONSTRAINT "PK_5057d4c67d87c89f2fa8d70196b" PRIMARY KEY ("id"))`
+      `CREATE TABLE "organization_plan" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "planName" character varying NOT NULL, "subscribed" boolean NOT NULL DEFAULT false,  "activePlan" boolean NOT NULL DEFAULT false, "billingEmail" character varying NOT NULL, "segmentLimit" integer NOT NULL DEFAULT '0', "activeJourneyLimit" integer NOT NULL DEFAULT '0', "messageLimit" integer NOT NULL DEFAULT '0', "customerLimit" integer NOT NULL DEFAULT '0', "seatLimit" integer NOT NULL DEFAULT '0', "workspaceLimit" integer NOT NULL DEFAULT '0', "organizationId" uuid, CONSTRAINT "REL_21ae195d43ff98edcbedcae720" UNIQUE ("organizationId"), CONSTRAINT "PK_5057d4c67d87c89f2fa8d70196b" PRIMARY KEY ("id"))`
     );
     await queryRunner.query(`ALTER TABLE "organization" ADD "planId" uuid`);
     await queryRunner.query(
