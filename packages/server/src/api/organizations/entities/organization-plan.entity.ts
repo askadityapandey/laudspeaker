@@ -42,7 +42,7 @@ export class OrganizationPlan extends BaseEntity {
   @Column({ default: DEFAULT_PLAN.activePlan })
   activePlan: boolean;
 
-  @Column({ default: DEFAULT_PLAN.activePlan })
+  @Column({ default: DEFAULT_PLAN.billingEmail })
   billingEmail: string;
 
   @Column({ default: DEFAULT_PLAN.segmentLimit })

@@ -162,10 +162,7 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       setIsCompanySetuped(!!workspace?.id);
       const { isActive } = data;
       //console.log("here is the whole data", JSON.stringify(data, null, 2));
-      //console.log("is Active from data is", isActive);
-      //setIsPlanActive(isActive);
-      setIsPlanActive(true);
-      //console.log("is loaded");
+      setIsPlanActive(isActive);
       setIsLoaded(true);
     } catch (e) {
       toast.error("Error while loading data");
@@ -197,12 +194,6 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
   }, []);
 
   useEffect(() => {
-    if (isLoaded && !isCompanySetuped) navigate("/company-setup");
-    if (isLoaded && !isVerified) navigate("/verification");
-  }, [isLoaded]);
-
-  /*
-  useEffect(() => {
     if (isLoaded) {
       if (!isVerified) {
         navigate("/verification");
@@ -215,8 +206,7 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       }
     }
   }, [isLoaded, isVerified, isCompanySetuped, isPlanActive]);
-  */
-
+  
   return isVerified && isCompanySetuped ? <>{children}</> : <></>;
 };
 
