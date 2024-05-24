@@ -163,7 +163,8 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       const { isActive } = data;
       //console.log("here is the whole data", JSON.stringify(data, null, 2));
       //console.log("is Active from data is", isActive);
-      setIsPlanActive(isActive);
+      //setIsPlanActive(isActive);
+      setIsPlanActive(true);
       //console.log("is loaded");
       setIsLoaded(true);
     } catch (e) {
