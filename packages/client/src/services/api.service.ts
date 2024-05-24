@@ -35,6 +35,8 @@ instance.interceptors.response.use(
     return res;
   },
   async (err) => {
+    console.log(`Auth Interceptor error: ${err.message}, ${JSON.stringify(err.stack)}`);
+    
     const originalConfig = err.config;
     if (originalConfig.url === ApiConfig.login) {
     }
