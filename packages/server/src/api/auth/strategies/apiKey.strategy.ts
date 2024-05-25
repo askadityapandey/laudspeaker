@@ -19,11 +19,11 @@ export class ApiKeyStrategy extends PassportStrategy(HeaderAPIKeyStrategy) {
       async (apikey, done, req) => {
         let checkKey: { account: Account; workspace: Workspaces };
         try {
-          checkKey = await this.cacheManager.get(apikey);
-          if (!checkKey) {
+          // checkKey = await this.cacheManager.get(apikey);
+          // if (!checkKey) {
             checkKey = await this.authService.validateAPIKey(apikey);
-            await this.cacheManager.set(apikey, checkKey, 60000);
-          }
+            // await this.cacheManager.set(apikey, checkKey, 60000);
+          // }
         } catch (e) {
           return done(e, false);
         }
