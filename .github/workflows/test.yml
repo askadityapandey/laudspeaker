@@ -45,9 +45,12 @@ jobs:
     - name: Docker logs
       run: docker logs laudspeaker-web
       if: always()
-    - name: Docker logs
+    - name: Docker last n log lines
       run: docker logs -n 100 laudspeaker-web
-      if: always()      
+      if: always()
+    - name: Docker stats
+      run: docker stats --no-stream
+      if: always()
     - name: Publish Test Report
       uses: mikepenz/action-junit-report@v4
       if: always()
