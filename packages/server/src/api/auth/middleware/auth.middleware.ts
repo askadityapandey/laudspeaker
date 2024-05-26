@@ -9,6 +9,7 @@ const passport = require('passport');
 @Injectable()
 export class AuthMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction) {
+    console.log("AuthMiddleware");
     passport.authenticate(
       'headerapikey',
       { session: false, failureRedirect: '/api/unauthorized' },
