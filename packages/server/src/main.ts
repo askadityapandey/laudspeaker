@@ -106,6 +106,14 @@ if (cluster.isPrimary) {
       app.set('trust proxy', 1);
       app.enableCors();
 
+      morgan.token('req-headers', function(req,res){
+       return JSON.stringify(req.headers)
+      });
+
+      morgan.token('res-headers', function(req,res){
+       return JSON.stringify(res._headers)
+      });
+
       const morganMiddleware = morgan(
         ':method :url :status :res[content-length] :remote-addr :user-agent - :response-time ms :total-time ms',
         {
@@ -115,6 +123,19 @@ if (cluster.isPrimary) {
           },
         }
       );
+
+      // app.use(morgan('combined'));
+      app.use(morgan(
+        'Request Headers :req-headers', {
+          immediate: true,
+        }
+      ));
+      app.use(morgan(
+        'Response Headers :res-headers', {
+          immediate: false,
+        }
+      ));
+
       app.use(morganMiddleware);
 
       app.useGlobalPipes(
