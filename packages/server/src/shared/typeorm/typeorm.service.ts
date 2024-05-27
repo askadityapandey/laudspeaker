@@ -7,7 +7,7 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
 
     let totalMaxConnections = process.env.DATABASE_MAX_CONNECTIONS
       ? +process.env.DATABASE_MAX_CONNECTIONS
-      : 100;
+      : 90;
     let maxReplicas = process.env.DEPLOY_MAX_REPLICAS
       ? +process.env.DEPLOY_MAX_REPLICAS
       : 1;
