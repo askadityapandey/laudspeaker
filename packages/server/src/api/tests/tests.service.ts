@@ -127,6 +127,12 @@ export class TestsService {
   }
 
   async resetTestData(session: string) {
+    this.debug(
+      "resetTestData Called",
+      this.resetTestData.name,
+      session
+    );
+
     if (process.env.NODE_ENV !== 'development')
       throw new HttpException('Not found', HttpStatus.NOT_FOUND);
     if (!process.env.TEST_USER_EMAIL)
@@ -135,16 +141,34 @@ export class TestsService {
         HttpStatus.NOT_FOUND
       );
 
+    this.debug(
+      "Getting QueryRunner",
+      this.resetTestData.name,
+      session
+    );
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
+      this.debug(
+        "Finding Test Account",
+        this.resetTestData.name,
+        session
+      );
+
       const testAccount = await queryRunner.manager.findOne(Account, {
         where: { email: process.env.TEST_USER_EMAIL },
         relations: ['teams.organization.workspaces'],
       });
       if (!testAccount) return;
+
+      this.debug(
+        "Checking on Workspaces",
+        this.resetTestData.name,
+        session
+      );
 
       const workspaces = testAccount?.teams?.[0]?.organization?.workspaces;
 
@@ -155,6 +179,12 @@ export class TestsService {
           });
         }
       }
+
+      this.debug(
+        "Removing Account",
+        this.resetTestData.name,
+        session
+      );
 
       const removeResult = await queryRunner.manager.remove(
         Account,
@@ -272,6 +302,12 @@ export class TestsService {
       //       installation: JSON.parse(installationJson),
       //     });
       // }
+
+      this.debug(
+        "commitTransaction",
+        this.resetTestData.name,
+        session
+      );
       await queryRunner.commitTransaction();
     } catch (error) {
       queryRunner.rollbackTransaction();
