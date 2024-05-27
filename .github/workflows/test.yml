@@ -46,7 +46,7 @@ jobs:
       run: docker logs laudspeaker-web
       if: always()
     - name: Docker last n log lines
-      run: docker logs -n 100 laudspeaker-web
+      run: docker logs -n 500 laudspeaker-web
       if: always()
     - name: Docker stats
       run: docker stats --no-stream

@@ -17,7 +17,7 @@ describe("Customer upsert 3", { retries: 2 }, () => {
     cy.clearAllCookies();
     cy.clearAllLocalStorage();
     cy.clearAllSessionStorage();
-    cy.visit("/");
+    cy.visit("/test-url-not-found");
     cy.wait(1000);
     cy.request(`${Cypress.env("TESTS_API_BASE_URL")}/tests/reset-tests`);
     cy.wait(1000);
