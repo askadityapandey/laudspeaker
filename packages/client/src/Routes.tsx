@@ -206,7 +206,7 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       }
     }
   }, [isLoaded, isVerified, isCompanySetuped, isPlanActive]);
-  
+
   return isVerified && isCompanySetuped ? <>{children}</> : <></>;
 };
 

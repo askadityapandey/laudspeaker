@@ -271,11 +271,13 @@ export class OrganizationService {
       teams: { id: team.id },
     });
 
-    if (teamMembersCount + 1 > plan.seatLimit) {
-      throw new HttpException(
-        'Seat limit has been exceeded',
-        HttpStatus.PAYMENT_REQUIRED
-      );
+    if (plan.seatLimit != -1) {
+      if (teamMembersCount + 1 > plan.seatLimit) {
+        throw new HttpException(
+          'Seat limit has been exceeded',
+          HttpStatus.PAYMENT_REQUIRED
+        );
+      }
     }
 
     const invite = await this.organizationInvitesRepository.findOne({
@@ -475,17 +477,12 @@ export class OrganizationService {
     return invite;
   }
 
-  public async checkOrganizationMessageLimit(id: string, messagesToSend = 1) {
-    const organization = await this.organizationRepository.findOne({
-      where: { id },
-      relations: ['plan', 'workspaces'],
-    });
-    if (!organization) throw new NotFoundException('Organization not found');
-
-    const workspaceIds = organization.workspaces.map(
-      (workspace) => `"${workspace.id}"`
-    );
-
+  public async checkOrganizationMessageLimit(workspaceIds: string[], messagesToSend = 1, customerMessageLimit: number) {
+    
+    if (workspaceIds.length === 0) {
+      return;
+    }
+    
     const res = await this.clickhouseClient.query({
       query: `SELECT COUNT(*) FROM message_status WHERE workspaceId IN {workspaceIds:String}`,
       query_params: {
@@ -499,10 +496,10 @@ export class OrganizationService {
 
     const messagesCount = +messagesCountResponseData?.[0]?.['count()'] || 0;
 
-    if (messagesCount + messagesToSend > organization.plan.messageLimit) {
+    if (messagesCount + messagesToSend > customerMessageLimit) {
       throw new HttpException(
         'Message limit has been exceeded',
-        HttpStatus.PAYMENT_REQUIRED
+         HttpStatus.PAYMENT_REQUIRED
       );
     }
 

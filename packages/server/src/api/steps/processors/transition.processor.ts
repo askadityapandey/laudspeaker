@@ -638,11 +638,7 @@ export class TransitionProcessor extends WorkerHost {
     let job;
     const organization = owner.teams[0].organization;
     const workspace = organization.workspaces?.[0];
-
-    await this.organizationService.checkOrganizationMessageLimit(
-      organization.id
-    );
-
+    
     // Rate limiting and sending quiet hours will be stored here
     type MessageSendType =
       | 'SEND' // should send

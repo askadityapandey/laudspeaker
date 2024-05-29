@@ -323,16 +323,18 @@ export class CustomersService {
       },
     });
 
-    if (
-      customersInOrganization + customersToAdd >
-      organization.plan.customerLimit
-    ) {
-      throw new HttpException(
-        'Customers limit has been exceeded',
-        HttpStatus.PAYMENT_REQUIRED
-      );
+    if(organization.plan.customerLimit != -1){
+      if (
+        customersInOrganization + customersToAdd >
+        organization.plan.customerLimit
+      ) {
+        throw new HttpException(
+          'Customers limit has been exceeded',
+          HttpStatus.PAYMENT_REQUIRED
+        );
+      }
     }
-
+    
     return customersInOrganization;
   }
 
@@ -1261,7 +1263,7 @@ export class CustomersService {
    * @param session
    * @returns
    */
-
+  //to do add customer limit check here
   async upsert(
     auth: { account: Account; workspace: Workspaces },
     upsertCustomerDto: UpsertCustomerDto,

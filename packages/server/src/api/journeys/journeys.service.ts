@@ -1740,12 +1740,15 @@ export class JourneysService {
         isActive: true,
       });
 
-      if (activeJourneysCount + 1 > organization.plan.activeJourneyLimit) {
-        throw new HttpException(
-          'Active journeys limit has been exceeded',
-          HttpStatus.PAYMENT_REQUIRED
-        );
+      if(organization.plan.activeJourneyLimit != -1){
+        if (activeJourneysCount + 1 > organization.plan.activeJourneyLimit) {
+          throw new HttpException(
+            'Active journeys limit has been exceeded',
+            HttpStatus.PAYMENT_REQUIRED
+          );
+        }
       }
+      
 
       await this.cleanupJourneyCache({ workspaceId: workspace.id });
 

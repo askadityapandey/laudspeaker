@@ -452,11 +452,13 @@ export class SegmentsService {
       },
     });
 
-    if (segmentsCount + 1 > organizationPlan.segmentLimit) {
-      throw new HttpException(
-        'Segment limit has been exceeded',
-        HttpStatus.PAYMENT_REQUIRED
-      );
+    if (organizationPlan.segmentLimit != -1) {
+      if (segmentsCount + 1 > organizationPlan.segmentLimit) {
+        throw new HttpException(
+          'Segment limit has been exceeded',
+          HttpStatus.PAYMENT_REQUIRED
+        );
+      }
     }
 
     let err;
