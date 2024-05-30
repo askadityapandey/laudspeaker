@@ -317,6 +317,9 @@ export class CustomersService {
   }
 
   async checkCustomerLimit(organization: Organization, customersToAdd = 1) {
+
+    this.debug(`in checkCustomerLimte`, this.checkCustomerLimit.name, "session");
+
     const customersInOrganization = await this.CustomerModel.count({
       workspaceId: {
         $in: organization.workspaces.map((workspace) => workspace.id),
