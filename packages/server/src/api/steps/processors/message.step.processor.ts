@@ -602,7 +602,7 @@ export class MessageStepProcessor extends WorkerHost {
             [
               {
                 stepId: job.data.step.id,
-                createdAt: new Date().toISOString(),
+                createdAt: new Date(),
                 customerId: job.data.customer._id,
                 event: 'aborted',
                 eventProvider: ClickHouseEventProvider.TRACKER,
@@ -638,7 +638,7 @@ export class MessageStepProcessor extends WorkerHost {
             [
               {
                 stepId: job.data.step.id,
-                createdAt: new Date().toISOString(),
+                createdAt: new Date(),
                 customerId: job.data.customer._id,
                 event: 'sent',
                 eventProvider: ClickHouseEventProvider.TRACKER,

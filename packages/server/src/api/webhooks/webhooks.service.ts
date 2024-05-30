@@ -17,9 +17,6 @@ import axios from 'axios';
 import FormData from 'form-data';
 import { randomUUID } from 'crypto';
 import { Step } from '../steps/entities/step.entity';
-import { KafkaProducerService } from '../kafka/producer.service';
-import { Message } from 'kafkajs';
-import { KAFKA_TOPIC_MESSAGE_STATUS } from '../kafka/constants';
 import { EventWebhook } from '@sendgrid/eventwebhook';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -48,7 +45,7 @@ export enum ClickHouseEventProvider {
 export interface ClickHouseMessage {
   audienceId?: string;
   stepId?: string;
-  createdAt: string;
+  createdAt: Date;
   customerId: string;
   event: string;
   eventProvider: ClickHouseEventProvider;
@@ -76,6 +73,16 @@ export class WebhooksService {
   };
 
   private stripeClient = new Stripe.Stripe(process.env.STRIPE_SECRET_KEY);
+  private clickhouseClient = createClient({
+    host: process.env.CLICKHOUSE_HOST
+      ? process.env.CLICKHOUSE_HOST.includes('http')
+        ? process.env.CLICKHOUSE_HOST
+        : `http://${process.env.CLICKHOUSE_HOST}`
+      : 'http://localhost:8123',
+    username: process.env.CLICKHOUSE_USER ?? 'default',
+    password: process.env.CLICKHOUSE_PASSWORD ?? '',
+    database: process.env.CLICKHOUSE_DB ?? 'default',
+  });
 
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -88,8 +95,6 @@ export class WebhooksService {
     private organizationRepository: Repository<Organization>,
     @InjectRepository(OrganizationPlan)
     private organizationPlanRepository: Repository<OrganizationPlan>,
-    @Inject(KafkaProducerService)
-    private kafkaService: KafkaProducerService,
     @InjectQueue('{events_pre}')
     private readonly eventPreprocessorQueue: Queue
   ) {
@@ -241,7 +246,7 @@ export class WebhooksService {
         event: this.sendgridEventsMap[event] || event,
         eventProvider: ClickHouseEventProvider.SENDGRID,
         processed: false,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date(),
       };
 
       messagesToInsert.push(clickHouseRecord);
@@ -280,7 +285,7 @@ export class WebhooksService {
       event: SmsStatus,
       eventProvider: ClickHouseEventProvider.TWILIO,
       processed: false,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(),
     };
     await this.insertMessageStatusToClickhouse([clickHouseRecord], session);
   }
@@ -309,7 +314,7 @@ export class WebhooksService {
         event: event.type.replace('email.', ''),
         eventProvider: ClickHouseEventProvider.RESEND,
         processed: false,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date(),
       };
       await this.insertMessageStatusToClickhouse([clickHouseRecord], session);
     } catch (e) {
@@ -385,7 +390,7 @@ export class WebhooksService {
       event: event,
       eventProvider: ClickHouseEventProvider.MAILGUN,
       processed: false,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(),
     };
 
     this.debug(
@@ -452,9 +457,6 @@ export class WebhooksService {
     updateAllWebhooks();
   }
 
-  /**
-   * Queue a ClickHouseMessage to kafka so that it will be ingested into clickhouse.
-   */
   public async insertMessageStatusToClickhouse(
     clickhouseMessages: ClickHouseMessage[],
     session: string
@@ -476,12 +478,22 @@ export class WebhooksService {
               };
             })
           );
-          return await this.kafkaService.produceMessage(
-            KAFKA_TOPIC_MESSAGE_STATUS,
-            clickhouseMessages.map((clickhouseMessage) => ({
-              value: JSON.stringify(clickhouseMessage),
-            }))
-          );
+          
+          await this.clickhouseClient.insert({
+            table: "message_status",
+            values: clickhouseMessages,
+            format: 'JSONEachRow',
+            clickhouse_settings: {
+              date_time_input_format: "best_effort",
+              async_insert: 1,
+              wait_for_async_insert: 1,
+              async_insert_max_data_size: 
+                process.env.CLICKHOUSE_MESSAGE_STATUS_ASYNC_MAX_SIZE || '1000000',
+              async_insert_busy_timeout_ms:
+                process.env.CLICKHOUSE_MESSAGE_STATUS_ASYNC_TIMEOUT_MS ?
+                +process.env.CLICKHOUSE_MESSAGE_STATUS_ASYNC_TIMEOUT_MS : 1000,
+            }
+          });
         }
       }
     );

@@ -491,7 +491,7 @@ export class TransitionProcessor extends WorkerHost {
       [
         {
           stepId: stepID,
-          createdAt: new Date().toISOString(),
+          createdAt: new Date(),
           customerId: customerID,
           event: 'sent',
           eventProvider: ClickHouseEventProvider.TRACKER,
@@ -520,7 +520,7 @@ export class TransitionProcessor extends WorkerHost {
         [
           {
             stepId: stepID,
-            createdAt: new Date().toISOString(),
+            createdAt: new Date(),
             customerId: customerID,
             event: 'delivered',
             eventProvider: ClickHouseEventProvider.TRACKER,
@@ -1062,7 +1062,7 @@ export class TransitionProcessor extends WorkerHost {
         [
           {
             stepId: step.id,
-            createdAt: new Date().toISOString(),
+            createdAt: new Date(),
             customerId: customer._id,
             event: 'aborted',
             eventProvider: ClickHouseEventProvider.TRACKER,
@@ -1104,7 +1104,7 @@ export class TransitionProcessor extends WorkerHost {
         [
           {
             stepId: step.id,
-            createdAt: new Date().toISOString(),
+            createdAt: new Date(),
             customerId: customer._id,
             event: 'sent',
             eventProvider: ClickHouseEventProvider.TRACKER,

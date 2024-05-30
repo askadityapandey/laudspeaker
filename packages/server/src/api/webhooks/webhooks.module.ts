@@ -13,7 +13,6 @@ import { WebhooksProcessor } from './webhooks.processor';
 import { BullModule } from '@nestjs/bullmq';
 import { TemplatesModule } from '../templates/templates.module';
 import { Step } from '../steps/entities/step.entity';
-import { KafkaModule } from '../kafka/kafka.module';
 import { Organization } from '../organizations/entities/organization.entity';
 import { OrganizationPlan } from '../organizations/entities/organization-plan.entity';
 
@@ -37,7 +36,6 @@ function getProvidersList() {
       name: '{events_pre}',
     }),
     TemplatesModule,
-    KafkaModule,
   ],
   providers: getProvidersList(),
   controllers: [WebhooksController],
