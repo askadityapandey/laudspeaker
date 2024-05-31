@@ -41,6 +41,7 @@ import {
   OrganizationPlan,
 } from '../organizations/entities/organization-plan.entity';
 import Stripe from 'stripe';
+import { WorkspaceMailgunConnection } from '../workspaces/entities/workspace-mailgun-connection.entity';
 
 @Injectable()
 export class AccountsService extends BaseJwtHelper {
@@ -427,6 +428,7 @@ export class AccountsService extends BaseJwtHelper {
         resendSigningSecret,
         resendSendingName,
         resendSendingEmail,
+        emailConnections,
       } = updateUserDto;
 
       const newPushPlatforms = {

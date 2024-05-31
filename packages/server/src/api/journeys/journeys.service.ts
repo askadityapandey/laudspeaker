@@ -1749,6 +1749,20 @@ export class JourneysService {
         }
       }
       
+      const accountWithConnections = await queryRunner.manager.findOne(
+        Account,
+        {
+          where: { id: account.id },
+          relations: [
+            'teams.organization.workspaces',
+            'teams.organization.workspaces.mailgunConnections.sendingOptions',
+            'teams.organization.workspaces.sendgridConnections.sendingOptions',
+            'teams.organization.workspaces.resendConnections.sendingOptions',
+            'teams.organization.workspaces.twilioConnections',
+            'teams.organization.workspaces.pushConnections',
+          ],
+        }
+      );
 
       await this.cleanupJourneyCache({ workspaceId: workspace.id });
 
@@ -2048,6 +2062,10 @@ export class JourneysService {
               return node.id === relevantEdges[0].target;
             })[0].data.stepId;
             metadata.channel = nodes[i].data['template']['type'];
+
+            metadata.connectionId = nodes[i].data.connectionId;
+            metadata.sendingOptionId = nodes[i].data.sendingOptionId;
+
             metadata.customName = nodes[i].data['customName'] || 'Unknown name';
             if (nodes[i].data['template']['selected'])
               metadata.template = nodes[i].data['template']['selected']['id'];
