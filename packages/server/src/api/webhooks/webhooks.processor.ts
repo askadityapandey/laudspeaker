@@ -1,10 +1,11 @@
 /* eslint-disable no-case-declarations */
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Job } from 'bullmq';
+import { Job, MetricsTime } from 'bullmq';
 import { Inject, Logger } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Liquid } from 'liquidjs';
+import { format, parseISO } from 'date-fns';
 import {
   ClickHouseEventProvider,
   WebhooksService,
@@ -15,13 +16,30 @@ import {
   FallBackAction,
   Template,
   WebhookMethod,
+  MIMEType,
 } from '../templates/entities/template.entity';
 import { TemplatesService } from '../templates/templates.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Repository } from 'typeorm';
 
-@Processor('webhooks', { removeOnComplete: { age: 0, count: 0 } })
+@Processor('{webhooks}', {
+  stalledInterval: process.env.WEBHOOKS_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.WEBHOOKS_PROCESSOR_STALLED_INTERVAL
+    : 600000,
+  removeOnComplete: {
+    age: 0,
+    count: process.env.WEBHOOKS_PROCESSOR_REMOVE_ON_COMPLETE
+      ? +process.env.WEBHOOKS_PROCESSOR_REMOVE_ON_COMPLETE
+      : 0,
+  },
+  metrics: {
+    maxDataPoints: MetricsTime.ONE_WEEK,
+  },
+  concurrency: process.env.WEBHOOKS_PROCESSOR_CONCURRENCY
+    ? +process.env.WEBHOOKS_PROCESSOR_CONCURRENCY
+    : 1,
+})
 @Injectable()
 export class WebhooksProcessor extends WorkerHost {
   private tagEngine = new Liquid();
@@ -35,6 +53,50 @@ export class WebhooksProcessor extends WorkerHost {
     private accountRepository: Repository<Account>
   ) {
     super();
+
+    this.tagEngine.registerFilter('date', (input, formatString) => {
+      const date = input === 'now' ? new Date() : parseISO(input);
+      // Adjust the formatString to fit JavaScript's date formatting if necessary
+      const adjustedFormatString = formatString
+        .replace(/%Y/g, 'yyyy')
+        .replace(/%m/g, 'MM')
+        .replace(/%d/g, 'dd')
+        .replace(/%H/g, 'HH')
+        .replace(/%M/g, 'mm')
+        .replace(/%S/g, 'ss');
+      return format(date, adjustedFormatString);
+    });
+    this.tagEngine.registerTag('api_call', {
+      parse(token) {
+        this.items = token.args.split(' ');
+      },
+      async render(ctx) {
+        const url = this.liquid.parseAndRenderSync(
+          this.items[0],
+          ctx.getAll(),
+          ctx.opts
+        );
+
+        try {
+          const res = await fetch(url, { method: 'GET' });
+
+          if (res.status !== 200)
+            throw new Error('Error while processing api_call tag');
+
+          const data = res.headers
+            .get('Content-Type')
+            .includes('application/json')
+            ? await res.json()
+            : await res.text();
+
+          if (this.items[1] === ':save' && this.items[2]) {
+            ctx.push({ [this.items[2]]: data });
+          }
+        } catch (e) {
+          throw new Error('Error while processing api_call tag');
+        }
+      },
+    });
   }
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -99,7 +161,7 @@ export class WebhooksProcessor extends WorkerHost {
   async process(job: Job<{ template: Template; [key: string]: any }>) {
     const { template, filteredTags } = job.data;
 
-    const { method, retries, fallBackAction } = template.webhookData;
+    const { method, retries, fallBackAction, mimeType } = template.webhookData;
 
     let { body, headers, url } = template.webhookData;
 
@@ -140,6 +202,15 @@ export class WebhooksProcessor extends WorkerHost {
         ])
       )
     );
+
+    // add content type to headers
+    if (Object.values(MIMEType).includes(mimeType)) {
+      headers = {
+        ...headers,
+        'content-type': mimeType,
+      };
+    }
+
     const account = await this.accountRepository.findOne({
       where: { id: job.data.accountId },
       relations: ['teams.organization.workspaces'],
@@ -150,8 +221,12 @@ export class WebhooksProcessor extends WorkerHost {
     let success = false;
 
     this.logger.debug(
-      'Sending webhook requst: \n' +
+      'Sending webhook request: \n' +
         JSON.stringify(template.webhookData, null, 2)
+    );
+
+    this.logger.debug(
+      'With inserted tags: \n' + JSON.stringify({ url, body, headers }, null, 2)
     );
     let error: string | null = null;
     while (!success && retriesCount < retries) {
@@ -190,10 +265,10 @@ export class WebhooksProcessor extends WorkerHost {
           [
             {
               event: 'error',
-              createdAt: new Date().toISOString(),
+              createdAt: new Date(),
               eventProvider: ClickHouseEventProvider.WEBHOOKS,
               messageId: '',
-              audienceId: job.data.audienceId,
+              stepId: job.data.stepId,
               customerId: job.data.customerId,
               templateId: String(job.data.template.id),
               workspaceId: workspace.id,
@@ -213,10 +288,10 @@ export class WebhooksProcessor extends WorkerHost {
           [
             {
               event: 'sent',
-              createdAt: new Date().toISOString(),
+              createdAt: new Date(),
               eventProvider: ClickHouseEventProvider.WEBHOOKS,
               messageId: '',
-              audienceId: job.data.audienceId,
+              stepId: job.data.stepId,
               customerId: job.data.customerId,
               templateId: String(job.data.template.id),
               workspaceId: workspace.id,

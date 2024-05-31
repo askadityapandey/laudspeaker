@@ -14,10 +14,20 @@ import {
 import { CustomersModule } from '../customers/customers.module';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 
+function getProvidersList() {
+  let providerList: Array<any> = [];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
+    providerList = [...providerList, MessageProcessor];
+  }
+
+  return providerList;
+}
+
 @Module({
   imports: [
     BullModule.registerQueue({
-      name: 'message',
+      name: '{message}',
     }),
     TypeOrmModule.forFeature([Account, Audience]),
     MongooseModule.forFeature([
@@ -27,12 +37,12 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
     BullModule.registerQueue({
-      name: 'customers',
+      name: '{customers}',
     }),
     CustomersModule,
     WebhooksModule,
   ],
   controllers: [EmailController],
-  providers: [MessageProcessor],
+  providers: getProvidersList(),
 })
 export class EmailModule {}

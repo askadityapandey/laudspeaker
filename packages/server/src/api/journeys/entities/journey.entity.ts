@@ -4,14 +4,16 @@ import {
   PrimaryGeneratedColumn,
   JoinColumn,
   ManyToOne,
+  OneToMany,
 } from 'typeorm';
 import { VisualLayout } from '../types/visual-layout.interface';
 import {
   JourneyEntrySettings,
   JourneySettings,
 } from '../types/additional-journey-settings.interface';
-import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
-import { Account } from '@/api/accounts/entities/accounts.entity';
+import { Workspaces } from '../../workspaces/entities/workspaces.entity';
+import { Account } from '../../accounts/entities/accounts.entity';
+import { JourneyLocation } from './journey-location.entity';
 
 @Entity()
 export class Journey {
@@ -29,6 +31,9 @@ export class Journey {
 
   @Column('boolean', { default: false })
   isActive: boolean;
+
+  @Column('boolean', { default: false })
+  isEnrolling: boolean;
 
   @Column('boolean', { default: false })
   isPaused: boolean;
@@ -90,4 +95,7 @@ export class Journey {
   // the same number across any timezone
   @Column('bigint', { nullable: true })
   last_enrollment_timestamp?: number;
+
+  @OneToMany(() => JourneyLocation, (location) => location.journey)
+  journeyLocations: Promise<JourneyLocation[]>;
 }

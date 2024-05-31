@@ -25,6 +25,7 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { OrganizationInvites } from '../organizations/entities/organization-invites.entity';
 import { OrganizationTeam } from '../organizations/entities/organization-team.entity';
+import { randomUUID } from 'node:crypto';
 
 @Injectable()
 export class AuthService {
@@ -32,7 +33,7 @@ export class AuthService {
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('message') private readonly messageQueue: Queue,
+    @InjectQueue('{message}') private readonly messageQueue: Queue,
     @InjectRepository(Account)
     public readonly accountRepository: Repository<Account>,
     @InjectRepository(Verification)
@@ -211,9 +212,8 @@ export class AuthService {
       where: {
         apiKey,
       },
-      relations: ['organization.owner'],
+      relations: ['organization.owner.teams.organization.workspaces'],
     });
-
     return { account: workspace.organization.owner, workspace: workspace };
   }
 

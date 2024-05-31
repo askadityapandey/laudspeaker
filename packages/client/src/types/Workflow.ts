@@ -118,6 +118,7 @@ export interface VisualLayout {
 }
 
 export interface Workflow {
+  isEnrolling: any;
   id: string;
   name: string;
   isActive: boolean;
@@ -130,4 +131,9 @@ export interface Workflow {
   latestSave: string;
   latestChangerEmail?: string;
   enrolledCustomers?: number;
+}
+
+export interface EntityWithComputedFields<T> {
+  entity: T;
+  computed: Record<string, any>;
 }

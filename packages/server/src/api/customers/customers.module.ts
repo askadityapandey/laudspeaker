@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CustomersController } from './customers.controller';
 import { CustomersService } from './customers.service';
-import { CustomersProcessor } from './customers.processor';
 import { BullModule } from '@nestjs/bullmq';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Customer, CustomerSchema } from './schemas/customer.schema';
@@ -29,6 +28,43 @@ import { JourneyLocation } from '../journeys/entities/journey-location.entity';
 import { SegmentsService } from '../segments/segments.service';
 import { Segment } from '../segments/entities/segment.entity';
 import { SegmentCustomers } from '../segments/entities/segment-customers.entity';
+import { CustomerChangeProcessor } from './processors/customers.processor';
+import { CacheService } from '@/common/services/cache.service';
+
+function getProvidersList() {
+  let providerList: Array<any> = [
+    CustomersService,
+    AudiencesHelper,
+    S3Service,
+    JourneyLocationsService,
+    CacheService
+  ];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
+    providerList = [
+      ...providerList,
+      ImportProcessor,
+      CustomersConsumerService,
+      CustomerChangeProcessor,
+    ];
+  }
+
+  return providerList;
+}
+
+function getExportsList() {
+  let exportList: Array<any> = [CustomersService];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
+    exportList = [
+      ...exportList,
+      CustomersConsumerService,
+      CustomerChangeProcessor,
+    ];
+  }
+
+  return exportList;
+}
 
 @Module({
   imports: [
@@ -39,13 +75,16 @@ import { SegmentCustomers } from '../segments/entities/segment-customers.entity'
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
     BullModule.registerQueue({
-      name: 'customers',
+      name: '{customers}',
     }),
     BullModule.registerQueue({
-      name: 'imports',
+      name: '{customer_change}',
     }),
     BullModule.registerQueue({
-      name: 'events_pre',
+      name: '{imports}',
+    }),
+    BullModule.registerQueue({
+      name: '{events_pre}',
     }),
     AccountsModule,
     SegmentsModule,
@@ -64,16 +103,7 @@ import { SegmentCustomers } from '../segments/entities/segment-customers.entity'
     JourneysModule,
   ],
   controllers: [CustomersController],
-  providers: [
-    CustomersService,
-    CustomersProcessor,
-    AudiencesHelper,
-    CustomersConsumerService,
-    S3Service,
-    ImportProcessor,
-    JourneyLocationsService,
-  ],
-
-  exports: [CustomersService, CustomersConsumerService],
+  providers: getProvidersList(),
+  exports: getExportsList(),
 })
 export class CustomersModule {}

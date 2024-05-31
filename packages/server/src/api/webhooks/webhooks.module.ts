@@ -13,21 +13,29 @@ import { WebhooksProcessor } from './webhooks.processor';
 import { BullModule } from '@nestjs/bullmq';
 import { TemplatesModule } from '../templates/templates.module';
 import { Step } from '../steps/entities/step.entity';
-import { KafkaModule } from '../kafka/kafka.module';
+
+function getProvidersList() {
+  let providerList: Array<any> = [WebhooksService];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
+    providerList = [...providerList, WebhooksProcessor];
+  }
+
+  return providerList;
+}
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Account, Step]),
     BullModule.registerQueue({
-      name: 'webhooks',
+      name: '{webhooks}',
     }),
     BullModule.registerQueue({
-      name: 'events_pre',
+      name: '{events_pre}',
     }),
     TemplatesModule,
-    KafkaModule,
   ],
-  providers: [WebhooksService, WebhooksProcessor],
+  providers: getProvidersList(),
   controllers: [WebhooksController],
   exports: [WebhooksService],
 })

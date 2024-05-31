@@ -10,9 +10,9 @@ import {
   CreateDateColumn,
 } from 'typeorm';
 import { VisualLayout } from '../types/visual-layout.interface';
-import { Step } from '@/api/steps/entities/step.entity';
+import { Step } from '../../steps/entities/step.entity';
 import { Journey } from './journey.entity';
-import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
+import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 
 @Entity()
 export class JourneyLocation {
@@ -39,10 +39,24 @@ export class JourneyLocation {
   @Column({ type: 'bigint', nullable: false })
   stepEntry!: number;
 
+  @Column({
+    type: 'timestamp',
+    nullable: false,
+    default: () => 'CURRENT_TIMESTAMP',
+  })
+  stepEntryAt!: Date;
+
   // This is actually a timestamp using ECMAScript's native Date object; will yield
   // the same number across any timezone
   @Column({ type: 'bigint', nullable: false, default: 0 })
   journeyEntry!: number;
+
+  @Column({
+    type: 'timestamp',
+    nullable: false,
+    default: () => 'CURRENT_TIMESTAMP',
+  })
+  journeyEntryAt!: Date;
 
   // This is actually a timestamp using ECMAScript's native Date object; will yield
   // the same number across any timezone

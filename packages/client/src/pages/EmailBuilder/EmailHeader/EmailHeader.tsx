@@ -90,19 +90,7 @@ const EmailHeader = (props: IEmailHeaderProps) => {
           >
             Save Draft
           </GenericButton>
-          <GenericButton
-            onClick={onPersonalize}
-            customClasses="ml-[10px]"
-            style={{
-              maxWidth: "158px",
-              maxHeight: "48px",
-            }}
-            disabled={loading}
-            loading={loading}
-          >
-            Personalize
-          </GenericButton>
-          {onAddApiCallClick && (
+          {/* {onAddApiCallClick && (
             <GenericButton
               onClick={onAddApiCallClick}
               customClasses="ml-[10px]"
@@ -115,7 +103,7 @@ const EmailHeader = (props: IEmailHeaderProps) => {
             >
               Add Api Call
             </GenericButton>
-          )}
+          )} */}
         </div>
       </div>
     </div>

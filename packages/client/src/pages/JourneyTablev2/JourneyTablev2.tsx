@@ -8,7 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useDebounce } from "react-use";
 import ApiService from "services/api.service";
-import { Workflow } from "types/Workflow";
+import { Workflow, EntityWithComputedFields } from "types/Workflow";
 import NameJourneyModal from "./Modals/NameJourneyModal";
 import searchIconImage from "./svg/search-icon.svg";
 import threeDotsIcon from "./svg/three-dots-icon.svg";
@@ -25,6 +25,7 @@ enum FilterOption {
   DRAFT,
   PAUSED,
   STOPPED,
+  ENROLLING,
 }
 
 const filterOptionToTextMap: Record<FilterOption, string> = {
@@ -33,6 +34,7 @@ const filterOptionToTextMap: Record<FilterOption, string> = {
   [FilterOption.DRAFT]: "Draft",
   [FilterOption.PAUSED]: "Paused",
   [FilterOption.STOPPED]: "Stopped",
+  [FilterOption.ENROLLING]: "Enrolling",
 };
 
 const filterOptionsToRender: FilterOption[] = [
@@ -41,6 +43,7 @@ const filterOptionsToRender: FilterOption[] = [
   FilterOption.DRAFT,
   FilterOption.PAUSED,
   FilterOption.STOPPED,
+  FilterOption.ENROLLING,
 ];
 
 export type ChosenFilter =
@@ -62,11 +65,13 @@ export enum JourneyStatus {
   STOPPED = "Stopped",
   DELETED = "Deleted",
   DRAFT = "Draft",
+  ENROLLING = "Enrolling",
 }
 
 export const journeyStatusClassName: Record<JourneyStatus, string> = {
   [JourneyStatus.ACTIVE]: "bg-[#DCFCE7] text-[#14532D]",
   [JourneyStatus.DELETED]: "",
+  [JourneyStatus.ENROLLING]: "bg-[#FEF9C3] text-[#713F12]",
   [JourneyStatus.DRAFT]: "bg-[#E0F2FE] text-[#0C4A6E]",
   [JourneyStatus.PAUSED]: "bg-[#FEF9C3] text-[#713F12]",
   [JourneyStatus.STOPPED]: "bg-[#F3F4F6] text-[#6B7280]",
@@ -77,6 +82,7 @@ const filterOptionToJourneyStatusMap: Record<
   JourneyStatus
 > = {
   [FilterOption.ACTIVE]: JourneyStatus.ACTIVE,
+  [FilterOption.ENROLLING]: JourneyStatus.ENROLLING,
   [FilterOption.DRAFT]: JourneyStatus.DRAFT,
   [FilterOption.PAUSED]: JourneyStatus.PAUSED,
   [FilterOption.STOPPED]: JourneyStatus.STOPPED,
@@ -129,7 +135,10 @@ const JourneyTablev2 = () => {
     try {
       const {
         data: { data, totalPages },
-      } = await ApiService.get<{ data: Workflow[]; totalPages: number }>({
+      } = await ApiService.get<{
+        data: EntityWithComputedFields<Workflow>[];
+        totalPages: number;
+      }>({
         url: `/journeys?take=${ITEMS_PER_PAGE}&skip=${
           (currentPage - 1) * ITEMS_PER_PAGE
         }&search=${search}&orderBy=${sortOptions.sortBy}&orderType=${
@@ -144,21 +153,27 @@ const JourneyTablev2 = () => {
       });
 
       setRows(
-        data.map((workflow) => {
+        data.map((journeyResult) => {
+          const journey = journeyResult.entity;
+          const { computed } = journeyResult;
+
           let status: JourneyStatus = JourneyStatus.DRAFT;
 
-          if (workflow.isActive) status = JourneyStatus.ACTIVE;
-          if (workflow.isPaused) status = JourneyStatus.PAUSED;
-          if (workflow.isStopped) status = JourneyStatus.STOPPED;
-          if (workflow.isDeleted) status = JourneyStatus.DELETED;
+          if (journey.isActive) {
+            if (journey.isEnrolling) status = JourneyStatus.ENROLLING;
+            else status = JourneyStatus.ACTIVE;
+          }
+          if (journey.isPaused) status = JourneyStatus.PAUSED;
+          if (journey.isStopped) status = JourneyStatus.STOPPED;
+          if (journey.isDeleted) status = JourneyStatus.DELETED;
 
           return {
-            id: workflow.id,
-            name: workflow.name,
+            id: journey.id,
+            name: journey.name,
             status,
-            enrolledCount: workflow.enrolledCustomers || 0,
-            lastUpdate: workflow.latestSave,
-            latestChangerEmail: workflow.latestChangerEmail,
+            enrolledCount: computed.totalEnrolled || 0,
+            lastUpdate: journey.latestSave,
+            latestChangerEmail: computed.latestChangerEmail,
           };
         })
       );
@@ -305,7 +320,7 @@ const JourneyTablev2 = () => {
                 <div className="px-5 py-[10px] select-none">Name</div>,
                 <div className="px-5 py-[10px] select-none">Status</div>,
                 <div className="px-5 py-[10px] select-none">
-                  Enrolled customer
+                  Enrolled customers
                 </div>,
                 <div className="px-5 py-[10px] select-none">
                   Last updated by
@@ -371,7 +386,10 @@ const JourneyTablev2 = () => {
                   {row.status === JourneyStatus.DRAFT ? (
                     "-"
                   ) : (
-                    <>{row.enrolledCount} persons</>
+                    <>
+                      {row.enrolledCount}{" "}
+                      {row.enrolledCount == 1 ? "customer" : "customers"}
+                    </>
                   )}
                 </div>,
                 <div>{row.latestChangerEmail || "-"}</div>,

@@ -26,13 +26,54 @@ import { ModalsModule } from '../modals/modals.module';
 import { WebsocketsModule } from '@/websockets/websockets.module';
 import { RedlockModule } from '../redlock/redlock.module';
 import { RedlockService } from '../redlock/redlock.service';
-import { StartProcessor } from '../journeys/start.processor';
+import { StartProcessor } from '../journeys/processors/start.processor';
+import { EnrollmentProcessor } from '../journeys/processors/enrollment.processor';
 import { JourneyLocationsService } from '../journeys/journey-locations.service';
 import { JourneyLocation } from '../journeys/entities/journey-location.entity';
 import { JourneysModule } from '../journeys/journeys.module';
 import { Requeue } from './entities/requeue.entity';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
+import { CacheService } from '@/common/services/cache.service';
+import { ExitStepProcessor } from './processors/exit.step.processor';
+import { ExperimentStepProcessor } from './processors/experiment.step.processor';
+import { JumpToStepProcessor } from './processors/jump.to.step.processor';
+import { MessageStepProcessor } from './processors/message.step.processor';
+import { MultisplitStepProcessor } from './processors/multisplit.step.processor';
+import { StartStepProcessor } from './processors/start.step.processor';
+import { TimeDelayStepProcessor } from './processors/time.delay.step.processor';
+import { TimeWindowStepProcessor } from './processors/time.window.step.processor';
+import { WaitUntilStepProcessor } from './processors/wait.until.step.processor';
+
+function getProvidersList() {
+  let providerList: Array<any> = [
+    StepsService,
+    JobsService,
+    RedlockService,
+    JourneyLocationsService,
+    CacheService,
+  ];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
+    providerList = [
+      ...providerList,
+      TransitionProcessor,
+      StartProcessor,
+      EnrollmentProcessor,
+      ExitStepProcessor,
+      ExperimentStepProcessor,
+      JumpToStepProcessor,
+      MessageStepProcessor,
+      MultisplitStepProcessor,
+      StartStepProcessor,
+      TimeDelayStepProcessor,
+      TimeWindowStepProcessor,
+      WaitUntilStepProcessor,
+    ];
+  }
+
+  return providerList;
+}
 
 @Module({
   imports: [
@@ -53,13 +94,40 @@ import { WorkspacesModule } from '../workspaces/workspaces.module';
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
     BullModule.registerQueue({
-      name: 'transition',
+      name: '{transition}',
     }),
     BullModule.registerQueue({
-      name: 'webhooks',
+      name: '{webhooks}',
     }),
     BullModule.registerQueue({
-      name: 'start',
+      name: '{start}',
+    }),
+    BullModule.registerQueue({
+      name: '{start.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{wait.until.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{time.window.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{exit.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{jump.to.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{message.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{time.delay.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{multisplit.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{experiment.step}',
     }),
     forwardRef(() => CustomersModule),
     forwardRef(() => WebhooksModule),
@@ -73,14 +141,7 @@ import { WorkspacesModule } from '../workspaces/workspaces.module';
     forwardRef(() => WorkspacesModule),
     SlackModule,
   ],
-  providers: [
-    StepsService,
-    JobsService,
-    TransitionProcessor,
-    StartProcessor,
-    RedlockService,
-    JourneyLocationsService,
-  ],
+  providers: getProvidersList(),
   controllers: [StepsController],
   exports: [StepsService],
 })

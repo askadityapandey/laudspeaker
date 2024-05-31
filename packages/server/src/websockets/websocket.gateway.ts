@@ -151,6 +151,7 @@ export class WebsocketGateway implements OnGatewayConnection {
   public async handleConnection(socket: Socket) {
     //console.log("In handle connection socket");
     const session = randomUUID();
+    return;
     try {
       const { apiKey, customerId, userId, journeyId, development } =
         socket.handshake.auth;
@@ -413,7 +414,7 @@ export class WebsocketGateway implements OnGatewayConnection {
           [
             {
               stepId: customer.customComponents[key].step,
-              createdAt: new Date().toISOString(),
+              createdAt: new Date(),
               customerId: customer.id,
               event: 'delivered',
               eventProvider: ClickHouseEventProvider.TRACKER,
@@ -432,6 +433,8 @@ export class WebsocketGateway implements OnGatewayConnection {
   public async handlePing(@ConnectedSocket() socket: Socket) {
     socket.emit('log', 'pong');
   }
+
+  /*
 
   @SubscribeMessage('set')
   public async set(
@@ -466,6 +469,9 @@ export class WebsocketGateway implements OnGatewayConnection {
       workspaceId: workspace.id,
     });
   }
+  */
+
+  /*
 
   @SubscribeMessage('identify')
   public async handleIdentify(
@@ -549,6 +555,7 @@ export class WebsocketGateway implements OnGatewayConnection {
 
     socket.emit('log', 'Identified');
   }
+  */
 
   /**
    * Handler for custom component events
@@ -816,7 +823,7 @@ export class WebsocketGateway implements OnGatewayConnection {
 
   /*
    *
-   */
+  
   @SubscribeMessage('fire')
   public async handleFire(
     @ConnectedSocket() socket: Socket,
@@ -875,6 +882,7 @@ export class WebsocketGateway implements OnGatewayConnection {
       socket.emit('error', e);
     }
   }
+   */
 
   @SubscribeMessage('moveToNode')
   public async moveToNode(
@@ -917,6 +925,7 @@ export class WebsocketGateway implements OnGatewayConnection {
     }
   }
 
+  /*
   @SubscribeMessage('fcm_token')
   public async getFCMToken(
     @ConnectedSocket() socket: Socket,
@@ -967,4 +976,5 @@ export class WebsocketGateway implements OnGatewayConnection {
       }
     );
   }
+  */
 }

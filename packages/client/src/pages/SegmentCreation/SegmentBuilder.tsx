@@ -60,9 +60,6 @@ const SegmentBuilder = () => {
   };
 
   const handleSaveClick = async () => {
-    console.log("***oi oi ***");
-    console.log("/n\ntrying inclusion criteria with", segment);
-    //console.log("the object is", JSON.stringify(Object, undefined, 2));
     if (Object.values(segmentQueryErrors).length > 0) {
       dispatch(setShowSegmentsErrors(true));
       return;
@@ -86,7 +83,7 @@ const SegmentBuilder = () => {
           inclusionCriteria: segment,
         },
       });
-      navigate("/segment/" + data.id);
+      navigate("/segment/");
     } catch (e) {
       console.error(e);
       toast.error("Error: failed to save segment");
@@ -95,9 +92,6 @@ const SegmentBuilder = () => {
   };
 
   const handleUpdateClick = async () => {
-    console.log("***oi oi ***");
-    console.log("/n\ntrying inclusion criteria with", segment);
-    //console.log("the object is", JSON.stringify(Object, undefined, 2));
     if (Object.values(segmentQueryErrors).length > 0) {
       dispatch(setShowSegmentsErrors(true));
       return;
@@ -227,6 +221,7 @@ const SegmentBuilder = () => {
           className="!text-[white]"
           disabled={!name || isLoadingSegment}
           onClick={id ? handleUpdateClick : handleSaveClick}
+          id="saveSegmentButton"
         >
           {id ? "Update" : "Save"}
         </Button>

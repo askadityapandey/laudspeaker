@@ -33,13 +33,15 @@ let BASE_URL = __ENV.BASE_URL || fail("BASE_URL required");
 if (BASE_URL.at(-1) === "/") {
   BASE_URL = BASE_URL.substring(0, BASE_URL.length - 1);
 }
+const USE_API_ENDPOINT = false;
+const API_ENDPOINT = USE_API_ENDPOINT ? "/api" : "";
 
 const session = new Httpx({
   baseURL: BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 60000, // 60s timeout.
+  timeout: 300000, // 5 minute timeout.
 });
 
 export default function main() {
@@ -73,7 +75,7 @@ export default function main() {
 
   // NOT USING httpx because file uploads not working
   response = http.post(
-    `${BASE_URL}/api/customers/uploadCSV`,
+    `${BASE_URL}${API_ENDPOINT}/customers/uploadCSV`,
     { file: http.file(UPLOAD_FILE, "upload.csv", "text/csv") },
     {
       timeout: "600s",
@@ -85,7 +87,7 @@ export default function main() {
 
   failOnError(response);
 
-  response = httpxWrapper.getOrFail("/api/customers/getLastImportCSV");
+  response = httpxWrapper.getOrFail(`${API_ENDPOINT}/customers/getLastImportCSV`);
 
   UPLOADED_FILE_KEY = response.json("fileKey");
   reporter.report(`CSV upload finished with fileKey: ${UPLOADED_FILE_KEY}`);
@@ -93,13 +95,13 @@ export default function main() {
 
   reporter.log(`Creating customer attributes`);
   response = httpxWrapper.postOrFail(
-    "/api/customers/attributes/create",
+    `${API_ENDPOINT}/customers/attributes/create`,
     `{"name":"${PRIMARY_KEY_HEADER}","type":"String"}`
   );
 
   // // TODO fix this endpoint and then use this as the num expected customers
   // response = httpxWrapper.postOrFail(
-  //   "/api/customers/attributes/count-import-preview",
+  //   `${API_ENDPOINT}/customers/attributes/count-import-preview`,
   //   `{ "mapping": { "${PRIMARY_KEY_HEADER}": { "head": "${PRIMARY_KEY_HEADER}", "asAttribute": { "key": "${PRIMARY_KEY_HEADER}", "type": "String", "skip": false }, "isPrimary": true, "doNotOverwrite": true } }, "importOption": "NEW", "fileKey": "${UPLOADED_FILE_KEY}" }`,
   // );
 
@@ -111,7 +113,7 @@ export default function main() {
     "Time elapsed of import process (not including csv upload)"
   );
   response = httpxWrapper.postOrFail(
-    "/api/customers/attributes/start-import",
+    `${API_ENDPOINT}/customers/attributes/start-import`,
     `{"mapping":{"dsr":{"head":"dsr","isPrimary":false,"doNotOverwrite":false},"is_apt":{"head":"is_apt","isPrimary":false,"doNotOverwrite":false},"source":{"head":"source","isPrimary":false,"doNotOverwrite":false},"user_id":{"head":"user_id","asAttribute":{"key":"user_id","type":"String","skip":false},"isPrimary":true,"doNotOverwrite":true},"is_delete":{"head":"is_delete","isPrimary":false,"doNotOverwrite":false},"mkt_agree":{"head":"mkt_agree","isPrimary":false,"doNotOverwrite":false},"dsr_source":{"head":"dsr_source","isPrimary":false,"doNotOverwrite":false},"is_own_car":{"head":"is_own_car","isPrimary":false,"doNotOverwrite":false},"loan_count":{"head":"loan_count","isPrimary":false,"doNotOverwrite":false},"income_type":{"head":"income_type","isPrimary":false,"doNotOverwrite":false},"is_kcb_link":{"head":"is_kcb_link","isPrimary":false,"doNotOverwrite":false},"company_name":{"head":"company_name","isPrimary":false,"doNotOverwrite":false},"credit_score":{"head":"credit_score","isPrimary":false,"doNotOverwrite":false},"is_d7_review":{"head":"is_d7_review","isPrimary":false,"doNotOverwrite":false},"is_donotcall":{"head":"is_donotcall","isPrimary":false,"doNotOverwrite":false},"add_org_agree":{"head":"add_org_agree","isPrimary":false,"doNotOverwrite":false},"bill_org_name":{"head":"bill_org_name","isPrimary":false,"doNotOverwrite":false},"houseown_type":{"head":"houseown_type","isPrimary":false,"doNotOverwrite":false},"is_ln_bal_chg":{"head":"is_ln_bal_chg","isPrimary":false,"doNotOverwrite":false},"ovd_prv_agree":{"head":"ovd_prv_agree","isPrimary":false,"doNotOverwrite":false},"revolving_amt":{"head":"revolving_amt","isPrimary":false,"doNotOverwrite":false},"var_loan_rate":{"head":"var_loan_rate","isPrimary":false,"doNotOverwrite":false},"card_bill_date":{"head":"card_bill_date","isPrimary":false,"doNotOverwrite":false},"is_ln_acct_cls":{"head":"is_ln_acct_cls","isPrimary":false,"doNotOverwrite":false},"is_ln_acct_opn":{"head":"is_ln_acct_opn","isPrimary":false,"doNotOverwrite":false},"is_mydata_link":{"head":"is_mydata_link","isPrimary":false,"doNotOverwrite":false},"recent_1m_appl":{"head":"recent_1m_appl","isPrimary":false,"doNotOverwrite":false},"recent_3m_appl":{"head":"recent_3m_appl","isPrimary":false,"doNotOverwrite":false},"recent_7d_appl":{"head":"recent_7d_appl","isPrimary":false,"doNotOverwrite":false},"is_crd_card_cxl":{"head":"is_crd_card_cxl","isPrimary":false,"doNotOverwrite":false},"is_crd_card_del":{"head":"is_crd_card_del","isPrimary":false,"doNotOverwrite":false},"is_crd_card_reg":{"head":"is_crd_card_reg","isPrimary":false,"doNotOverwrite":false},"kcb_change_date":{"head":"kcb_change_date","isPrimary":false,"doNotOverwrite":false},"overdue_bal_amt":{"head":"overdue_bal_amt","isPrimary":false,"doNotOverwrite":false},"recent_exp_date":{"head":"recent_exp_date","isPrimary":false,"doNotOverwrite":false},"recent_kcb_date":{"head":"recent_kcb_date","isPrimary":false,"doNotOverwrite":false},"is_repay_account":{"head":"is_repay_account","isPrimary":false,"doNotOverwrite":false},"my_ln_info_agree":{"head":"my_ln_info_agree","isPrimary":false,"doNotOverwrite":false},"recent_appl_date":{"head":"recent_appl_date","isPrimary":false,"doNotOverwrite":false},"recent_repay_amt":{"head":"recent_repay_amt","isPrimary":false,"doNotOverwrite":false},"credit_score_date":{"head":"credit_score_date","isPrimary":false,"doNotOverwrite":false},"is_ln_overdue_cls":{"head":"is_ln_overdue_cls","isPrimary":false,"doNotOverwrite":false},"is_ln_overdue_del":{"head":"is_ln_overdue_del","isPrimary":false,"doNotOverwrite":false},"is_ln_overdue_reg":{"head":"is_ln_overdue_reg","isPrimary":false,"doNotOverwrite":false},"is_nextweek_repay":{"head":"is_nextweek_repay","isPrimary":false,"doNotOverwrite":false},"recent_repay_date":{"head":"recent_repay_date","isPrimary":false,"doNotOverwrite":false},"is_exp_1_week_left":{"head":"is_exp_1_week_left","isPrimary":false,"doNotOverwrite":false},"is_exp_2_week_left":{"head":"is_exp_2_week_left","isPrimary":false,"doNotOverwrite":false},"recent_1m_contract":{"head":"recent_1m_contract","isPrimary":false,"doNotOverwrite":false},"recent_3m_contract":{"head":"recent_3m_contract","isPrimary":false,"doNotOverwrite":false},"recent_7d_contract":{"head":"recent_7d_contract","isPrimary":false,"doNotOverwrite":false},"recent_mydata_date":{"head":"recent_mydata_date","isPrimary":false,"doNotOverwrite":false},"recent_repay_count":{"head":"recent_repay_count","isPrimary":false,"doNotOverwrite":false},"recent_review_date":{"head":"recent_review_date","isPrimary":false,"doNotOverwrite":false},"company_enter_month":{"head":"company_enter_month","isPrimary":false,"doNotOverwrite":false},"is_card_overdue_cls":{"head":"is_card_overdue_cls","isPrimary":false,"doNotOverwrite":false},"is_card_overdue_del":{"head":"is_card_overdue_del","isPrimary":false,"doNotOverwrite":false},"is_card_overdue_reg":{"head":"is_card_overdue_reg","isPrimary":false,"doNotOverwrite":false},"is_exp_1_month_left":{"head":"is_exp_1_month_left","isPrimary":false,"doNotOverwrite":false},"is_exp_2_month_left":{"head":"is_exp_2_month_left","isPrimary":false,"doNotOverwrite":false},"is_mydata_incomplete":{"head":"is_mydata_incomplete","isPrimary":false,"doNotOverwrite":false},"member_register_time":{"head":"member_register_time","isPrimary":false,"doNotOverwrite":false},"recent_contract_date":{"head":"recent_contract_date","isPrimary":false,"doNotOverwrite":false},"next_savings_exp_date":{"head":"next_savings_exp_date","isPrimary":false,"doNotOverwrite":false},"nextweek_repay_amount":{"head":"nextweek_repay_amount","isPrimary":false,"doNotOverwrite":false},"prev_savings_exp_date":{"head":"prev_savings_exp_date","isPrimary":false,"doNotOverwrite":false},"is_kcb_more_than_mydata":{"head":"is_kcb_more_than_mydata","isPrimary":false,"doNotOverwrite":false},"mydata_consent_end_date":{"head":"mydata_consent_end_date","isPrimary":false,"doNotOverwrite":false},"int_rate_increase_org_name":{"head":"int_rate_increase_org_name","isPrimary":false,"doNotOverwrite":false},"recent_refinance_appl_date":{"head":"recent_refinance_appl_date","isPrimary":false,"doNotOverwrite":false},"count_refinancing_condition":{"head":"count_refinancing_condition","isPrimary":false,"doNotOverwrite":false},"int_rate_increase_prod_name":{"head":"int_rate_increase_prod_name","isPrimary":false,"doNotOverwrite":false},"yesterday_diff_credit_score":{"head":"yesterday_diff_credit_score","isPrimary":false,"doNotOverwrite":false},"is_direct_refinancing_target":{"head":"is_direct_refinancing_target","isPrimary":false,"doNotOverwrite":false},"recent_refinance_contract_date":{"head":"recent_refinance_contract_date","isPrimary":false,"doNotOverwrite":false},"count_direct_refinancing_condition":{"head":"count_direct_refinancing_condition","isPrimary":false,"doNotOverwrite":false},"recent_direct_refinance_contract_date":{"head":"recent_direct_refinance_contract_date","isPrimary":false,"doNotOverwrite":false},"is_direct_refinancing_contract_before_15days":{"head":"is_direct_refinancing_contract_before_15days","isPrimary":false,"doNotOverwrite":false},"is_direct_refinancing_contract_before_6months":{"head":"is_direct_refinancing_contract_before_6months","isPrimary":false,"doNotOverwrite":false},"is_direct_refinancing_repayday_account_yesterday":{"head":"is_direct_refinancing_repayday_account_yesterday","isPrimary":false,"doNotOverwrite":false}},"importOption":"NEW","fileKey":"${UPLOADED_FILE_KEY}"}`
   );
 
@@ -124,7 +126,7 @@ export default function main() {
   while (numPages < expectedPages) {
     sleep(POLLING_MINUTES * 60);
     response = httpxWrapper.getOrFail(
-      "/api/customers?take=10&skip=0&searchKey=&searchValue=&orderBy=createdAt&orderType=desc"
+      `${API_ENDPOINT}/customers?take=10&skip=0&searchKey=&searchValue=&orderBy=createdAt&orderType=desc`
     );
     numPages = parseInt(response.json("totalPages"));
 
@@ -168,14 +170,14 @@ export default function main() {
     "Time elapsed to create a simple journey"
   );
   reporter.log(`Posting new journey`);
-  response = httpxWrapper.postOrFail("/api/journeys", '{"name":"test"}');
+  response = httpxWrapper.postOrFail(`${API_ENDPOINT}/journeys`, '{"name":"test"}');
   let visualLayout = response.json("visualLayout");
   const JOURNEY_ID = response.json("id");
 
   reporter.log(`Journey created with id: ${JOURNEY_ID}`);
 
   response = httpxWrapper.postOrFail(
-    "/api/steps",
+    `${API_ENDPOINT}/steps`,
     `{"type":"message","journeyID":"${JOURNEY_ID}"}`
   );
 
@@ -183,7 +185,7 @@ export default function main() {
   const START_STEP_EDGE = visualLayout.edges[0];
   const MESSAGE_STEP_ID = response.json("id");
 
-  response = httpxWrapper.getOrFail("/api/templates", {});
+  response = httpxWrapper.getOrFail(`${API_ENDPOINT}/templates`, {});
   const TEMPLATE_ONE = response.json("data")[0];
   let messageStepNode = visualLayout.nodes[1];
   messageStepNode.type = "message";
@@ -198,7 +200,7 @@ export default function main() {
   };
 
   response = httpxWrapper.postOrFail(
-    "/api/steps",
+    `${API_ENDPOINT}/steps`,
     `{"type":"exit","journeyID":"${JOURNEY_ID}"}`
   );
 
@@ -231,12 +233,12 @@ export default function main() {
   });
 
   response = httpxWrapper.patchOrFail(
-    "/api/journeys/visual-layout",
+    `${API_ENDPOINT}/journeys/visual-layout`,
     visualLayoutBody
   );
 
   response = httpxWrapper.patchOrFail(
-    "/api/journeys",
+    `${API_ENDPOINT}/journeys`,
     `{"id":"${JOURNEY_ID}","name":"test","inclusionCriteria":{"type":"allCustomers"},"isDynamic":true,"journeyEntrySettings":{"entryTiming":{"type":"WhenPublished"},"enrollmentType":"CurrentAndFutureUsers"},"journeySettings":{"tags":[],"maxEntries":{"enabled":false,"limitOnEverySchedule":false,"maxEntries":"500000"},"quietHours":{"enabled":false,"startTime":"00:00","endTime":"08:00","fallbackBehavior":"NextAvailableTime"},"maxMessageSends":{"enabled":false}}}`
   );
   reporter.report(`Journey creation completed.`);
@@ -250,19 +252,19 @@ export default function main() {
   );
 
   response = httpxWrapper.patchOrFail(
-    `/api/journeys/start/${JOURNEY_ID}`,
+    `${API_ENDPOINT}/journeys/start/${JOURNEY_ID}`,
     "{}"
   );
   reporter.report(`Journey started.`);
 
-  reporter.log(`Check stats: /api/steps/stats/${MESSAGE_STEP_ID}`);
+  reporter.log(`Check stats: ${API_ENDPOINT}/steps/stats/${MESSAGE_STEP_ID}`);
 
   let sentCount = 0;
   let retries = 0; // kill stat checking early if sent count not increasing
   let prevSentCount = 0;
   while (sentCount < NUM_CUSTOMERS) {
     sleep(POLLING_MINUTES * 60);
-    response = httpxWrapper.getOrFail(`/api/steps/stats/${MESSAGE_STEP_ID}`);
+    response = httpxWrapper.getOrFail(`${API_ENDPOINT}/steps/stats/${MESSAGE_STEP_ID}`);
     prevSentCount = sentCount;
     sentCount = parseInt(response.json("sent"));
     reporter.report(`Current sent messages: ${sentCount} of ${NUM_CUSTOMERS}`);
@@ -293,7 +295,7 @@ export default function main() {
   reporter.setStep(`CLEANUP`);
   reporter.log(`Deleting account ${email}`);
   response = httpxWrapper.deleteOrFail(
-    `/api/accounts`,
+    `${API_ENDPOINT}/accounts`,
     `{"password":"${password}"}`
   );
   reporter.log(`Account deleted.`);

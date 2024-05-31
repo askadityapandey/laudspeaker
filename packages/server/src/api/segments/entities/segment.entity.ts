@@ -7,7 +7,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
+import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 
 export enum SegmentType {
   AUTOMATIC = 'automatic',
@@ -39,6 +39,9 @@ export class Segment extends BaseEntity {
 
   @Column({ default: true })
   public isFreezed: boolean;
+
+  @Column({ default: false })
+  public isUpdating: boolean;
 
   @Column('jsonb', {
     default: {

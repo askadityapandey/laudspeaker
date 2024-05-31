@@ -1,6 +1,6 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Injectable } from '@nestjs/common';
-import { Job } from 'bullmq';
+import { Job, MetricsTime } from 'bullmq';
 import { Account } from '../accounts/entities/accounts.entity';
 import { S3Service } from '../s3/s3.service';
 import { CustomersService } from './customers.service';
@@ -15,9 +15,26 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Segment } from '../segments/entities/segment.entity';
 import { Repository } from 'typeorm';
 import { SegmentCustomers } from '../segments/entities/segment-customers.entity';
+import { randomUUID } from 'crypto';
 
 @Injectable()
-@Processor('imports', { removeOnComplete: { count: 100 } })
+@Processor('{imports}', {
+  stalledInterval: process.env.IMPORTS_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.IMPORTS_PROCESSOR_STALLED_INTERVAL
+    : 30000,
+  removeOnComplete: {
+    age: 0,
+    count: process.env.IMPORTS_PROCESSOR_REMOVE_ON_COMPLETE
+      ? +process.env.IMPORTS_PROCESSOR_REMOVE_ON_COMPLETE
+      : 0,
+  },
+  metrics: {
+    maxDataPoints: MetricsTime.ONE_WEEK,
+  },
+  concurrency: process.env.IMPORTS_PROCESSOR_CONCURRENCY
+    ? +process.env.IMPORTS_PROCESSOR_CONCURRENCY
+    : 1,
+})
 export class ImportProcessor extends WorkerHost {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -92,9 +109,6 @@ export class ImportProcessor extends WorkerHost {
   }
 
   async process(job: Job<any, any, string>): Promise<any> {
-    console.log(
-      '\n\n------\n\n------\n\n------\n\n------\n\n------\n\n------\n\n------\n\n'
-    );
     const {
       fileData,
       clearedMapping,
@@ -106,8 +120,10 @@ export class ImportProcessor extends WorkerHost {
     } = job.data;
 
     try {
+      let batchNumber = 0;
       let batch = [];
-      let batchPromise;
+      let promiseSet = new Set();
+
       const readPromise = new Promise<void>(async (resolve, reject) => {
         const s3CSVStream = await this.s3Service.getImportedCSVReadStream(
           fileData.fileKey
@@ -159,40 +175,77 @@ export class ImportProcessor extends WorkerHost {
               create: { ...convertedRecord },
               update: { ...filteredUpdateOptions },
             });
-            try {
-              await batchPromise;
-            } catch (error) {}
             if (batch.length >= 10000) {
-              batchPromise = this.processImportRecord(
+              csvStream.pause();
+              let batchId = randomUUID();
+
+              this.warn(
+                `Processing batch # ${batchNumber} - ${batchId}. Batch size: ${batch.length}`,
+                this.process.name,
+                session
+              );
+              promiseSet.add(batchId);
+              batchNumber++;
+
+              this.processImportRecord(
                 account,
                 settings.importOption,
                 passedPK.asAttribute.key,
                 batch,
                 segmentId,
                 session
-              );
+              )
+                .catch((error) => {
+                  throw error;
+                })
+                .finally(() => {
+                  promiseSet.delete(batchId);
+                });
+              await new Promise((resolve) => setTimeout(resolve, 10000));
               batch = [];
+              csvStream.resume();
             }
           })
           .on('end', async () => {
-            try {
-              await batchPromise;
-            } catch (error) {}
-            if (batch.length > 0) {
-              batchPromise = this.processImportRecord(
-                account,
-                settings.importOption,
-                passedPK.asAttribute.key,
-                batch,
-                segmentId,
-                session
-              );
-              batch = [];
-            }
-            try {
-              await batchPromise;
-            } catch (error) {}
-            resolve();
+            // end() might be called while the last record of the last
+            // batch is still being processed. batch array might
+            // still have the records in the last batch, so we
+            // need to ensure all promises have been resolved
+            // before checking on the batch array
+            let interval: NodeJS.Timeout | undefined = undefined;
+            const checkAllBatchesCompleted = async () => {
+              if (promiseSet.size === 0) {
+                if (interval) clearInterval(interval);
+
+                if (batch.length > 0) {
+                  this.warn(
+                    `Processing ending batch. Batch size: ${batch.length}`,
+                    this.process.name,
+                    session
+                  );
+
+                  await this.processImportRecord(
+                    account,
+                    settings.importOption,
+                    passedPK.asAttribute.key,
+                    batch,
+                    segmentId,
+                    session
+                  );
+
+                  batch = [];
+                }
+                resolve();
+                return;
+              }
+            };
+            await checkAllBatchesCompleted();
+
+            setInterval(checkAllBatchesCompleted, 200);
+            setTimeout(() => {
+              if (interval) clearInterval(interval);
+              reject('Timeout while waiting for all batches to complete');
+            }, 5000);
           })
           .on('error', (err) => {
             reject(err);
@@ -201,6 +254,13 @@ export class ImportProcessor extends WorkerHost {
       });
       await readPromise;
       await this.customersService.removeImportFile(account);
+
+      if (segmentId) {
+        await this.segmentRepository.save({
+          id: segmentId,
+          isUpdating: false,
+        });
+      }
     } catch (error) {
       this.error(error, 'Processing customer import', session);
       throw error;
@@ -215,6 +275,11 @@ export class ImportProcessor extends WorkerHost {
     segmentId?: string,
     session?: string
   ) {
+    this.warn(
+      `Processing number of imports ${data.length}.`,
+      this.processImportRecord.name,
+      session
+    );
     const withoutDuplicateKeys = Array.from(
       new Set(data.map((el) => el.pkKeyValue))
     );
@@ -233,6 +298,8 @@ export class ImportProcessor extends WorkerHost {
         return data.find((el2) => el2.pkKeyValue === el);
       })
       .map((el) => ({
+        _id: randomUUID(),
+        createdAt: new Date(),
         workspaceId: workspace.id,
         [pkKey]: el.pkKeyValue,
         ...el.create,

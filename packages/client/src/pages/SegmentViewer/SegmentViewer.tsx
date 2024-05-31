@@ -35,6 +35,14 @@ const SegmentViewer = () => {
     try {
       const { data } = await ApiService.get({ url: "/segments/" + id });
 
+      if (data.isUpdating) {
+        toast.error(
+          "Segment is updating, please wait before accessing the page"
+        );
+        navigate("/segment");
+        return;
+      }
+
       setSegmentType(data.type);
       setName(data.name);
       setDescription(data.description);
@@ -108,6 +116,7 @@ const SegmentViewer = () => {
           <Button
             type={ButtonType.SECONDARY}
             onClick={() => setIsEditing(true)}
+            id="edit-segment-button"
           >
             Edit
           </Button>
@@ -181,7 +190,11 @@ const SegmentViewer = () => {
 
           {isEditing && (
             <div className="flex items-center gap-2.5 px-5">
-              <Button type={ButtonType.PRIMARY} onClick={handleSave}>
+              <Button
+                type={ButtonType.PRIMARY}
+                onClick={handleSave}
+                id="save-edit-segment-button"
+              >
                 Save
               </Button>
               <Button type={ButtonType.SECONDARY} onClick={handleCancel}>

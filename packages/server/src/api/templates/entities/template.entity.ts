@@ -6,7 +6,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
+import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 
 export enum WebhookMethod {
   GET = 'GET',
@@ -16,6 +16,12 @@ export enum WebhookMethod {
   DELETE = 'DELETE',
   HEAD = 'HEAD',
   OPTIONS = 'OPTIONS',
+}
+
+export enum MIMEType {
+  JSON = 'application/json',
+  HTML = 'text/html',
+  XML = 'application/xml',
 }
 
 export type WebhookHeaders = { Authorization?: string } & Record<
@@ -31,6 +37,7 @@ export interface WebhookData {
   url: string;
   method: WebhookMethod;
   body: string;
+  mimeType?: MIMEType;
   headers: WebhookHeaders;
   retries: number;
   fallBackAction: FallBackAction;
