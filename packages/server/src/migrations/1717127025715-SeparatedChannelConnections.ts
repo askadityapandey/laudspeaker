@@ -1,9 +1,9 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class SeparatedChannelConnections1708424503801
+export class SeparatedChannelConnections1717127025715
   implements MigrationInterface
 {
-  name = 'SeparatedChannelConnections1708424503801';
+  name = 'SeparatedChannelConnections1717127025715';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

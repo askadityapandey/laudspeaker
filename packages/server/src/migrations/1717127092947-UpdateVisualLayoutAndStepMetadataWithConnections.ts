@@ -3,7 +3,7 @@ import { Journey } from '@/api/journeys/entities/journey.entity';
 import { Step } from '@/api/steps/entities/step.entity';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class UpdateVisualLayoutAndStepMetadataWithConnections1708690251214
+export class UpdateVisualLayoutAndStepMetadataWithConnections1717127092947
   implements MigrationInterface
 {
   public async up(queryRunner: QueryRunner): Promise<void> {

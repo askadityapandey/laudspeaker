@@ -9,7 +9,7 @@ import { WorkspaceTwilioConnection } from '@/api/workspaces/entities/workspace-t
 import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class TransferConnectionsToSeparateTables1708424773506
+export class TransferConnectionsToSeparateTables1717127047174
   implements MigrationInterface
 {
   public async up(queryRunner: QueryRunner): Promise<void> {
