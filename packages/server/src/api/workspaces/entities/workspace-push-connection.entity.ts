@@ -7,8 +7,8 @@ import {
   Unique,
 } from 'typeorm';
 import { Workspaces } from './workspaces.entity';
-import { PushPlatforms } from '@/api/templates/entities/template.entity';
-import { PushFirebasePlatforms } from '@/api/accounts/entities/accounts.entity';
+import { PushPlatforms } from '../../templates/entities/template.entity';
+import { PushFirebasePlatforms } from '../../accounts/entities/accounts.entity';
 
 @Entity()
 export class WorkspacePushConnection {
