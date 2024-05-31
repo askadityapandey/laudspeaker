@@ -116,7 +116,7 @@ export class TransitionProcessor extends WorkerHost {
     private journeyLocationsService: JourneyLocationsService,
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(forwardRef(() => WorkspacesService))
-    private workspacesService: WorkspacesService
+    private workspacesService: WorkspacesService,
     @Inject(CacheService) private cacheService: CacheService
   ) {
     super();
