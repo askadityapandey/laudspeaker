@@ -26,7 +26,7 @@ export class OrganizationPlan extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   public id: string;
 
-  @OneToOne(() => Organization, (organization) => organization.id, {
+  @OneToOne(() => Organization, (organization) => organization.plan, {
     onDelete: 'CASCADE',
     onUpdate: 'CASCADE',
     nullable: false,
