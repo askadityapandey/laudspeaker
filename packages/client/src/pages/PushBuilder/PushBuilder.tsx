@@ -14,7 +14,7 @@ import Template, { TemplateType } from "types/Template";
 import deepCopy from "utils/deepCopy";
 import PushBuilderContent, {
   PushBuilderData,
-  PushPlatform,
+  PushPlatforms,
   defaultPlatformSettings,
 } from "./PushBuilderContent";
 import PushBuilderTestTab from "./PushBuilderTestTab";
@@ -34,13 +34,13 @@ const PushBuilder = ({ isInlineCreator }: PushBuilderProps) => {
     useState<PushBuilderData | null>();
   const [pushBuilderData, setPushBuilderData] = useState<PushBuilderData>({
     platform: {
-      [PushPlatform.ANDROID]: true,
-      [PushPlatform.IOS]: true,
+      [PushPlatforms.ANDROID]: true,
+      [PushPlatforms.IOS]: true,
     },
     keepContentConsistent: true,
     settings: {
-      [PushPlatform.ANDROID]: defaultPlatformSettings,
-      [PushPlatform.IOS]: defaultPlatformSettings,
+      [PushPlatforms.ANDROID]: defaultPlatformSettings,
+      [PushPlatforms.IOS]: defaultPlatformSettings,
     },
     fields: [],
   });

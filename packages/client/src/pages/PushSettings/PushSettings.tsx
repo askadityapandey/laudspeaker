@@ -1,7 +1,7 @@
 import BackButton from "components/BackButton";
 import Button, { ButtonType } from "components/Elements/Buttonv2";
 import Chip from "components/Elements/Chip";
-import { PushPlatform } from "pages/PushBuilder/PushBuilderContent";
+import { PushPlatforms } from "pages/PushBuilder/PushBuilderContent";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PushSettingsAddUsers from "./PushSettingsAddUsers";
@@ -17,7 +17,7 @@ import Account from "types/Account";
 import MapValidationErrors from "pages/PeopleImport/Modals/MapValidationErrors";
 
 export type ConnectedPushFirebasePlatforms = Record<
-  PushPlatform,
+  PushPlatforms,
   | {
       fileName: string;
       isTrackingDisabled: boolean;
@@ -26,7 +26,7 @@ export type ConnectedPushFirebasePlatforms = Record<
 >;
 
 const platformIcons = {
-  [PushPlatform.ANDROID]: (
+  [PushPlatforms.ANDROID]: (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       width="40"
@@ -41,7 +41,7 @@ const platformIcons = {
       />
     </svg>
   ),
-  [PushPlatform.IOS]: (
+  [PushPlatforms.IOS]: (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       width="40"
@@ -70,7 +70,7 @@ const setupTabs = [
 
 export interface PushSettingsConfiguration {
   configFile: Record<
-    PushPlatform,
+    PushPlatforms,
     | {
         fileName: string;
         credentials: JSON;
@@ -78,7 +78,7 @@ export interface PushSettingsConfiguration {
     | undefined
   >;
   isTrackingDisabled: boolean;
-  selectedPlatforms: Record<PushPlatform, boolean>;
+  selectedPlatforms: Record<PushPlatforms, boolean>;
   connectedPlatforms: ConnectedPushFirebasePlatforms;
 }
 
@@ -88,7 +88,7 @@ const PushSettings = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [isTestLoading, setIsTestLoading] = useState(false);
-  const [disconnectPlarform, setDisconnectPlarform] = useState<PushPlatform>();
+  const [disconnectPlarform, setDisconnectPlarform] = useState<PushPlatforms>();
   const [config, setConfig] = useState<PushSettingsConfiguration>({
     configFile: {
       Android: undefined,
@@ -105,7 +105,7 @@ const PushSettings = () => {
     },
   });
   const [testToken, setTestToken] = useState("");
-  const [viewConnected, setViewConnected] = useState<PushPlatform>();
+  const [viewConnected, setViewConnected] = useState<PushPlatforms>();
 
   const handleUpdateConfig = (values: Partial<PushSettingsConfiguration>) => {
     setConfig((prev) => ({ ...prev, ...values }));
@@ -177,9 +177,9 @@ const PushSettings = () => {
         const object: Record<string, any> = {};
 
         Object.keys(config.selectedPlatforms).forEach((el) => {
-          if (config.selectedPlatforms[el as PushPlatform]) {
+          if (config.selectedPlatforms[el as PushPlatforms]) {
             object[el] = {
-              ...config.configFile[el as PushPlatform],
+              ...config.configFile[el as PushPlatforms],
               isTrackingDisabled: config.isTrackingDisabled,
             };
           }
@@ -380,18 +380,18 @@ const PushSettings = () => {
                       {Object.keys(config.connectedPlatforms)
                         .filter(
                           (el) =>
-                            !!config.connectedPlatforms[el as PushPlatform]
+                            !!config.connectedPlatforms[el as PushPlatforms]
                         )
                         .map((el) => (
                           <div
                             key={el}
                             className="rounded border-[#E5E7EB] border px-5 py-6 flex items-center justify-between cursor-pointer select-none"
                             onClick={() => {
-                              setViewConnected(el as PushPlatform);
+                              setViewConnected(el as PushPlatforms);
                             }}
                           >
                             <div className="flex items-center [&>svg]:mr-[10px] [&>svg]:max-w-[30px] [&>svg]:min-w-[30px] [&>svg]:min-h-[30px] [&>svg]:max-h-[30px]">
-                              {platformIcons[el as PushPlatform]}
+                              {platformIcons[el as PushPlatforms]}
                               <span className="text-[#18181B] text-base font-inter">
                                 {el}
                               </span>
@@ -439,7 +439,7 @@ const PushSettings = () => {
                   )}
                   {!isBothConnected && (
                     <div className="flex gap-5 h-[66px] items-center">
-                      {Object.values(PushPlatform)
+                      {Object.values(PushPlatforms)
                         .filter((el) => !config.connectedPlatforms[el])
                         .map((el, i) => (
                           <div

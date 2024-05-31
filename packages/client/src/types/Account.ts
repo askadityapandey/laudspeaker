@@ -1,7 +1,7 @@
 import { AttributeType } from "pages/PeopleImport/PeopleImport";
 import { ConnectedPushFirebasePlatforms } from "pages/PushSettings/PushSettings";
 import PlanType from "./PlanType";
-import { PushPlatform } from "pages/PushBuilder/PushBuilderContent";
+import { PushPlatforms } from "pages/PushBuilder/PushBuilderContent";
 
 export interface UserPK {
   _id: string;
@@ -63,7 +63,7 @@ export interface WorkspaceTwilioConnection extends CommonWorkspaceConnection {
 }
 
 export type PushFirebasePlatforms = Record<
-  PushPlatform,
+  PushPlatforms,
   | {
       fileName: string;
       credentials: JSON;
