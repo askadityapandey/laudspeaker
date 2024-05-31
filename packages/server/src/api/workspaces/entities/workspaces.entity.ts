@@ -30,7 +30,7 @@ export enum PlanType {
 }
 
 @Entity()
-export class Workspace extends BaseEntity {
+export class Workspaces extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   public id!: string;
 

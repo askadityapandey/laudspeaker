@@ -65,7 +65,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
-import { Workspace } from '@/api/workspaces/entities/workspace.entity';
+import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
 import { WorkspacesService } from '@/api/workspaces/workspaces.service';
 
 @Injectable()
@@ -86,8 +86,8 @@ export class TransitionProcessor extends WorkerHost {
     @InjectQueue('transition') private readonly transitionQueue: Queue,
     @InjectQueue('webhooks') private readonly webhooksQueue: Queue,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @InjectRepository(Workspace)
-    private workspacesRepository: Repository<Workspace>,
+    @InjectRepository(Workspaces)
+    private workspacesRepository: Repository<Workspaces>,
     @InjectRepository(Account)
     private accountRepository: Repository<Account>,
     @Inject(WebhooksService)

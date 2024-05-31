@@ -15,7 +15,7 @@ import {
 import { Account } from '../accounts/entities/accounts.entity';
 import { OrganizationsController } from './organizations.controller';
 import { OrganizationService } from './organizations.service';
-import { Workspace } from '../workspaces/entities/workspace.entity';
+import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { Organization } from './entities/organization.entity';
 import { OrganizationTeam } from './entities/organization-team.entity';
 import { OrganizationInvites } from './entities/organization-invites.entity';
@@ -31,7 +31,7 @@ import { BullModule } from '@nestjs/bullmq';
     }),
     TypeOrmModule.forFeature([
       Account,
-      Workspace,
+      Workspaces,
       Organization,
       OrganizationTeam,
       OrganizationInvites,

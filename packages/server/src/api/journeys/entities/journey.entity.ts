@@ -10,7 +10,7 @@ import {
   JourneyEntrySettings,
   JourneySettings,
 } from '../types/additional-journey-settings.interface';
-import { Workspace } from '@/api/workspaces/entities/workspace.entity';
+import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
 import { Account } from '@/api/accounts/entities/accounts.entity';
 
 @Entity()
@@ -22,10 +22,10 @@ export class Journey {
   name: string;
 
   @JoinColumn()
-  @ManyToOne(() => Workspace, (workspace) => workspace.id, {
+  @ManyToOne(() => Workspaces, (workspace) => workspace.id, {
     onDelete: 'CASCADE',
   })
-  workspace: Workspace;
+  workspace: Workspaces;
 
   @Column('boolean', { default: false })
   isActive: boolean;

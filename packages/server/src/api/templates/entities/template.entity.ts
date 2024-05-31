@@ -6,7 +6,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { Workspace } from '@/api/workspaces/entities/workspace.entity';
+import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
 
 export enum WebhookMethod {
   GET = 'GET',
@@ -87,10 +87,10 @@ export class Template {
   name: string;
 
   @JoinColumn()
-  @ManyToOne(() => Workspace, (workspace) => workspace.id, {
+  @ManyToOne(() => Workspaces, (workspace) => workspace.id, {
     onDelete: 'CASCADE',
   })
-  workspace: Workspace;
+  workspace: Workspaces;
 
   @Column({ nullable: true })
   text: string;

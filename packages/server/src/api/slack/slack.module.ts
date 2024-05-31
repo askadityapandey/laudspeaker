@@ -18,7 +18,7 @@ import { CustomersModule } from '../customers/customers.module';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { Step } from '../steps/entities/step.entity';
 import { KafkaModule } from '../kafka/kafka.module';
-import { Workspace } from '../workspaces/entities/workspace.entity';
+import { Workspaces } from '../workspaces/entities/workspaces.entity';
 
 @Module({
   imports: [
@@ -40,7 +40,7 @@ import { Workspace } from '../workspaces/entities/workspace.entity';
       Installation,
       State,
       Step,
-      Workspace,
+      Workspaces,
     ]),
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },

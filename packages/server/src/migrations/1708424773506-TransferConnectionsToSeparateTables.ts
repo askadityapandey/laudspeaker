@@ -6,14 +6,14 @@ import { WorkspacePushConnection } from '@/api/workspaces/entities/workspace-pus
 import { WorkspaceResendConnection } from '@/api/workspaces/entities/workspace-resend-connection.entity';
 import { WorkspaceSendgridConnection } from '@/api/workspaces/entities/workspace-sendgrid-connection.entity';
 import { WorkspaceTwilioConnection } from '@/api/workspaces/entities/workspace-twilio-connection.entity';
-import { Workspace } from '@/api/workspaces/entities/workspace.entity';
+import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class TransferConnectionsToSeparateTables1708424773506
   implements MigrationInterface
 {
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const workspaces = await queryRunner.manager.find(Workspace);
+    const workspaces = await queryRunner.manager.find(Workspaces);
 
     for (const workspace of workspaces) {
       if (

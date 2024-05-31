@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
-import { Workspace } from './workspace.entity';
+import { Workspaces } from './workspaces.entity';
 import { SendgridSendingOption } from './sendgrid-sending-option.entity';
 
 @Entity()
@@ -16,11 +16,11 @@ export class WorkspaceSendgridConnection {
   id: string;
 
   @JoinColumn()
-  @ManyToOne(() => Workspace, (workspace) => workspace.id, {
+  @ManyToOne(() => Workspaces, (workspace) => workspace.id, {
     onDelete: 'CASCADE',
     onUpdate: 'CASCADE',
   })
-  workspace: Workspace;
+  workspace: Workspaces;
 
   @Column()
   name: string;

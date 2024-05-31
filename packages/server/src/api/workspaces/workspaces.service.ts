@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Account } from '../accounts/entities/accounts.entity';
 import { MessageChannel } from './entities/message-channel.enum';
-import { Workspace } from './entities/workspace.entity';
+import { Workspaces } from './entities/workspaces.entity';
 import { WorkspaceMailgunConnection } from './entities/workspace-mailgun-connection.entity';
 import { WorkspaceSendgridConnection } from './entities/workspace-sendgrid-connection.entity';
 import { WorkspaceResendConnection } from './entities/workspace-resend-connection.entity';
@@ -33,7 +33,7 @@ export type WorkspaceConnectionsKeys =
   | 'twilioConnections'
   | 'pushConnections';
 
-export type WorkspaceConnections = Pick<Workspace, WorkspaceConnectionsKeys>;
+export type WorkspaceConnections = Pick<Workspaces, WorkspaceConnectionsKeys>;
 
 const messageChannelToKeyMap: Record<MessageChannel, WorkspaceConnectionsKeys> =
   {

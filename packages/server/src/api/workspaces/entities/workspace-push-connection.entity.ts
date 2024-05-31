@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
-import { Workspace } from './workspace.entity';
+import { Workspaces } from './workspaces.entity';
 import { PushPlatforms } from '@/api/templates/entities/template.entity';
 import { PushFirebasePlatforms } from '@/api/accounts/entities/accounts.entity';
 
@@ -16,11 +16,11 @@ export class WorkspacePushConnection {
   id: string;
 
   @JoinColumn()
-  @ManyToOne(() => Workspace, (workspace) => workspace.id, {
+  @ManyToOne(() => Workspaces, (workspace) => workspace.id, {
     onDelete: 'CASCADE',
     onUpdate: 'CASCADE',
   })
-  workspace: Workspace;
+  workspace: Workspaces;
 
   @Column()
   name: string;
