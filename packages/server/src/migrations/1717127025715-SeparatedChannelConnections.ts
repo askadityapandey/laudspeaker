@@ -6,9 +6,9 @@ export class SeparatedChannelConnections1717127025715
   name = 'SeparatedChannelConnections1717127025715';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TABLE "workspaces" DROP CONSTRAINT "FK_8f75913774150a5d5dde56513b1"`
-    );
+    // await queryRunner.query(
+    //   `ALTER TABLE "workspaces" DROP CONSTRAINT "FK_8f75913774150a5d5dde56513b1"`
+    // );
     await queryRunner.query(
       `CREATE TABLE "mailgun_sending_option" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "sendingEmail" character varying NOT NULL, "sendingName" character varying NOT NULL, "mailgunConnectionId" uuid NOT NULL, CONSTRAINT "UQ_df7ce6c91fa5d188ec63f365b1a" UNIQUE ("mailgunConnectionId", "sendingEmail", "sendingName"), CONSTRAINT "PK_14b7ce1f2d2518c5c71e30db713" PRIMARY KEY ("id"))`
     );
@@ -33,9 +33,9 @@ export class SeparatedChannelConnections1717127025715
     await queryRunner.query(
       `CREATE TABLE "workspace_resend_connection" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "name" character varying NOT NULL, "apiKey" character varying NOT NULL, "signingSecret" character varying NOT NULL, "sendingDomain" character varying NOT NULL, "workspaceId" uuid NOT NULL, CONSTRAINT "PK_f9b507739b524a220f79e05294e" PRIMARY KEY ("id"))`
     );
-    await queryRunner.query(
-      `ALTER TABLE "workspace_push_connection" DROP CONSTRAINT "UQ_1b07bbfd37209fbe65202a590ec"`
-    );
+    // await queryRunner.query(
+    //   `ALTER TABLE "workspace_push_connection" DROP CONSTRAINT "UQ_1b07bbfd37209fbe65202a590ec"`
+    // );
     await queryRunner.query(
       `ALTER TYPE "public"."workspaces_plan_enum" RENAME TO "workspaces_plan_enum_old"`
     );
@@ -52,9 +52,9 @@ export class SeparatedChannelConnections1717127025715
       `ALTER TABLE "workspaces" ALTER COLUMN "plan" SET DEFAULT 'free'`
     );
     await queryRunner.query(`DROP TYPE "public"."workspaces_plan_enum_old"`);
-    await queryRunner.query(
-      `ALTER TABLE "workspace_push_connection" ADD CONSTRAINT "UQ_1b07bbfd37209fbe65202a590ec"`
-    );
+    // await queryRunner.query(
+    //   `ALTER TABLE "workspace_push_connection" ADD CONSTRAINT "UQ_1b07bbfd37209fbe65202a590ec"`
+    // );
     await queryRunner.query(
       `ALTER TABLE "mailgun_sending_option" ADD CONSTRAINT "FK_8f3601882fb7d523f02f73a24ef" FOREIGN KEY ("mailgunConnectionId") REFERENCES "workspace_mailgun_connection"("id") ON DELETE CASCADE ON UPDATE CASCADE`
     );
@@ -112,9 +112,9 @@ export class SeparatedChannelConnections1717127025715
     await queryRunner.query(
       `ALTER TABLE "mailgun_sending_option" DROP CONSTRAINT "FK_8f3601882fb7d523f02f73a24ef"`
     );
-    await queryRunner.query(
-      `ALTER TABLE "workspace_push_connection" DROP CONSTRAINT "UQ_1b07bbfd37209fbe65202a590ec"`
-    );
+    // await queryRunner.query(
+    //   `ALTER TABLE "workspace_push_connection" DROP CONSTRAINT "UQ_1b07bbfd37209fbe65202a590ec"`
+    // );
     await queryRunner.query(
       `CREATE TYPE "public"."workspaces_plan_enum_old" AS ENUM('free', 'paid', 'enterprise')`
     );
@@ -131,9 +131,9 @@ export class SeparatedChannelConnections1717127025715
     await queryRunner.query(
       `ALTER TYPE "public"."workspaces_plan_enum_old" RENAME TO "workspaces_plan_enum"`
     );
-    await queryRunner.query(
-      `ALTER TABLE "workspace_push_connection" ADD CONSTRAINT "UQ_1b07bbfd37209fbe65202a590ec"`
-    );
+    // await queryRunner.query(
+    //   `ALTER TABLE "workspace_push_connection" ADD CONSTRAINT "UQ_1b07bbfd37209fbe65202a590ec"`
+    // );
     await queryRunner.query(`DROP TABLE "workspace_resend_connection"`);
     await queryRunner.query(`DROP TABLE "resend_sending_option"`);
     await queryRunner.query(`DROP TABLE "workspace_push_connection"`);

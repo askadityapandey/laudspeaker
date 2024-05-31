@@ -9,7 +9,7 @@ export class UpdateVisualLayoutAndStepMetadataWithConnections1717127092947
   public async up(queryRunner: QueryRunner): Promise<void> {
     const stream = await queryRunner.stream(
       `SELECT 
-          journey.id as "journeyId", workspace.id as "workspaceId", "visualLayout", workspace."emailProvider" as "emailProvider", journey.name as "name",
+          journey.id as "journeyId", workspaces.id as "workspaceId", "visualLayout", workspaces."emailProvider" as "emailProvider", journey.name as "name",
           "workspace_mailgun_connection".id as "mailgunConnectionId",
           "mailgun_sending_option".id as "mailgunSendingOptionId",
           "workspace_sendgrid_connection".id as "sendgridConnectionId",
@@ -19,15 +19,15 @@ export class UpdateVisualLayoutAndStepMetadataWithConnections1717127092947
           "workspace_twilio_connection".id as "twilioConnectionId",
           "workspace_push_connection".id as "pushConnectionId"
         FROM "journey"
-        LEFT JOIN "workspaces" ON workspace.id = journey."workspaceId"
-        LEFT JOIN "workspace_mailgun_connection" ON workspace.id = "workspace_mailgun_connection"."workspaceId"
+        LEFT JOIN "workspaces" ON workspaces.id = journey."workspaceId"
+        LEFT JOIN "workspace_mailgun_connection" ON workspaces.id = "workspace_mailgun_connection"."workspaceId"
         LEFT JOIN "mailgun_sending_option" ON "workspace_mailgun_connection".id = "mailgun_sending_option"."mailgunConnectionId"
-        LEFT JOIN "workspace_sendgrid_connection" ON workspace.id = "workspace_sendgrid_connection"."workspaceId"
+        LEFT JOIN "workspace_sendgrid_connection" ON workspaces.id = "workspace_sendgrid_connection"."workspaceId"
         LEFT JOIN "sendgrid_sending_option" ON "workspace_sendgrid_connection".id = "sendgrid_sending_option"."sendgridConnectionId"
-        LEFT JOIN "workspace_resend_connection" ON workspace.id = "workspace_resend_connection"."workspaceId"
+        LEFT JOIN "workspace_resend_connection" ON workspaces.id = "workspace_resend_connection"."workspaceId"
         LEFT JOIN "resend_sending_option" ON "workspace_resend_connection".id = "resend_sending_option"."resendConnectionId"
-        LEFT JOIN "workspace_twilio_connection" ON workspace.id = "workspace_twilio_connection"."workspaceId"
-        LEFT JOIN "workspace_push_connection" ON workspace.id = "workspace_push_connection"."workspaceId"`
+        LEFT JOIN "workspace_twilio_connection" ON workspaces.id = "workspace_twilio_connection"."workspaceId"
+        LEFT JOIN "workspace_push_connection" ON workspaces.id = "workspace_push_connection"."workspaceId"`
     );
 
     for await (const record of stream) {
