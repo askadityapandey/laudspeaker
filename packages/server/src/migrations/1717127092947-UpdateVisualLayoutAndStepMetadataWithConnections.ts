@@ -19,7 +19,7 @@ export class UpdateVisualLayoutAndStepMetadataWithConnections1717127092947
           "workspace_twilio_connection".id as "twilioConnectionId",
           "workspace_push_connection".id as "pushConnectionId"
         FROM "journey"
-        LEFT JOIN "workspace" ON workspace.id = journey."workspaceId"
+        LEFT JOIN "workspaces" ON workspace.id = journey."workspaceId"
         LEFT JOIN "workspace_mailgun_connection" ON workspace.id = "workspace_mailgun_connection"."workspaceId"
         LEFT JOIN "mailgun_sending_option" ON "workspace_mailgun_connection".id = "mailgun_sending_option"."mailgunConnectionId"
         LEFT JOIN "workspace_sendgrid_connection" ON workspace.id = "workspace_sendgrid_connection"."workspaceId"
