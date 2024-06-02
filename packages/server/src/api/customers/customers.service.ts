@@ -235,6 +235,47 @@ export class CustomersService {
     @Inject(CacheService) private cacheService: CacheService
   ) {
     const session = randomUUID();
+
+    mongoose.set('debug', true);
+    mongoose.set('debug', (collectionName, method, query, doc) => {
+      const startTime = process.hrtime();
+
+      // Log the query at the start
+      this.logger.debug(
+        `Mongoose query started: ${collectionName}.${method} ${JSON.stringify({
+          query: query,
+          doc: doc,
+        })}, `,
+        "",
+        JSON.stringify({
+          class: CustomersService.name,
+          method: 'MongooseQuery',
+          session: session,
+          user: 'SYSTEM',
+        })
+      );
+
+      // Hook into the next tick to measure the execution time
+      process.nextTick(() => {
+        const diff = process.hrtime(startTime);
+        const executionTime = diff[0] * 1e3 + diff[1] * 1e-6; // Convert to milliseconds
+
+        this.logger.debug(
+          `Mongoose query completed: ${collectionName}.${method} ${JSON.stringify({
+            query: query,
+            doc: doc,
+          })} - ${executionTime.toFixed(3)}ms`,
+          "",
+          JSON.stringify({
+            class: CustomersService.name,
+            method: 'MongooseQuery',
+            session: session,
+            user: 'SYSTEM',
+          })
+        );
+      });
+    });
+
     (async () => {
       try {
         const collection = this.connection.db.collection('customers');
@@ -2948,37 +2989,48 @@ export class CustomersService {
           if(process.env.DOCUMENT_DB == 'true' ){
             console.log("yoo whatsupp")
             // Add lookups for each additional collection to the pipeline
-            if (sets.length > 1) {
-              sets.forEach((collName) => {
-                console.log("collectionName is", collName)
-                unionAggregation.push({
-                  $lookup: {
-                    from: collName,
-                    localField: '_id',
-                    foreignField: '_id',
-                    as: collName
-                  }
-                });
-                unionAggregation.push({
-                  $unwind: {
-                    path: `$${collName}`,
-                    preserveNullAndEmptyArrays: true
-                  }
-                });
-                unionAggregation.push({
-                  $replaceRoot: {
-                    newRoot: {
-                      $mergeObjects: [`$$ROOT`, `$${collName}`]
-                    }
-                  }
-                });
+            // Add lookups for each additional collection to the pipeline
+            sets.forEach((collName, index) => {
+              unionAggregation.push({
+                $lookup: {
+                  from: collName,
+                  localField: '_id',
+                  foreignField: '_id',
+                  as: collName
+                }
               });
-            }
 
-            // Group by customerId to get unique users
+              unionAggregation.push({
+                $unwind: {
+                  path: `$${collName}`,
+                  preserveNullAndEmptyArrays: true
+                }
+              });
+
+              unionAggregation.push({
+                $replaceRoot: {
+                  newRoot: {
+                    $mergeObjects: [
+                      { customerId: "$_id" },
+                      `$${collName}`
+                    ]
+                  }
+                }
+              });
+            });
+
+            // Project to set _id to customerId before grouping
+            unionAggregation.push({
+              $project: {
+                _id: "$customerId",
+                customerId: 1
+              }
+            });
+
+            // Group by _id to get unique users
             unionAggregation.push({
               $group: {
-                _id: '$customerId'
+                _id: '$_id'
               }
             });
 
@@ -2987,7 +3039,7 @@ export class CustomersService {
               $out: thisCollectionName
             });
 
-            console.log("union aggregation is", unionAggregation );
+            console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
           }
           else {
               /*
