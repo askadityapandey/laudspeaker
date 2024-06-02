@@ -240,6 +240,7 @@ export class CustomersService {
         const collection = this.connection.db.collection('customers');
         await collection.createIndex('workspaceId');
         await collection.createIndex({ other_ids: 1, workspaceId: 1 });
+        /*
         await collection.createIndex(
           { __posthog__id: 1, workspaceId: 1 },
           {
@@ -249,6 +250,7 @@ export class CustomersService {
             },
           }
         );
+        */
         const keyCollection = this.connection.db.collection('customerkeys');
         const primaryKeyDocs = keyCollection.find({ isPrimary: true });
         for await (const primaryKey of primaryKeyDocs) {
@@ -2464,7 +2466,7 @@ export class CustomersService {
               account.id
             );
             //toggle for testing segments
-            await this.connection.db.collection(collection).drop();
+            //await this.connection.db.collection(collection).drop();
             this.debug(
               `dropped successfully`,
               this.getSegmentCustomersFromQuery.name,
@@ -2606,7 +2608,7 @@ export class CustomersService {
               account.id
             );
             //toggle for testing segments
-            await this.connection.db.collection(collection).drop();
+            //await this.connection.db.collection(collection).drop();
             this.debug(
               `dropped successfully`,
               this.getCustomersFromQuery.name,
@@ -2729,7 +2731,7 @@ export class CustomersService {
               account.id
             );
             //toggle for testing segments
-            await this.connection.db.collection(collection).drop();
+            //await this.connection.db.collection(collection).drop();
             this.debug(
               `dropped successfully`,
               this.getCustomersFromQuery.name,
@@ -2904,7 +2906,7 @@ export class CustomersService {
                   account.id
                 );
                 //toggle for testing segments
-                await this.connection.db.collection(collection).drop();
+                //await this.connection.db.collection(collection).drop();
                 this.debug(
                   `dropped successfully`,
                   this.getSegmentCustomersFromQuery.name,
@@ -2942,30 +2944,78 @@ export class CustomersService {
           );
 
           const unionAggregation: any[] = [];
-          /*
-        [
-          { $group: { _id: "$customerId" } }
-        ];
-        */
-          // Add each additional collection to the pipeline
-          if (sets.length > 1) {
-            sets.forEach((collName) => {
-              unionAggregation.push({ $unionWith: { coll: collName } });
-              //unionAggregation.push({ $unionWith: { coll: collName, pipeline: [{ $group: { _id: "$customerId" } }] } });
-            });
-          }
-          //unique users
-          //unionAggregation.push({ $group: { _id: "$customerId" } });
-          unionAggregation.push({ $group: { _id: '$_id' } });
 
-          // dump results to thisCollectionName
-          unionAggregation.push({ $out: thisCollectionName });
+          if(process.env.DOCUMENT_DB == 'true' ){
+            console.log("yoo whatsupp")
+            // Add lookups for each additional collection to the pipeline
+            if (sets.length > 1) {
+              sets.forEach((collName) => {
+                console.log("collectionName is", collName)
+                unionAggregation.push({
+                  $lookup: {
+                    from: collName,
+                    localField: '_id',
+                    foreignField: '_id',
+                    as: collName
+                  }
+                });
+                unionAggregation.push({
+                  $unwind: {
+                    path: `$${collName}`,
+                    preserveNullAndEmptyArrays: true
+                  }
+                });
+                unionAggregation.push({
+                  $replaceRoot: {
+                    newRoot: {
+                      $mergeObjects: [`$$ROOT`, `$${collName}`]
+                    }
+                  }
+                });
+              });
+            }
+
+            // Group by customerId to get unique users
+            unionAggregation.push({
+              $group: {
+                _id: '$customerId'
+              }
+            });
+
+            // Dump results to thisCollectionName
+            unionAggregation.push({
+              $out: thisCollectionName
+            });
+
+            console.log("union aggregation is", unionAggregation );
+          }
+          else {
+              /*
+            [
+              { $group: { _id: "$customerId" } }
+            ];
+            */
+            // Add each additional collection to the pipeline
+            if (sets.length > 1) {
+              sets.forEach((collName) => {
+                unionAggregation.push({ $unionWith: { coll: collName } });
+                //unionAggregation.push({ $unionWith: { coll: collName, pipeline: [{ $group: { _id: "$customerId" } }] } });
+              });
+            }
+            //unique users
+            //unionAggregation.push({ $group: { _id: "$customerId" } });
+            unionAggregation.push({ $group: { _id: '$_id' } });
+
+            // dump results to thisCollectionName
+            unionAggregation.push({ $out: thisCollectionName });
+
+          }
 
           //console.log("the first collection is", sets[0]);
           // Perform the aggregation on the first collection
           const collectionHandle = this.connection.db.collection(sets[0]);
           await collectionHandle.aggregate(unionAggregation).toArray();
-
+          
           if (topLevel) {
             //for each count drop the collections up to the last one
             sets.map(async (collection) => {
@@ -2977,7 +3027,7 @@ export class CustomersService {
                   account.id
                 );
                 //toggle for testing segments
-                await this.connection.db.collection(collection).drop();
+                //await this.connection.db.collection(collection).drop();
                 this.debug(
                   `dropped successfully`,
                   this.getSegmentCustomersFromQuery.name,
