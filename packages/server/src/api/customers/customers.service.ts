@@ -2989,57 +2989,72 @@ export class CustomersService {
           if(process.env.DOCUMENT_DB == 'true' ){
             console.log("yoo whatsupp")
             // Add lookups for each additional collection to the pipeline
-            // Add lookups for each additional collection to the pipeline
-            sets.forEach((collName, index) => {
-              unionAggregation.push({
-                $lookup: {
-                  from: collName,
-                  localField: '_id',
-                  foreignField: '_id',
-                  as: collName
+            // Step 1: Create new collections from each set with a new _id and rename _id to customerId
+            const newCollectionNames = await Promise.all(sets.map(async (collName, index) => {
+              const newCollName = `new_${collName}`;
+              console.log("new col is",newCollName );
+              const collectionHandle = this.connection.db.collection(collName);
+              await collectionHandle.aggregate([
+                {
+                  $addFields: { customerId: "$_id" }
+                },
+                {
+                  $project: { _id: 0 }
+                },
+                {
+                  $out: newCollName
                 }
-              });
+              ]).toArray(); // Execute the aggregation pipeline and create new collections
+              return newCollName;
+            }));
 
-              unionAggregation.push({
-                $unwind: {
-                  path: `$${collName}`,
-                  preserveNullAndEmptyArrays: true
-                }
-              });
+            //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
 
-              unionAggregation.push({
-                $replaceRoot: {
-                  newRoot: {
-                    $mergeObjects: [
-                      { customerId: "$_id" },
-                      `$${collName}`
-                    ]
+            // Step 2: Bulk insert documents from each new collection into a final collection, in batches
+            const BATCH_SIZE = 5000; // Batch size for bulk operations
+            const finalCollection = `final_${collectionName}`;
+            await Promise.all(newCollectionNames.map(async (newCollName) => {
+              const cursor = this.connection.db.collection(newCollName).find();
+              let batch = [];
+              while (await cursor.hasNext()) {
+                const doc = await cursor.next();
+                batch.push({
+                  insertOne: {
+                    document: doc
                   }
+                });
+
+                if (batch.length >= BATCH_SIZE) {
+                  await this.connection.db.collection(finalCollection).bulkWrite(batch);
+                  batch = []; // Reset the batch for the next group of documents
                 }
-              });
-            });
-
-            // Project to set _id to customerId before grouping
-            unionAggregation.push({
-              $project: {
-                _id: "$customerId",
-                customerId: 1
               }
-            });
 
-            // Group by _id to get unique users
-            unionAggregation.push({
-              $group: {
-                _id: '$_id'
+              // Process any remaining documents in the last batch
+              if (batch.length > 0) {
+                await this.connection.db.collection(finalCollection).bulkWrite(batch);
               }
-            });
+            }));
 
-            // Dump results to thisCollectionName
-            unionAggregation.push({
-              $out: thisCollectionName
-            });
+            // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
+            await this.connection.db.collection(finalCollection).aggregate([
+              {
+                $group: {
+                  _id: "$customerId", // Group by customerId
+                  customerId: { $first: "$customerId" }
+                }
+              },
+              {
+                $project: {
+                  _id: "$customerId"
+                }
+              },
+              {
+                $out: thisCollectionName // Output the final aggregated documents into the same collection
+              }
+            ]).toArray();
 
-            console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
+            console.log("final colname is", finalCollection)
           }
           else {
               /*
@@ -3061,12 +3076,14 @@ export class CustomersService {
             // dump results to thisCollectionName
             unionAggregation.push({ $out: thisCollectionName });
 
+            //console.log("the first collection is", sets[0]);
+            // Perform the aggregation on the first collection
+            const collectionHandle = this.connection.db.collection(sets[0]);
+            await collectionHandle.aggregate(unionAggregation).toArray();
+
           }
 
-          //console.log("the first collection is", sets[0]);
-          // Perform the aggregation on the first collection
-          const collectionHandle = this.connection.db.collection(sets[0]);
-          await collectionHandle.aggregate(unionAggregation).toArray();
+          
           
           if (topLevel) {
             //for each count drop the collections up to the last one
