@@ -3049,33 +3049,106 @@ export class CustomersService {
             },
             async () => {
               const unionAggregation: any[] = [];
-              //if (sets.length > 1) {
-              // Add each additional collection to the pipeline for union
-              sets.forEach((collName) => {
-                //console.log("the set is", collName);
-                unionAggregation.push({ $unionWith: { coll: collName } });
-              });
-              // Group by customerId and count occurrences
-              unionAggregation.push(
-                { $group: { _id: '$_id', count: { $sum: 1 } } },
-                //{ $group: { _id: "$customerId", count: { $sum: 1 } } },
-                { $match: { count: sets.length } } // Match only IDs present in all subqueries
-              );
-              //} else if (sets.length === 1) {
-              //  console.log("sets length 1");
-              // If there's only one collection, no matching
-              //} else {
-              //  console.log("No collections to process.");
-              //  return; // Exit if there are no collections
-              //}
-              unionAggregation.push({ $out: thisCollectionName });
-
-              //console.log("the first collection is", thisCollectionName);
-              //console.log("union aggreagation is", JSON.stringify(unionAggregation,null,2));
-
               // Perform the aggregation on the first collection
               const collectionHandle =
                 this.connection.db.collection(thisCollectionName);
+
+              if(process.env.DOCUMENT_DB == 'true' ){
+                console.log("yoo 2 whatsupp")
+        
+                const newCollectionNames = await Promise.all(sets.map(async (collName, index) => {
+                  const newCollName = `new_${collName}`;
+                  console.log("new col is",newCollName );
+                  const collectionHandle = this.connection.db.collection(collName);
+                  await collectionHandle.aggregate([
+                    {
+                      $addFields: { customerId: "$_id" }
+                    },
+                    {
+                      $project: { _id: 0 }
+                    },
+                    {
+                      $out: newCollName
+                    }
+                  ]).toArray(); // Execute the aggregation pipeline and create new collections
+                  return newCollName;
+                }));
+        
+                //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
+        
+                // Step 2: Bulk insert documents from each new collection into a final collection, in batches
+                const BATCH_SIZE = 5000; // Batch size for bulk operations
+                const finalCollection = `final_and_scfq_${collectionName}`;
+                await Promise.all(newCollectionNames.map(async (newCollName) => {
+                  const cursor = this.connection.db.collection(newCollName).find();
+                  let batch = [];
+                  while (await cursor.hasNext()) {
+                    const doc = await cursor.next();
+                    batch.push({
+                      insertOne: {
+                        document: doc
+                      }
+                    });
+        
+                    if (batch.length >= BATCH_SIZE) {
+                      await this.connection.db.collection(finalCollection).bulkWrite(batch);
+                      batch = []; // Reset the batch for the next group of documents
+                    }
+                  }
+        
+                  // Process any remaining documents in the last batch
+                  if (batch.length > 0) {
+                    await this.connection.db.collection(finalCollection).bulkWrite(batch);
+                  }
+                }));
+        
+                // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
+                await this.connection.db.collection(finalCollection).aggregate([
+                  {
+                    $group: {
+                      _id: "$customerId", // Group by customerId
+                      count: { $sum: 1 },
+                      customerId: { $first: "$customerId" }
+                    }
+                  },
+                  { $match: { count: sets.length } },
+                  {
+                    $project: {
+                      _id: "$customerId"
+                    }
+                  },
+                  {
+                    $out: thisCollectionName // Output the final aggregated documents into the same collection
+                  }
+                ]).toArray();
+                console.log("final colname is", finalCollection)
+              }
+              else {
+                //if (sets.length > 1) {
+              // Add each additional collection to the pipeline for union
+                sets.forEach((collName) => {
+                  //console.log("the set is", collName);
+                  unionAggregation.push({ $unionWith: { coll: collName } });
+                });
+                // Group by customerId and count occurrences
+                unionAggregation.push(
+                  { $group: { _id: '$_id', count: { $sum: 1 } } },
+                  //{ $group: { _id: "$customerId", count: { $sum: 1 } } },
+                  { $match: { count: sets.length } } // Match only IDs present in all subqueries
+                );
+                //} else if (sets.length === 1) {
+                //  console.log("sets length 1");
+                // If there's only one collection, no matching
+                //} else {
+                //  console.log("No collections to process.");
+                //  return; // Exit if there are no collections
+                //}
+                unionAggregation.push({ $out: thisCollectionName });
+              }
+              
+              //console.log("the first collection is", thisCollectionName);
+              //console.log("union aggreagation is", JSON.stringify(unionAggregation,null,2));
+
               await collectionHandle.aggregate(unionAggregation).toArray();
             }
           );
