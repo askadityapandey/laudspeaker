@@ -2681,7 +2681,58 @@ export class CustomersService {
             $out: thisCollectionName // Output the final aggregated documents into the same collection
           }
         ]).toArray();
-        console.log("final colname is", finalCollection)
+        console.log("final colname is", thisCollectionName);
+
+        //drop all intermediate collections
+        try {
+          this.debug(
+            `trying to release finalcollection`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+          //toggle for testing segments
+          await this.connection.db.collection(finalCollection).drop();
+          this.debug(
+            `dropped successfully`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+        } catch (e) {
+          this.debug(
+            `error dropping collection: ${e}`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+        }
+
+        newCollectionNames.map(async (collection) => {
+          try {
+            this.debug(
+              `trying to release collection`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+            //toggle for testing segments
+            await this.connection.db.collection(collection).drop();
+            this.debug(
+              `dropped successfully`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+          } catch (e) {
+            this.debug(
+              `error dropping collection: ${e}`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+          }
+        });
 
       }
       else{
@@ -2707,6 +2758,8 @@ export class CustomersService {
         //console.log("union aggreagation is", JSON.stringify(unionAggregation,null,2));
         // Perform the aggregation on the first collection
         await collectionHandle.aggregate(unionAggregation).toArray();
+
+        
       }
 
       
@@ -2884,6 +2937,57 @@ export class CustomersService {
         ]).toArray();
 
         console.log("final colname is", finalCollection)
+
+        //drop all intermediate collections
+        try {
+          this.debug(
+            `trying to release finalcollection`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+          //toggle for testing segments
+          await this.connection.db.collection(finalCollection).drop();
+          this.debug(
+            `dropped successfully`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+        } catch (e) {
+          this.debug(
+            `error dropping collection: ${e}`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+        }
+
+        newCollectionNames.map(async (collection) => {
+          try {
+            this.debug(
+              `trying to release collection`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+            //toggle for testing segments
+            await this.connection.db.collection(collection).drop();
+            this.debug(
+              `dropped successfully`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+          } catch (e) {
+            this.debug(
+              `error dropping collection: ${e}`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+          }
+        });
 
       } else {
          // Add each additional collection to the pipeline
@@ -3122,6 +3226,57 @@ export class CustomersService {
                   }
                 ]).toArray();
                 console.log("final colname is", finalCollection)
+
+                //drop all intermediate collections
+                try {
+                  this.debug(
+                    `trying to release finalcollection`,
+                    this.getCustomersFromQuery.name,
+                    session,
+                    account.id
+                  );
+                  //toggle for testing segments
+                  await this.connection.db.collection(finalCollection).drop();
+                  this.debug(
+                    `dropped successfully`,
+                    this.getCustomersFromQuery.name,
+                    session,
+                    account.id
+                  );
+                } catch (e) {
+                  this.debug(
+                    `error dropping collection: ${e}`,
+                    this.getCustomersFromQuery.name,
+                    session,
+                    account.id
+                  );
+                }
+
+                newCollectionNames.map(async (collection) => {
+                  try {
+                    this.debug(
+                      `trying to release collection`,
+                      this.getCustomersFromQuery.name,
+                      session,
+                      account.id
+                    );
+                    //toggle for testing segments
+                    await this.connection.db.collection(collection).drop();
+                    this.debug(
+                      `dropped successfully`,
+                      this.getCustomersFromQuery.name,
+                      session,
+                      account.id
+                    );
+                  } catch (e) {
+                    this.debug(
+                      `error dropping collection: ${e}`,
+                      this.getCustomersFromQuery.name,
+                      session,
+                      account.id
+                    );
+                  }
+                });
               }
               else {
                 //if (sets.length > 1) {
@@ -3272,6 +3427,57 @@ export class CustomersService {
             ]).toArray();
 
             console.log("final colname is", finalCollection)
+
+            //drop all intermediate collections
+            try {
+              this.debug(
+                `trying to release finalcollection`,
+                this.getCustomersFromQuery.name,
+                session,
+                account.id
+              );
+              //toggle for testing segments
+              await this.connection.db.collection(finalCollection).drop();
+              this.debug(
+                `dropped successfully`,
+                this.getCustomersFromQuery.name,
+                session,
+                account.id
+              );
+            } catch (e) {
+              this.debug(
+                `error dropping collection: ${e}`,
+                this.getCustomersFromQuery.name,
+                session,
+                account.id
+              );
+            }
+
+            newCollectionNames.map(async (collection) => {
+              try {
+                this.debug(
+                  `trying to release collection`,
+                  this.getCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+                //toggle for testing segments
+                await this.connection.db.collection(collection).drop();
+                this.debug(
+                  `dropped successfully`,
+                  this.getCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+              } catch (e) {
+                this.debug(
+                  `error dropping collection: ${e}`,
+                  this.getCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+              }
+            });
           }
           else {
               /*
