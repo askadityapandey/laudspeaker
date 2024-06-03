@@ -2637,7 +2637,7 @@ export class CustomersService {
         //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
 
         // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-        const BATCH_SIZE = 5000; // Batch size for bulk operations
+        const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE;
         const finalCollection = `final_and_cfc_${collectionName}`;
         await Promise.all(newCollectionNames.map(async (newCollName) => {
           const cursor = this.connection.db.collection(newCollName).find();
@@ -2840,7 +2840,7 @@ export class CustomersService {
         }));
         //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
         // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-        const BATCH_SIZE = 5000; // Batch size for bulk operations
+        const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE;
         const finalCollection = `final_or_cfc_${collectionName}`;
         await Promise.all(newCollectionNames.map(async (newCollName) => {
           const cursor = this.connection.db.collection(newCollName).find();
@@ -3077,7 +3077,7 @@ export class CustomersService {
                 //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
         
                 // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-                const BATCH_SIZE = 5000; // Batch size for bulk operations
+                const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE;
                 const finalCollection = `final_and_scfq_${collectionName}`;
                 await Promise.all(newCollectionNames.map(async (newCollName) => {
                   const cursor = this.connection.db.collection(newCollName).find();
@@ -3228,7 +3228,7 @@ export class CustomersService {
             //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
 
             // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-            const BATCH_SIZE = 5000; // Batch size for bulk operations
+            const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE;
             const finalCollection = `final_${collectionName}`;
             await Promise.all(newCollectionNames.map(async (newCollName) => {
               const cursor = this.connection.db.collection(newCollName).find();
