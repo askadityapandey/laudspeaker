@@ -2507,7 +2507,7 @@ export class CustomersService {
               account.id
             );
             //toggle for testing segments
-            //await this.connection.db.collection(collection).drop();
+            await this.connection.db.collection(collection).drop();
             this.debug(
               `dropped successfully`,
               this.getSegmentCustomersFromQuery.name,
@@ -2722,7 +2722,7 @@ export class CustomersService {
               account.id
             );
             //toggle for testing segments
-            //await this.connection.db.collection(collection).drop();
+            await this.connection.db.collection(collection).drop();
             this.debug(
               `dropped successfully`,
               this.getCustomersFromQuery.name,
@@ -2916,7 +2916,7 @@ export class CustomersService {
               account.id
             );
             //toggle for testing segments
-            //await this.connection.db.collection(collection).drop();
+            await this.connection.db.collection(collection).drop();
             this.debug(
               `dropped successfully`,
               this.getCustomersFromQuery.name,
@@ -3164,7 +3164,7 @@ export class CustomersService {
                   account.id
                 );
                 //toggle for testing segments
-                //await this.connection.db.collection(collection).drop();
+                await this.connection.db.collection(collection).drop();
                 this.debug(
                   `dropped successfully`,
                   this.getSegmentCustomersFromQuery.name,
@@ -3313,7 +3313,7 @@ export class CustomersService {
                   account.id
                 );
                 //toggle for testing segments
-                //await this.connection.db.collection(collection).drop();
+                await this.connection.db.collection(collection).drop();
                 this.debug(
                   `dropped successfully`,
                   this.getSegmentCustomersFromQuery.name,
