@@ -909,7 +909,7 @@ export class AccountsService extends BaseJwtHelper {
         after_completion: {
           type: 'redirect',
           redirect: {
-            url: 'http://' + process.env.FRONTEND_URL + '/payment-gate',
+            url: process.env.FRONTEND_URL + '/payment-gate',
           },
         },
         //success_url: 'http://your_success_url_here',
