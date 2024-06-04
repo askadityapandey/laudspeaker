@@ -105,6 +105,24 @@ const eventsMap = {
   opened: 'opened',
 };
 
+// Keeping these together so they stay in sync as we
+// add more channels.
+
+const rules = {
+  email: ["^email",  "^email_address"],
+  phone: ["^phone",  "^phone_number"],
+  ios: ["^iosDeviceToken"],
+  android: ["^androidDeviceToken"]
+};
+
+const rulesRaw = {
+  email: ["email",  "email_address"],
+  phone: ["phone",  "phone_number"],
+  ios: ["iosDeviceToken"],
+  android: ["androidDeviceToken"]
+};
+
+
 export interface JourneyDataForTimeLine {
   id: string;
   name: string;
@@ -241,21 +259,15 @@ export class CustomersService {
         const collection = this.connection.db.collection('customers');
         await collection.createIndex('workspaceId');
         await collection.createIndex({ other_ids: 1, workspaceId: 1 });
-        /*
-        await collection.createIndex(
-          { __posthog__id: 1, workspaceId: 1 },
-          {
-            unique: true,
-            partialFilterExpression: {
-              __posthog__id: { $exists: true, $type: 'array', $gt: [] },
-            },
-          }
-        );
-        */
         const keyCollection = this.connection.db.collection('customerkeys');
         const primaryKeyDocs = keyCollection.find({ isPrimary: true });
         for await (const primaryKey of primaryKeyDocs) {
-          await collection.createIndex({ [primaryKey.key]: 1, workspaceId: 1 });
+          await collection.createIndex({ [primaryKey.key]: 1, workspaceId: 1 }, { unique: true });
+        }
+        for(const [channel, channelRules] of Object.entries(rulesRaw)) {
+          for(const rule of channelRules) {
+            await collection.createIndex({ [rule]: 1, workspaceId: 1 }, { unique: true });
+          }
         }
       } catch (e) {
         this.error(e, CustomersService.name, session);
@@ -1273,13 +1285,6 @@ export class CustomersService {
     let keys = [];
 
     const customerKeys = await this.CustomerKeysModel.find({ workspaceId });
-
-    const rules = {
-      email: ["^email",  "^email_address"],
-      phone: ["^phone",  "^phone_number"],
-      ios: ["^iosDeviceToken"],
-      android: ["^androidDeviceToken"]
-    };
 
     for(const customerKey of customerKeys) {
       if(customerKey.isPrimary || ( customerKey.type !== AttributeType.STRING && customerKey.type !== AttributeType.EMAIL ) )
@@ -7021,6 +7026,8 @@ export class CustomersService {
 
         newPK.isPrimary = true;
         await newPK.save({ session: clientSession });
+        const collection = this.connection.db.collection('customers');
+        await collection.createIndex({ [newPK.key]: 1, workspaceId: 1 }, { unique: true });
       }
     } catch (error) {
       this.error(error, this.updatePrimaryKey.name, session);
