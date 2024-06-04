@@ -236,46 +236,6 @@ export class CustomersService {
   ) {
     const session = randomUUID();
 
-    mongoose.set('debug', true);
-    mongoose.set('debug', (collectionName, method, query, doc) => {
-      const startTime = process.hrtime();
-
-      // Log the query at the start
-      this.logger.debug(
-        `Mongoose query started: ${collectionName}.${method} ${JSON.stringify({
-          query: query,
-          doc: doc,
-        })}, `,
-        "",
-        JSON.stringify({
-          class: CustomersService.name,
-          method: 'MongooseQuery',
-          session: session,
-          user: 'SYSTEM',
-        })
-      );
-
-      // Hook into the next tick to measure the execution time
-      process.nextTick(() => {
-        const diff = process.hrtime(startTime);
-        const executionTime = diff[0] * 1e3 + diff[1] * 1e-6; // Convert to milliseconds
-
-        this.logger.debug(
-          `Mongoose query completed: ${collectionName}.${method} ${JSON.stringify({
-            query: query,
-            doc: doc,
-          })} - ${executionTime.toFixed(3)}ms`,
-          "",
-          JSON.stringify({
-            class: CustomersService.name,
-            method: 'MongooseQuery',
-            session: session,
-            user: 'SYSTEM',
-          })
-        );
-      });
-    });
-
     (async () => {
       try {
         const collection = this.connection.db.collection('customers');
@@ -363,8 +323,11 @@ export class CustomersService {
   }
 
   async checkCustomerLimit(organization: Organization, customersToAdd = 1) {
-
-    this.debug(`in checkCustomerLimte`, this.checkCustomerLimit.name, "session");
+    this.debug(
+      `in checkCustomerLimte`,
+      this.checkCustomerLimit.name,
+      'session'
+    );
 
     const customersInOrganization = await this.CustomerModel.count({
       workspaceId: {
@@ -2619,8 +2582,6 @@ export class CustomersService {
       }
     ]).toArray();
 
-    console.log("final colname is", finalCollection)
-
     //drop all intermediate collections
     try {
       this.debug(
@@ -2757,7 +2718,7 @@ export class CustomersService {
         this.connection.db.collection(thisCollectionName);
       //if (sets.length > 1) {
       // Add each additional collection to the pipeline for union
-      if(process.env.DOCUMENT_DB == 'true' ){
+      if (process.env.DOCUMENT_DB == 'true') {
         this.debug(
           `document db replacing unionWith`,
           this.getCustomersFromQuery.name,
@@ -3023,8 +2984,7 @@ export class CustomersService {
         account.id
       );
 
-      if(process.env.DOCUMENT_DB == 'true' ){
-      
+      if (process.env.DOCUMENT_DB === 'true') {
         this.debug(
           `document db replacing unionWith`,
           this.getCustomersFromQuery.name,
@@ -3099,8 +3059,6 @@ export class CustomersService {
             $out: thisCollectionName // Output the final aggregated documents into the same collection
           }
         ]).toArray();
-
-        console.log("final colname is", finalCollection)
 
         //drop all intermediate collections
         try {
@@ -3321,7 +3279,7 @@ export class CustomersService {
               const collectionHandle =
                 this.connection.db.collection(thisCollectionName);
 
-              if(process.env.DOCUMENT_DB == 'true' ){
+              if (process.env.DOCUMENT_DB === 'true') {
                 this.debug(
                   `document db replacing unionWith`,
                   this.getCustomersFromQuery.name,
@@ -3351,9 +3309,7 @@ export class CustomersService {
                   ]).toArray(); // Execute the aggregation pipeline and create new collections
                   return newCollName;
                 }));
-        
-                //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
-        
+                
                 // Step 2: Bulk insert documents from each new collection into a final collection, in batches
                 const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
                 const finalCollection = `final_and_scfq_${collectionName}`;
@@ -3537,7 +3493,7 @@ export class CustomersService {
 
           const unionAggregation: any[] = [];
 
-          if(process.env.DOCUMENT_DB == 'true' ){
+          if (process.env.DOCUMENT_DB === 'true') {
             this.debug(
               `document db replacing unionWith`,
               this.getCustomersFromQuery.name,
