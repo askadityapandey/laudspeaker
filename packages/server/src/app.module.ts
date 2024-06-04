@@ -163,7 +163,17 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
         ]
       : []),
     MongooseModule.forRoot(
-      formatMongoConnectionString(process.env.MONGOOSE_URL)
+      `mongodb://127.0.0.1:27017/test`,
+      {
+        user: 'laudspeaker',       // MongoDB username if authentication is required
+        pass: '',   // MongoDB password if authentication is required
+        tls: true,
+        tlsCAFile: '/Users/abheekbasu/Desktop/Laudspeaker/workspace/laudspeaker/global-bundle.pem',
+        tlsAllowInvalidHostnames: true,
+        directConnection: true,
+        retryWrites: false,          // Disable retryable writes
+      }
+      //formatMongoConnectionString(process.env.MONGOOSE_URL)
     ),
     CacheModule.registerAsync({
       isGlobal: true,
