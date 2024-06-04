@@ -70,8 +70,6 @@ import {
 } from '@/utils/customer-key-name-validator';
 import { UpsertCustomerDto } from './dto/upsert-customer.dto';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
-import { Cache } from 'cache-manager';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { DeleteCustomerDto } from './dto/delete-customer.dto';
 import { ReadCustomerDto } from './dto/read-customer.dto';
 import {
@@ -87,6 +85,13 @@ import { IdentifyCustomerDTO } from './dto/identify-customer.dto';
 import { SetCustomerPropsDTO } from './dto/set-customer-props.dto';
 import { SendFCMDto } from './dto/send-fcm.dto';
 import { PushPlatforms } from '../templates/entities/template.entity';
+import { Organization } from '../organizations/entities/organization.entity';
+import * as Sentry from '@sentry/node';
+import { CacheService } from '@/common/services/cache.service';
+
+import { CustomerSearchOptions } from './interfaces/CustomerSearchOptions.interface';
+import { CustomerSearchOptionResult } from './interfaces/CustomerSearchOptionResult.interface';
+import { FindType } from './enums/FindType.enum';
 
 export type Correlation = {
   cust: CustomerDocument;
@@ -98,6 +103,23 @@ const eventsMap = {
   clicked: 'clicked',
   delivered: 'delivered',
   opened: 'opened',
+};
+
+// Keeping these together so they stay in sync as we
+// add more channels.
+
+const rules = {
+  email: ['^email', '^email_address'],
+  phone: ['^phone', '^phone_number'],
+  ios: ['^iosDeviceToken'],
+  android: ['^androidDeviceToken'],
+};
+
+const rulesRaw = {
+  email: ['email', 'email_address'],
+  phone: ['phone', 'phone_number'],
+  ios: ['iosDeviceToken'],
+  android: ['androidDeviceToken'],
 };
 
 export interface JourneyDataForTimeLine {
@@ -187,6 +209,24 @@ export interface QueryOptions {
   customerKeys?: { key: string; type: AttributeType }[];
 }
 
+const createIndexIfNotExists = async (collection, indexSpec, options = {}) => {
+  const indexes = await collection.indexes();
+  const indexExists = indexes.some((index) => {
+    const keysMatch = Object.keys(indexSpec).every(
+      (key) =>
+        index.key.hasOwnProperty(key) && index.key[key] === indexSpec[key]
+    );
+    return keysMatch;
+  });
+
+  if (!indexExists) {
+    await collection.createIndex(indexSpec, options);
+    console.log(`Index ${JSON.stringify(indexSpec)} created successfully.`);
+  } else {
+    console.log(`Index ${JSON.stringify(indexSpec)} already exists.`);
+  }
+};
+
 @Injectable()
 export class CustomersService {
   private clickhouseClient = createClient({
@@ -203,8 +243,8 @@ export class CustomersService {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('customers') private readonly customersQueue: Queue,
-    @InjectQueue('imports') private readonly importsQueue: Queue,
+    @InjectQueue('{customers}') private readonly customersQueue: Queue,
+    @InjectQueue('{imports}') private readonly importsQueue: Queue,
     @InjectModel(Customer.name) public CustomerModel: Model<CustomerDocument>,
     @InjectModel(CustomerKeys.name)
     public CustomerKeysModel: Model<CustomerKeysDocument>,
@@ -227,27 +267,44 @@ export class CustomersService {
     private readonly s3Service: S3Service,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache
+    @Inject(CacheService) private cacheService: CacheService
   ) {
     const session = randomUUID();
+
     (async () => {
       try {
         const collection = this.connection.db.collection('customers');
-        await collection.createIndex('workspaceId');
-        await collection.createIndex({ other_ids: 1, workspaceId: 1 });
-        await collection.createIndex(
-          { __posthog__id: 1, workspaceId: 1 },
-          {
-            unique: true,
-            partialFilterExpression: {
-              __posthog__id: { $exists: true, $type: 'array', $gt: [] },
-            },
+        await collection.dropIndexes();
+        await createIndexIfNotExists(collection, 'workspaceId');
+        await createIndexIfNotExists(collection, {
+          other_ids: 1,
+          workspaceId: 1,
+        });
+        for (const [channel, channelRules] of Object.entries(rulesRaw)) {
+          for (const rule of channelRules) {
+            await createIndexIfNotExists(
+              collection,
+              { [rule]: 1, workspaceId: 1 },
+              {
+                unique: true,
+                partialFilterExpression: { [rule]: { $exists: true } },
+              }
+            );
           }
-        );
+        }
+
         const keyCollection = this.connection.db.collection('customerkeys');
+        await keyCollection.dropIndexes();
         const primaryKeyDocs = keyCollection.find({ isPrimary: true });
         for await (const primaryKey of primaryKeyDocs) {
-          await collection.createIndex({ [primaryKey.key]: 1, workspaceId: 1 });
+          await createIndexIfNotExists(
+            collection,
+            { [primaryKey.key]: 1, workspaceId: 1 },
+            {
+              unique: true,
+              partialFilterExpression: { [primaryKey.key]: { $exists: true } },
+            }
+          );
         }
       } catch (e) {
         this.error(e, CustomersService.name, session);
@@ -314,6 +371,34 @@ export class CustomersService {
     );
   }
 
+  async checkCustomerLimit(organization: Organization, customersToAdd = 1) {
+    this.debug(
+      `in checkCustomerLimte`,
+      this.checkCustomerLimit.name,
+      'session'
+    );
+
+    const customersInOrganization = await this.CustomerModel.count({
+      workspaceId: {
+        $in: organization.workspaces.map((workspace) => workspace.id),
+      },
+    });
+
+    if (organization.plan.customerLimit != -1) {
+      if (
+        customersInOrganization + customersToAdd >
+        organization.plan.customerLimit
+      ) {
+        throw new HttpException(
+          'Customers limit has been exceeded',
+          HttpStatus.PAYMENT_REQUIRED
+        );
+      }
+    }
+
+    return customersInOrganization;
+  }
+
   async create(
     account: Account,
     createCustomerDto: any,
@@ -325,7 +410,10 @@ export class CustomersService {
         _id: Types.ObjectId;
       }
   > {
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    const organization = account?.teams?.[0]?.organization;
+    const workspace = organization?.workspaces?.[0];
+
+    await this.checkCustomerLimit(organization);
 
     const createdCustomer = new this.CustomerModel({
       _id: randomUUID(),
@@ -369,7 +457,8 @@ export class CustomersService {
   }
 
   async addPhCustomers(data: any[], account: Account) {
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    const organization = account?.teams?.[0]?.organization;
+    const workspace = organization?.workspaces?.[0];
 
     for (let index = 0; index < data.length; index++) {
       const addedBefore = await this.CustomerModel.find({
@@ -411,6 +500,8 @@ export class CustomersService {
             data[index]?.properties[firebaseDeviceTokenKey];
         }
       }
+
+      await this.checkCustomerLimit(organization);
       await createdCustomer.save();
     }
   }
@@ -832,13 +923,16 @@ export class CustomersService {
     account: Account,
     id: string
   ): Promise<CustomerDocument> {
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    const organization = account?.teams?.[0]?.organization;
+    const workspace = organization?.workspaces?.[0];
 
     const customers = await this.CustomerModel.find({
       workspaceId: workspace.id,
       externalId: id,
     }).exec();
     if (customers.length < 1) {
+      await this.checkCustomerLimit(organization);
+
       const createdCustomer = new this.CustomerModel({
         workspaceId: workspace.id,
         externalId: id,
@@ -848,13 +942,16 @@ export class CustomersService {
   }
 
   async findByCustomEvent(account: Account, id: string): Promise<Correlation> {
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    const organization = account?.teams?.[0]?.organization;
+    const workspace = organization?.workspaces?.[0];
 
     const customers = await this.CustomerModel.find({
       workspaceId: workspace.id,
       slackId: id,
     }).exec();
     if (customers.length < 1) {
+      await this.checkCustomerLimit(organization);
+
       const createdCustomer = new this.CustomerModel({
         workspaceId: workspace.id,
         slackId: id,
@@ -886,7 +983,8 @@ export class CustomersService {
     mapping?: (event: any) => any
   ): Promise<Correlation> {
     let customer, createdCustomer: CustomerDocument;
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    const organization = account?.teams?.[0]?.organization;
+    const workspace = organization?.workspaces?.[0];
 
     const queryParam: any = {
       workspaceId: workspace.id,
@@ -913,6 +1011,8 @@ export class CustomersService {
       .session(transactionSession)
       .exec();
     if (!customer) {
+      await this.checkCustomerLimit(organization);
+
       this.debug(
         `Customer not found, creating new customer...`,
         this.findBySpecifiedEvent.name,
@@ -1159,61 +1259,420 @@ export class CustomersService {
     return Promise.resolve(customer);
   }
 
-  async findOrCreateByCorrelationKVPair(
-    workspace: Workspaces,
-    dto: EventDto,
-    transactionSession: ClientSession
-  ): Promise<Correlation> {
-    let customer: CustomerDocument; // Found customer
-    let queryParam = {
-      workspaceId: workspace.id,
-      $or: [
-        { [dto.correlationKey]: dto.correlationValue },
-        { other_ids: dto.correlationValue },
-      ],
-    };
-    try {
-      customer = await this.CustomerModel.findOne(queryParam)
-        .session(transactionSession)
-        .exec();
-    } catch (err) {
-      return Promise.reject(err);
+  // async findOrCreateByCorrelationKVPair(
+  //   workspace: Workspaces,
+  //   dto: EventDto,
+  //   transactionSession: ClientSession
+  // ): Promise<Correlation> {
+  //   let customer: CustomerDocument; // Found customer
+  //   const queryParam = {
+  //     workspaceId: workspace.id,
+  //     $or: [
+  //       { [dto.correlationKey]: dto.correlationValue },
+  //       { other_ids: dto.correlationValue },
+  //     ],
+  //   };
+  //   try {
+  //     customer = await this.CustomerModel.findOne(queryParam)
+  //       .session(transactionSession)
+  //       .exec();
+  //   } catch (err) {
+  //     return Promise.reject(err);
+  //   }
+  //   if (!customer) {
+  //     // When no customer is found with the given correlation, create a new one
+  //     // If the correlationKey is '_id', use it to set the _id of the new customer
+  //     const newCustomerData: any = {
+  //       workspaceId: workspace.id,
+  //       createdAt: new Date(),
+  //     };
+  //     if (dto.correlationKey === '_id') {
+  //       newCustomerData._id = dto.correlationValue;
+  //     } else {
+  //       // If correlationKey is not '_id',
+  //       newCustomerData._id = randomUUID();
+  //     }
+  //     const createdCustomer = new this.CustomerModel(newCustomerData);
+  //     return {
+  //       cust: await createdCustomer.save({ session: transactionSession }),
+  //       found: false,
+  //     };
+  //   } else {
+  //     return { cust: customer, found: true };
+  //   }
+  //   /*
+  //   if (!customer) {
+
+  //     if (!queryParam._id) {
+  //       queryParam._id = randomUUID();
+  //     }
+
+  //     const createdCustomer = new this.CustomerModel(queryParam);
+  //     return {
+  //       cust: await createdCustomer.save({ session: transactionSession }),
+  //       found: false,
+  //     };
+  //   } else return { cust: customer, found: true };
+  //   */
+  // }
+
+  // get keys that weren't marked as primary but may be used
+  // as channels for sending messages (e.g. email, email_address,
+  // phone, phone_number, etc..)
+  async getMessageChannelsCustomerKeys(workspaceId: string): Promise<string[]> {
+    let keys = [];
+
+    const customerKeys = await this.CustomerKeysModel.find({ workspaceId });
+
+    for (const customerKey of customerKeys) {
+      if (
+        customerKey.isPrimary ||
+        (customerKey.type !== AttributeType.STRING &&
+          customerKey.type !== AttributeType.EMAIL)
+      )
+        continue;
+
+      let customerKeyName = customerKey.key;
+
+      for (const [channel, channelRules] of Object.entries(rules)) {
+        let matchFound = false;
+
+        for (const regexRule of channelRules) {
+          let regex = new RegExp(regexRule, 'i');
+          let result = regex.exec(customerKeyName);
+
+          if (result) {
+            matchFound = true;
+            break;
+          }
+        }
+
+        if (matchFound) {
+          keys.push(customerKeyName);
+
+          this.logger.log(
+            `Matched channel ${channel} with customerKey ${customerKeyName}`,
+            this.getMessageChannelsCustomerKeys.name
+          );
+          break;
+        }
+      }
     }
-    if (!customer) {
-      // When no customer is found with the given correlation, create a new one
-      // If the correlationKey is '_id', use it to set the _id of the new customer
-      let newCustomerData: any = {
-        workspaceId: workspace.id,
+
+    return keys;
+  }
+
+  async extractSearchOptionsFromObject(
+    workspaceId: string,
+    searchOptionsInitial: CustomerSearchOptions,
+    session: string,
+    object: Record<string, any>
+  ): Promise<CustomerSearchOptions> {
+    let result: CustomerSearchOptions = {
+      primaryKey: {},
+      messageChannels: {},
+      correlationValue: '',
+    };
+
+    if (!object) {
+      _.merge(result, searchOptionsInitial);
+      return result;
+    }
+
+    result.primaryKey.name = object.primaryKeyName;
+    result.primaryKey.value = object.primaryKeyValue;
+
+    if (result.primaryKey.value && !result.primaryKey.name) {
+      let primaryKey = await this.getPrimaryKeyStrict(workspaceId, session);
+      result.primaryKey.name = primaryKey?.key;
+    }
+
+    result.correlationValue = object.correlationValue;
+
+    // try to find customers via message channel fields
+    const messageChannelsKeys = await this.getMessageChannelsCustomerKeys(
+      workspaceId
+    );
+
+    for (const messageChannelsKey of messageChannelsKeys) {
+      let objectFieldValue = this.getFieldValueFromObject(
+        object,
+        messageChannelsKey
+      );
+
+      if (objectFieldValue) {
+        result.messageChannels[messageChannelsKey] = objectFieldValue;
+      }
+    }
+
+    _.merge(result, searchOptionsInitial);
+
+    return result;
+  }
+
+  getFieldValueFromObject(object: any, fieldName: string): any {
+    if (!object) return null;
+
+    let objectToUse: any = object;
+
+    if (
+      object.$fcm &&
+      (fieldName == 'iosDeviceToken' || fieldName == 'androidDeviceToken')
+    )
+      objectToUse = object.$fcm;
+
+    return objectToUse[fieldName];
+  }
+
+  /**
+   * Finds customers with a CustomerSearchOptions object
+   * @param workspaceId
+   * @param searchOptionsInitial
+   * @param session
+   * @param object (e.g. event)
+   * @returns CustomerSearchOptionResult[]
+   */
+  async findCustomersBySearchOptions(
+    workspaceId: string,
+    searchOptionsInitial: CustomerSearchOptions,
+    session: string,
+    object?: Record<string, any>
+  ): Promise<CustomerSearchOptionResult[]> {
+    let result: CustomerSearchOptionResult[] = [];
+
+    const searchOptions = await this.extractSearchOptionsFromObject(
+      workspaceId,
+      searchOptionsInitial,
+      session,
+      object
+    );
+
+    const findConditions: Array<Object> = [];
+
+    // Try to find by primary key if provided
+    if (searchOptions.primaryKey.value) {
+      findConditions.push({
+        [searchOptions.primaryKey.name]: searchOptions.primaryKey.value,
+        workspaceId: workspaceId,
+      });
+    }
+
+    for (const attributeName in searchOptions.messageChannels) {
+      findConditions.push({
+        [attributeName]: searchOptions.messageChannels[attributeName],
+        workspaceId,
+      });
+    }
+
+    if (searchOptions.correlationValue) {
+      findConditions.push(
+        {
+          _id: searchOptions.correlationValue,
+          workspaceId,
+        },
+        {
+          other_ids: searchOptions.correlationValue,
+          workspaceId,
+        }
+      );
+    }
+
+    let customers = await this.CustomerModel.find({
+      $or: findConditions,
+    });
+
+    for (const findType of Object.values(FindType)) {
+      for (let i = 0; i < customers.length; i++) {
+        if (
+          findType == FindType.PRIMARY_KEY &&
+          searchOptions.primaryKey.name &&
+          customers[i][searchOptions.primaryKey.name] ==
+            searchOptions.primaryKey.value
+        ) {
+          result.push({
+            customer: customers[i],
+            findType,
+          });
+        } else if (findType == FindType.MESSAGE_CHANNEL) {
+          // find which field from the customer matches the object's
+          for (const attributeName in searchOptions.messageChannels) {
+            let objectFieldValue = searchOptions.messageChannels[attributeName];
+
+            if (objectFieldValue == customers[i][attributeName]) {
+              result.push({
+                customer: customers[i],
+                findType,
+              });
+
+              break;
+            }
+          }
+        } else if (
+          findType == FindType.CORRELATION_VALUE &&
+          customers[i]._id == searchOptions.correlationValue
+        ) {
+          result.push({
+            customer: customers[i],
+            findType,
+          });
+        } else if (
+          findType == FindType.OTHER_IDS &&
+          searchOptions.correlationValue &&
+          customers[i].other_ids.includes(
+            searchOptions.correlationValue.toString()
+          )
+        ) {
+          result.push({
+            customer: customers[i],
+            findType,
+          });
+        }
+      }
+    }
+
+    // our conditions were not inclusive, something's wrong
+    if (customers.length > 0 && result.length == 0) {
+      this.error(
+        'MongoDB returned multiple customers but could not select one of them',
+        this.findCustomersBySearchOptions.name,
+        session
+      );
+    }
+
+    return result;
+  }
+
+  /**
+   * Finds a customer with a CustomerSearchOptions object
+   * @param workspaceId
+   * @param searchOptionsInitial
+   * @param session
+   * @param object (e.g. event)
+   * @returns customer
+   */
+  async findCustomerBySearchOptions(
+    workspaceId: string,
+    searchOptionsInitial: CustomerSearchOptions,
+    session: string,
+    object?: Record<string, any>
+  ): Promise<CustomerSearchOptionResult> {
+    let customer: CustomerDocument;
+    let findType: FindType;
+    let result: CustomerSearchOptionResult = {
+      customer: null,
+      findType: null,
+    };
+
+    const searchResults = await this.findCustomersBySearchOptions(
+      workspaceId,
+      searchOptionsInitial,
+      session,
+      object
+    );
+
+    if (searchResults.length > 0) {
+      result = searchResults[0];
+    }
+
+    return result;
+  }
+
+  /**
+   * Finds a customer by CustomerSearchOptions and creates one if none was found
+   * @param workspaceId
+   * @param searchOptionsInitial
+   * @param session
+   * @param customerUpsertData
+   * @param object (e.g. event)
+   * @returns customer
+   */
+  async findOrCreateCustomerBySearchOptions(
+    workspaceId: string,
+    searchOptionsInitial: CustomerSearchOptions,
+    session: string,
+    customerUpsertData: Record<string, any>,
+    object?: Record<string, any>
+  ): Promise<CustomerSearchOptionResult> {
+    const searchOptions = await this.extractSearchOptionsFromObject(
+      workspaceId,
+      searchOptionsInitial,
+      session,
+      object
+    );
+
+    let result = await this.findCustomerBySearchOptions(
+      workspaceId,
+      searchOptions,
+      session,
+      object
+    );
+
+    // If customer still not found, create a new one
+    if (!result.customer) {
+      const newId = searchOptions.correlationValue || randomUUID();
+
+      const upsertData = {
+        _id: newId,
+        workspaceId,
         createdAt: new Date(),
       };
-      if (dto.correlationKey === '_id') {
-        newCustomerData._id = dto.correlationValue;
-      } else {
-        // If correlationKey is not '_id',
-        newCustomerData._id = randomUUID();
+
+      if (searchOptions.primaryKey.value && searchOptions.primaryKey.name) {
+        upsertData[searchOptions.primaryKey.name] =
+          searchOptions.primaryKey.value;
+        upsertData['isAnonymous'] = false;
       }
-      const createdCustomer = new this.CustomerModel(newCustomerData);
-      return {
-        cust: await createdCustomer.save({ session: transactionSession }),
-        found: false,
-      };
-    } else {
-      return { cust: customer, found: true };
+
+      _.merge(upsertData, customerUpsertData);
+
+      try {
+        result.customer = await this.CustomerModel.findOneAndUpdate(
+          { _id: newId, workspaceId },
+          { $setOnInsert: { ...upsertData } },
+          { upsert: true, new: true }
+        );
+        result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
+      } catch (error: any) {
+        // Check if the error is a duplicate key error
+        if (error.code === 11000) {
+          result.customer = await this.CustomerModel.findOne({
+            _id: newId,
+            workspaceId,
+          });
+          result.findType = FindType.DUPLICATE_KEY_ERROR; // Optionally, set a different findType to indicate handling of a duplicate key error
+        } else {
+          this.error(
+            error,
+            this.findOrCreateCustomerBySearchOptions.name,
+            session
+          );
+        }
+      }
     }
-    /*
-    if (!customer) {
 
-      if (!queryParam._id) {
-        queryParam._id = randomUUID();
-      }
+    if (object && object.$fcm) {
+      const { iosDeviceToken, androidDeviceToken } = object.$fcm;
+      const deviceTokenField = iosDeviceToken
+        ? 'iosDeviceToken'
+        : 'androidDeviceToken';
+      const deviceTokenValue = iosDeviceToken || androidDeviceToken;
+      const deviceTokenSetAtField = iosDeviceToken
+        ? 'iosDeviceTokenSetAt'
+        : 'androidDeviceTokenSetAt';
+      if (result.customer[deviceTokenField] !== deviceTokenValue)
+        result.customer = await this.CustomerModel.findOneAndUpdate(
+          { _id: result.customer._id, workspaceId },
+          {
+            $set: {
+              [deviceTokenField]: deviceTokenValue,
+              [deviceTokenSetAtField]: new Date(), // Dynamically sets the appropriate deviceTokenSetAt field
+            },
+          },
+          { new: true }
+        );
+    }
 
-      const createdCustomer = new this.CustomerModel(queryParam);
-      return {
-        cust: await createdCustomer.save({ session: transactionSession }),
-        found: false,
-      };
-    } else return { cust: customer, found: true };
-    */
+    return result;
   }
 
   /**
@@ -1224,26 +1683,17 @@ export class CustomersService {
    * @param session
    * @returns
    */
-
+  //to do add customer limit check here
   async upsert(
     auth: { account: Account; workspace: Workspaces },
     upsertCustomerDto: UpsertCustomerDto,
     session: string
   ): Promise<{ id: string }> {
     try {
-      let primaryKey: CustomerKeysDocument = await this.cacheManager.get(
-        `${auth.workspace.id}-primary-key`
+      let primaryKey = await this.getPrimaryKeyStrict(
+        auth.workspace.id,
+        session
       );
-      if (!primaryKey) {
-        primaryKey = await this.CustomerKeysModel.findOne({
-          workspaceId: auth.workspace.id,
-          isPrimary: true,
-        });
-        await this.cacheManager.set(
-          `${auth.workspace.id}-primary-key`,
-          primaryKey
-        );
-      }
 
       if (!primaryKey)
         throw new HttpException(
@@ -1251,21 +1701,23 @@ export class CustomersService {
           HttpStatus.BAD_REQUEST
         );
 
-      // Generate a new UUID to be used only if a new document is being inserted
-      const newId = randomUUID();
+      let { customer, findType } =
+        await this.findOrCreateCustomerBySearchOptions(
+          auth.workspace.id,
+          {
+            primaryKey: {
+              name: primaryKey.key,
+              value: upsertCustomerDto.primary_key,
+            },
+          },
+          session,
+          { ...upsertCustomerDto.properties },
+          // send the upsert proprties once for upsert data and another for
+          // trying to find customers via message channels
+          { ...upsertCustomerDto.properties }
+        );
 
-      const ret: CustomerDocument = await this.CustomerModel.findOneAndUpdate(
-        {
-          workspaceId: auth.workspace.id,
-          [primaryKey.key]: upsertCustomerDto.primary_key,
-        },
-        {
-          $set: { ...upsertCustomerDto.properties },
-          $setOnInsert: { _id: newId }, // This will ensure _id is set to newId only on insert
-        },
-        { upsert: true, new: true, projection: { _id: 1 } }
-      );
-      return Promise.resolve({ id: ret._id });
+      return Promise.resolve({ id: customer._id });
     } catch (err) {
       this.error(err, this.upsert.name, session, auth.account.email);
       throw err;
@@ -1286,19 +1738,7 @@ export class CustomersService {
     deleteCustomerDto: DeleteCustomerDto,
     session: string
   ): Promise<{ primary_key: any }> {
-    let primaryKey: CustomerKeysDocument = await this.cacheManager.get(
-      `${auth.workspace.id}-primary-key`
-    );
-    if (!primaryKey) {
-      primaryKey = await this.CustomerKeysModel.findOne({
-        workspaceId: auth.workspace.id,
-        isPrimary: true,
-      });
-      await this.cacheManager.set(
-        `${auth.workspace.id}-primary-key`,
-        primaryKey
-      );
-    }
+    let primaryKey = await this.getPrimaryKeyStrict(auth.workspace.id, session);
 
     if (!primaryKey)
       throw new HttpException(
@@ -1337,19 +1777,7 @@ export class CustomersService {
     readCustomerDto: ReadCustomerDto,
     session: string
   ): Promise<CustomerDocument> {
-    let primaryKey: CustomerKeysDocument = await this.cacheManager.get(
-      `${auth.workspace.id}-primary-key`
-    );
-    if (!primaryKey) {
-      primaryKey = await this.CustomerKeysModel.findOne({
-        workspaceId: auth.workspace.id,
-        isPrimary: true,
-      });
-      await this.cacheManager.set(
-        `${auth.workspace.id}-primary-key`,
-        primaryKey
-      );
-    }
+    let primaryKey = await this.getPrimaryKeyStrict(auth.workspace.id, session);
 
     if (!primaryKey)
       throw new HttpException(
@@ -2130,6 +2558,159 @@ export class CustomersService {
   }
 
   /*
+   * To support document db we have to move some of the processing to the application side
+   *
+   * Specifically we can't use unionWith and merge
+   *
+   */
+  async documentDBanySegmentCase(
+    account: Account,
+    session: string,
+    sets: any[],
+    collectionName: string,
+    thisCollectionName: string
+  ) {
+    this.debug(
+      `document db replacing unionWith`,
+      this.getCustomersFromQuery.name,
+      session,
+      account.id
+    );
+    // Add lookups for each additional collection to the pipeline
+    // Step 1: Create new collections from each set with a new _id and rename _id to customerId
+    const newCollectionNames = await Promise.all(
+      sets.map(async (collName, index) => {
+        const newCollName = `new_${collName}`;
+        this.debug(
+          `document db new col name ${collName}`,
+          this.getCustomersFromQuery.name,
+          session,
+          account.id
+        );
+        const collectionHandle = this.connection.db.collection(collName);
+        await collectionHandle
+          .aggregate([
+            {
+              $addFields: { customerId: '$_id' },
+            },
+            {
+              $project: { _id: 0 },
+            },
+            {
+              $out: newCollName,
+            },
+          ])
+          .toArray(); // Execute the aggregation pipeline and create new collections
+        return newCollName;
+      })
+    );
+    //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
+    // Step 2: Bulk insert documents from each new collection into a final collection, in batches
+    const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
+    const finalCollection = `final_or_cfc_${collectionName}`;
+    await Promise.all(
+      newCollectionNames.map(async (newCollName) => {
+        const cursor = this.connection.db.collection(newCollName).find();
+        let batch = [];
+        while (await cursor.hasNext()) {
+          const doc = await cursor.next();
+          batch.push({
+            insertOne: {
+              document: doc,
+            },
+          });
+
+          if (batch.length >= BATCH_SIZE) {
+            await this.connection.db
+              .collection(finalCollection)
+              .bulkWrite(batch);
+            batch = []; // Reset the batch for the next group of documents
+          }
+        }
+
+        // Process any remaining documents in the last batch
+        if (batch.length > 0) {
+          await this.connection.db.collection(finalCollection).bulkWrite(batch);
+        }
+      })
+    );
+
+    // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
+    await this.connection.db
+      .collection(finalCollection)
+      .aggregate([
+        {
+          $group: {
+            _id: '$customerId', // Group by customerId
+            customerId: { $first: '$customerId' },
+          },
+        },
+        {
+          $project: {
+            _id: '$customerId',
+          },
+        },
+        {
+          $out: thisCollectionName, // Output the final aggregated documents into the same collection
+        },
+      ])
+      .toArray();
+
+    console.log('final colname is', finalCollection);
+
+    //drop all intermediate collections
+    try {
+      this.debug(
+        `trying to release finalcollection`,
+        this.getCustomersFromQuery.name,
+        session,
+        account.id
+      );
+      //toggle for testing segments
+      await this.connection.db.collection(finalCollection).drop();
+      this.debug(
+        `dropped successfully`,
+        this.getCustomersFromQuery.name,
+        session,
+        account.id
+      );
+    } catch (e) {
+      this.debug(
+        `error dropping collection: ${e}`,
+        this.getCustomersFromQuery.name,
+        session,
+        account.id
+      );
+    }
+
+    newCollectionNames.map(async (collection) => {
+      try {
+        this.debug(
+          `trying to release collection`,
+          this.getCustomersFromQuery.name,
+          session,
+          account.id
+        );
+        //toggle for testing segments
+        await this.connection.db.collection(collection).drop();
+        this.debug(
+          `dropped successfully`,
+          this.getCustomersFromQuery.name,
+          session,
+          account.id
+        );
+      } catch (e) {
+        this.debug(
+          `error dropping collection: ${e}`,
+          this.getCustomersFromQuery.name,
+          session,
+          account.id
+        );
+      }
+    });
+  }
+
+  /*
    *
    *
    * Takes in a segment query (inclusion criteria) and returns a string that is the name of a mongo collection of customers not customerIds
@@ -2208,34 +2789,176 @@ export class CustomersService {
         account.id
       );
       const unionAggregation: any[] = [];
+      let collectionHandle = this.connection.db.collection(thisCollectionName);
       //if (sets.length > 1) {
       // Add each additional collection to the pipeline for union
-      sets.forEach((collName) => {
-        //console.log("the set is", collName);
-        unionAggregation.push({ $unionWith: { coll: collName } });
-      });
-      // Group by customerId and count occurrences
-      unionAggregation.push(
-        { $group: { _id: '$_id', count: { $sum: 1 } } },
-        //{ $group: { _id: "$customerId", count: { $sum: 1 } } },
-        { $match: { count: sets.length } } // Match only IDs present in all subqueries
-      );
-      //} else if (sets.length === 1) {
-      //  console.log("sets length 1");
-      // If there's only one collection, no matching
-      //} else {
-      //  console.log("No collections to process.");
-      //  return; // Exit if there are no collections
-      //}
-      unionAggregation.push({ $out: thisCollectionName });
+      if (process.env.DOCUMENT_DB == 'true') {
+        this.debug(
+          `document db replacing unionWith`,
+          this.getCustomersFromQuery.name,
+          session,
+          account.id
+        );
 
-      //console.log("the first collection is", thisCollectionName);
-      //console.log("union aggreagation is", JSON.stringify(unionAggregation,null,2));
+        const newCollectionNames = await Promise.all(
+          sets.map(async (collName, index) => {
+            const newCollName = `new_${collName}`;
+            this.debug(
+              `document db new col name ${collName}`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+            const collectionHandle = this.connection.db.collection(collName);
+            await collectionHandle
+              .aggregate([
+                {
+                  $addFields: { customerId: '$_id' },
+                },
+                {
+                  $project: { _id: 0 },
+                },
+                {
+                  $out: newCollName,
+                },
+              ])
+              .toArray(); // Execute the aggregation pipeline and create new collections
+            return newCollName;
+          })
+        );
 
-      // Perform the aggregation on the first collection
-      const collectionHandle =
-        this.connection.db.collection(thisCollectionName);
-      await collectionHandle.aggregate(unionAggregation).toArray();
+        //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
+
+        // Step 2: Bulk insert documents from each new collection into a final collection, in batches
+        const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
+        const finalCollection = `final_and_cfc_${collectionName}`;
+        await Promise.all(
+          newCollectionNames.map(async (newCollName) => {
+            const cursor = this.connection.db.collection(newCollName).find();
+            let batch = [];
+            while (await cursor.hasNext()) {
+              const doc = await cursor.next();
+              batch.push({
+                insertOne: {
+                  document: doc,
+                },
+              });
+
+              if (batch.length >= BATCH_SIZE) {
+                await this.connection.db
+                  .collection(finalCollection)
+                  .bulkWrite(batch);
+                batch = []; // Reset the batch for the next group of documents
+              }
+            }
+
+            // Process any remaining documents in the last batch
+            if (batch.length > 0) {
+              await this.connection.db
+                .collection(finalCollection)
+                .bulkWrite(batch);
+            }
+          })
+        );
+
+        // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
+        await this.connection.db
+          .collection(finalCollection)
+          .aggregate([
+            {
+              $group: {
+                _id: '$customerId', // Group by customerId
+                count: { $sum: 1 },
+                customerId: { $first: '$customerId' },
+              },
+            },
+            { $match: { count: sets.length } },
+            {
+              $project: {
+                _id: '$customerId',
+              },
+            },
+            {
+              $out: thisCollectionName, // Output the final aggregated documents into the same collection
+            },
+          ])
+          .toArray();
+        console.log('final colname is', thisCollectionName);
+
+        //drop all intermediate collections
+        try {
+          this.debug(
+            `trying to release finalcollection`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+          //toggle for testing segments
+          await this.connection.db.collection(finalCollection).drop();
+          this.debug(
+            `dropped successfully`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+        } catch (e) {
+          this.debug(
+            `error dropping collection: ${e}`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+        }
+
+        newCollectionNames.map(async (collection) => {
+          try {
+            this.debug(
+              `trying to release collection`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+            //toggle for testing segments
+            await this.connection.db.collection(collection).drop();
+            this.debug(
+              `dropped successfully`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+          } catch (e) {
+            this.debug(
+              `error dropping collection: ${e}`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+          }
+        });
+      } else {
+        sets.forEach((collName) => {
+          //console.log("the set is", collName);
+          unionAggregation.push({ $unionWith: { coll: collName } });
+        });
+        // Group by customerId and count occurrences
+        unionAggregation.push(
+          { $group: { _id: '$_id', count: { $sum: 1 } } },
+          //{ $group: { _id: "$customerId", count: { $sum: 1 } } },
+          { $match: { count: sets.length } } // Match only IDs present in all subqueries
+        );
+        //} else if (sets.length === 1) {
+        //  console.log("sets length 1");
+        // If there's only one collection, no matching
+        //} else {
+        //  console.log("No collections to process.");
+        //  return; // Exit if there are no collections
+        //}
+        unionAggregation.push({ $out: thisCollectionName });
+        //console.log("the first collection is", thisCollectionName);
+        //console.log("union aggreagation is", JSON.stringify(unionAggregation,null,2));
+        // Perform the aggregation on the first collection
+        await collectionHandle.aggregate(unionAggregation).toArray();
+      }
 
       if (topLevel) {
         //for each count drop the collections up to the last one
@@ -2316,6 +3039,7 @@ export class CustomersService {
       );
 
       const unionAggregation: any[] = [];
+      const collectionHandle = this.connection.db.collection(sets[0]);
       /*
       [
         { $group: { _id: "$customerId" } }
@@ -2341,24 +3065,166 @@ export class CustomersService {
         account.id
       );
 
-      // Add each additional collection to the pipeline
-      if (sets.length > 1) {
-        sets.forEach((collName) => {
-          unionAggregation.push({ $unionWith: { coll: collName } });
-          //unionAggregation.push({ $unionWith: { coll: collName, pipeline: [{ $group: { _id: "$customerId" } }] } });
+      if (process.env.DOCUMENT_DB == 'true') {
+        this.debug(
+          `document db replacing unionWith`,
+          this.getCustomersFromQuery.name,
+          session,
+          account.id
+        );
+        // Add lookups for each additional collection to the pipeline
+        // Step 1: Create new collections from each set with a new _id and rename _id to customerId
+        const newCollectionNames = await Promise.all(
+          sets.map(async (collName, index) => {
+            const newCollName = `new_${collName}`;
+            this.debug(
+              `document db new col name ${collName}`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+            const collectionHandle = this.connection.db.collection(collName);
+            await collectionHandle
+              .aggregate([
+                {
+                  $addFields: { customerId: '$_id' },
+                },
+                {
+                  $project: { _id: 0 },
+                },
+                {
+                  $out: newCollName,
+                },
+              ])
+              .toArray(); // Execute the aggregation pipeline and create new collections
+            return newCollName;
+          })
+        );
+        //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
+        // Step 2: Bulk insert documents from each new collection into a final collection, in batches
+        const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
+        const finalCollection = `final_or_cfc_${collectionName}`;
+        await Promise.all(
+          newCollectionNames.map(async (newCollName) => {
+            const cursor = this.connection.db.collection(newCollName).find();
+            let batch = [];
+            while (await cursor.hasNext()) {
+              const doc = await cursor.next();
+              batch.push({
+                insertOne: {
+                  document: doc,
+                },
+              });
+
+              if (batch.length >= BATCH_SIZE) {
+                await this.connection.db
+                  .collection(finalCollection)
+                  .bulkWrite(batch);
+                batch = []; // Reset the batch for the next group of documents
+              }
+            }
+
+            // Process any remaining documents in the last batch
+            if (batch.length > 0) {
+              await this.connection.db
+                .collection(finalCollection)
+                .bulkWrite(batch);
+            }
+          })
+        );
+
+        // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
+        await this.connection.db
+          .collection(finalCollection)
+          .aggregate([
+            {
+              $group: {
+                _id: '$customerId', // Group by customerId
+                customerId: { $first: '$customerId' },
+              },
+            },
+            {
+              $project: {
+                _id: '$customerId',
+              },
+            },
+            {
+              $out: thisCollectionName, // Output the final aggregated documents into the same collection
+            },
+          ])
+          .toArray();
+
+        console.log('final colname is', finalCollection);
+
+        //drop all intermediate collections
+        try {
+          this.debug(
+            `trying to release finalcollection`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+          //toggle for testing segments
+          await this.connection.db.collection(finalCollection).drop();
+          this.debug(
+            `dropped successfully`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+        } catch (e) {
+          this.debug(
+            `error dropping collection: ${e}`,
+            this.getCustomersFromQuery.name,
+            session,
+            account.id
+          );
+        }
+
+        newCollectionNames.map(async (collection) => {
+          try {
+            this.debug(
+              `trying to release collection`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+            //toggle for testing segments
+            await this.connection.db.collection(collection).drop();
+            this.debug(
+              `dropped successfully`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+          } catch (e) {
+            this.debug(
+              `error dropping collection: ${e}`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+          }
         });
+      } else {
+        // Add each additional collection to the pipeline
+        if (sets.length > 1) {
+          sets.forEach((collName) => {
+            unionAggregation.push({ $unionWith: { coll: collName } });
+            //unionAggregation.push({ $unionWith: { coll: collName, pipeline: [{ $group: { _id: "$customerId" } }] } });
+          });
+        }
+        //unique users
+        //unionAggregation.push({ $group: { _id: "$customerId" } });
+        unionAggregation.push({ $group: { _id: '$_id' } });
+
+        // dump results to thisCollectionName
+        unionAggregation.push({ $out: thisCollectionName });
+
+        //console.log("the first collection is", sets[0]);
+        // Perform the aggregation on the first collection
+        await collectionHandle.aggregate(unionAggregation).toArray();
       }
-      //unique users
-      //unionAggregation.push({ $group: { _id: "$customerId" } });
-      unionAggregation.push({ $group: { _id: '$_id' } });
-
-      // dump results to thisCollectionName
-      unionAggregation.push({ $out: thisCollectionName });
-
-      //console.log("the first collection is", sets[0]);
-      // Perform the aggregation on the first collection
-      const collectionHandle = this.connection.db.collection(sets[0]);
-      await collectionHandle.aggregate(unionAggregation).toArray();
 
       if (topLevel) {
         //for each count drop the collections up to the last one
@@ -2466,221 +3332,490 @@ export class CustomersService {
     count: number,
     intermediateCollection?: string
   ): Promise<string> {
-    this.debug(
-      'Creating segment from query',
-      this.getSegmentCustomersFromQuery.name,
-      session
-    );
-
-    this.debug(
-      `top level query is: ${JSON.stringify(query, null, 2)}`,
-      this.getSegmentCustomersFromQuery.name,
-      session,
-      account.id
-    );
-
-    //create collectionName
-    let collectionName: string;
-    let thisCollectionName: string;
-    if (count == 0) {
-      collectionName = intermediateCollection;
-    } else {
-      collectionName = intermediateCollection + count;
-    }
-    thisCollectionName = collectionName;
-    this.connection.db.collection(thisCollectionName);
-    count = count + 1;
-    //collectionName = collectionName + count;
-
-    if (query.type === 'all') {
-      console.log('the query has all (AND)');
-      if (!query.statements || query.statements.length === 0) {
-        return; //new Set<string>(); // Return an empty set
-      }
-      const sets = await Promise.all(
-        query.statements.map(async (statement) => {
-          return await this.getSegmentCustomersFromSubQuery(
-            statement,
-            account,
-            session,
-            count++,
-            collectionName + count
-          );
-        })
-      );
-      this.debug(
-        `the sets are: ${sets}`,
-        this.getSegmentCustomersFromQuery.name,
-        session,
-        account.id
-      );
-      this.debug(
-        `about to reduce the sets`,
-        this.getSegmentCustomersFromQuery.name,
-        session,
-        account.id
-      );
-      this.debug(
-        `the sets length: ${sets.length}`,
-        this.getSegmentCustomersFromQuery.name,
-        session,
-        account.id
-      );
-      const unionAggregation: any[] = [];
-      //if (sets.length > 1) {
-      // Add each additional collection to the pipeline for union
-      sets.forEach((collName) => {
-        //console.log("the set is", collName);
-        unionAggregation.push({ $unionWith: { coll: collName } });
-      });
-      // Group by customerId and count occurrences
-      unionAggregation.push(
-        { $group: { _id: '$_id', count: { $sum: 1 } } },
-        //{ $group: { _id: "$customerId", count: { $sum: 1 } } },
-        { $match: { count: sets.length } } // Match only IDs present in all subqueries
-      );
-      //} else if (sets.length === 1) {
-      //  console.log("sets length 1");
-      // If there's only one collection, no matching
-      //} else {
-      //  console.log("No collections to process.");
-      //  return; // Exit if there are no collections
-      //}
-      unionAggregation.push({ $out: thisCollectionName });
-
-      //console.log("the first collection is", thisCollectionName);
-      //console.log("union aggreagation is", JSON.stringify(unionAggregation,null,2));
-
-      // Perform the aggregation on the first collection
-      const collectionHandle =
+    return Sentry.startSpan(
+      { name: 'CustomersService.getSegmentCustomersFromQuery' },
+      async () => {
+        //create collectionName
+        let collectionName: string;
+        let thisCollectionName: string;
+        if (count == 0) {
+          collectionName = intermediateCollection;
+        } else {
+          collectionName = intermediateCollection + count;
+        }
+        thisCollectionName = collectionName;
         this.connection.db.collection(thisCollectionName);
-      await collectionHandle.aggregate(unionAggregation).toArray();
+        count = count + 1;
+        //collectionName = collectionName + count;
 
-      if (topLevel) {
-        //for each count drop the collections up to the last one
-        sets.map(async (collection) => {
-          try {
-            this.debug(
-              `trying to release collection`,
-              this.getSegmentCustomersFromQuery.name,
-              session,
-              account.id
-            );
-            //toggle for testing segments
-            await this.connection.db.collection(collection).drop();
-            this.debug(
-              `dropped successfully`,
-              this.getSegmentCustomersFromQuery.name,
-              session,
-              account.id
-            );
-          } catch (e) {
-            this.debug(
-              `error dropping collection: ${e}`,
-              this.getSegmentCustomersFromQuery.name,
-              session,
-              account.id
-            );
+        if (query.type === 'all') {
+          console.log('the query has all (AND)');
+          if (!query.statements || query.statements.length === 0) {
+            return; //new Set<string>(); // Return an empty set
           }
-        });
-      }
-      return thisCollectionName; // mergedSet;
-    } else if (query.type === 'any') {
-      console.log('the query has any (OR)');
-      if (!query.statements || query.statements.length === 0) {
-        return ''; //new Set<string>(); // Return an empty set
-      }
-
-      const sets = await Promise.all(
-        query.statements.map(async (statement) => {
-          //console.log("collectionName is", collectionName);
-          return await this.getSegmentCustomersFromSubQuery(
-            statement,
-            account,
-            session,
-            count++,
-            collectionName + count
+          const sets = await Promise.all(
+            query.statements.map(async (statement) => {
+              return await this.getSegmentCustomersFromSubQuery(
+                statement,
+                account,
+                session,
+                count++,
+                collectionName + count
+              );
+            })
           );
-        })
-      );
+          await Sentry.startSpan(
+            {
+              name: 'CustomersService.getSegmentCustomersFromQuery.unionAggregation',
+            },
+            async () => {
+              const unionAggregation: any[] = [];
+              // Perform the aggregation on the first collection
+              const collectionHandle =
+                this.connection.db.collection(thisCollectionName);
 
-      const unionAggregation: any[] = [];
-      /*
-      [
-        { $group: { _id: "$customerId" } }
-      ];
-      */
+              if (process.env.DOCUMENT_DB == 'true') {
+                this.debug(
+                  `document db replacing unionWith`,
+                  this.getCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
 
-      this.debug(
-        `the sets are: ${sets}`,
-        this.getSegmentCustomersFromQuery.name,
-        session,
-        account.id
-      );
-      this.debug(
-        `about to union the sets`,
-        this.getSegmentCustomersFromQuery.name,
-        session,
-        account.id
-      );
-      this.debug(
-        `the sets length: ${sets.length}`,
-        this.getSegmentCustomersFromQuery.name,
-        session,
-        account.id
-      );
+                const newCollectionNames = await Promise.all(
+                  sets.map(async (collName, index) => {
+                    const newCollName = `new_${collName}`;
+                    this.debug(
+                      `document db new col name ${collName}`,
+                      this.getCustomersFromQuery.name,
+                      session,
+                      account.id
+                    );
+                    const collectionHandle =
+                      this.connection.db.collection(collName);
+                    await collectionHandle
+                      .aggregate([
+                        {
+                          $addFields: { customerId: '$_id' },
+                        },
+                        {
+                          $project: { _id: 0 },
+                        },
+                        {
+                          $out: newCollName,
+                        },
+                      ])
+                      .toArray(); // Execute the aggregation pipeline and create new collections
+                    return newCollName;
+                  })
+                );
 
-      // Add each additional collection to the pipeline
-      if (sets.length > 1) {
-        sets.forEach((collName) => {
-          unionAggregation.push({ $unionWith: { coll: collName } });
-          //unionAggregation.push({ $unionWith: { coll: collName, pipeline: [{ $group: { _id: "$customerId" } }] } });
-        });
-      }
-      //unique users
-      //unionAggregation.push({ $group: { _id: "$customerId" } });
-      unionAggregation.push({ $group: { _id: '$_id' } });
+                //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
 
-      // dump results to thisCollectionName
-      unionAggregation.push({ $out: thisCollectionName });
+                // Step 2: Bulk insert documents from each new collection into a final collection, in batches
+                const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
+                const finalCollection = `final_and_scfq_${collectionName}`;
+                await Promise.all(
+                  newCollectionNames.map(async (newCollName) => {
+                    const cursor = this.connection.db
+                      .collection(newCollName)
+                      .find();
+                    let batch = [];
+                    while (await cursor.hasNext()) {
+                      const doc = await cursor.next();
+                      batch.push({
+                        insertOne: {
+                          document: doc,
+                        },
+                      });
 
-      //console.log("the first collection is", sets[0]);
-      // Perform the aggregation on the first collection
-      const collectionHandle = this.connection.db.collection(sets[0]);
-      await collectionHandle.aggregate(unionAggregation).toArray();
+                      if (batch.length >= BATCH_SIZE) {
+                        await this.connection.db
+                          .collection(finalCollection)
+                          .bulkWrite(batch);
+                        batch = []; // Reset the batch for the next group of documents
+                      }
+                    }
 
-      if (topLevel) {
-        //for each count drop the collections up to the last one
-        sets.map(async (collection) => {
-          try {
-            this.debug(
-              `trying to release collection`,
-              this.getSegmentCustomersFromQuery.name,
-              session,
-              account.id
-            );
-            //toggle for testing segments
-            await this.connection.db.collection(collection).drop();
-            this.debug(
-              `dropped successfully`,
-              this.getSegmentCustomersFromQuery.name,
-              session,
-              account.id
-            );
-          } catch (e) {
-            this.debug(
-              `error dropping collection: ${e}`,
-              this.getSegmentCustomersFromQuery.name,
-              session,
-              account.id
-            );
+                    // Process any remaining documents in the last batch
+                    if (batch.length > 0) {
+                      await this.connection.db
+                        .collection(finalCollection)
+                        .bulkWrite(batch);
+                    }
+                  })
+                );
+
+                // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
+                await this.connection.db
+                  .collection(finalCollection)
+                  .aggregate([
+                    {
+                      $group: {
+                        _id: '$customerId', // Group by customerId
+                        count: { $sum: 1 },
+                        customerId: { $first: '$customerId' },
+                      },
+                    },
+                    { $match: { count: sets.length } },
+                    {
+                      $project: {
+                        _id: '$customerId',
+                      },
+                    },
+                    {
+                      $out: thisCollectionName, // Output the final aggregated documents into the same collection
+                    },
+                  ])
+                  .toArray();
+                this.debug(
+                  `document db final col name ${finalCollection}`,
+                  this.getCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+
+                //drop all intermediate collections
+                try {
+                  this.debug(
+                    `trying to release finalcollection`,
+                    this.getCustomersFromQuery.name,
+                    session,
+                    account.id
+                  );
+                  //toggle for testing segments
+                  await this.connection.db.collection(finalCollection).drop();
+                  this.debug(
+                    `dropped successfully`,
+                    this.getCustomersFromQuery.name,
+                    session,
+                    account.id
+                  );
+                } catch (e) {
+                  this.debug(
+                    `error dropping collection: ${e}`,
+                    this.getCustomersFromQuery.name,
+                    session,
+                    account.id
+                  );
+                }
+
+                newCollectionNames.map(async (collection) => {
+                  try {
+                    this.debug(
+                      `trying to release collection`,
+                      this.getCustomersFromQuery.name,
+                      session,
+                      account.id
+                    );
+                    //toggle for testing segments
+                    await this.connection.db.collection(collection).drop();
+                    this.debug(
+                      `dropped successfully`,
+                      this.getCustomersFromQuery.name,
+                      session,
+                      account.id
+                    );
+                  } catch (e) {
+                    this.debug(
+                      `error dropping collection: ${e}`,
+                      this.getCustomersFromQuery.name,
+                      session,
+                      account.id
+                    );
+                  }
+                });
+              } else {
+                //if (sets.length > 1) {
+                // Add each additional collection to the pipeline for union
+                sets.forEach((collName) => {
+                  //console.log("the set is", collName);
+                  unionAggregation.push({ $unionWith: { coll: collName } });
+                });
+                // Group by customerId and count occurrences
+                unionAggregation.push(
+                  { $group: { _id: '$_id', count: { $sum: 1 } } },
+                  //{ $group: { _id: "$customerId", count: { $sum: 1 } } },
+                  { $match: { count: sets.length } } // Match only IDs present in all subqueries
+                );
+                //} else if (sets.length === 1) {
+                //  console.log("sets length 1");
+                // If there's only one collection, no matching
+                //} else {
+                //  console.log("No collections to process.");
+                //  return; // Exit if there are no collections
+                //}
+                unionAggregation.push({ $out: thisCollectionName });
+              }
+
+              //console.log("the first collection is", thisCollectionName);
+              //console.log("union aggreagation is", JSON.stringify(unionAggregation,null,2));
+
+              await collectionHandle.aggregate(unionAggregation).toArray();
+            }
+          );
+
+          if (topLevel) {
+            //for each count drop the collections up to the last one
+            sets.map(async (collection) => {
+              try {
+                this.debug(
+                  `trying to release collection`,
+                  this.getSegmentCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+                //toggle for testing segments
+                await this.connection.db.collection(collection).drop();
+                this.debug(
+                  `dropped successfully`,
+                  this.getSegmentCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+              } catch (e) {
+                this.debug(
+                  `error dropping collection: ${e}`,
+                  this.getSegmentCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+              }
+            });
           }
-        });
+          return thisCollectionName; // mergedSet;
+        } else if (query.type === 'any') {
+          console.log('the query has any (OR)');
+          if (!query.statements || query.statements.length === 0) {
+            return ''; //new Set<string>(); // Return an empty set
+          }
+
+          const sets = await Promise.all(
+            query.statements.map(async (statement) => {
+              //console.log("collectionName is", collectionName);
+              return await this.getSegmentCustomersFromSubQuery(
+                statement,
+                account,
+                session,
+                count++,
+                collectionName + count
+              );
+            })
+          );
+
+          const unionAggregation: any[] = [];
+
+          if (process.env.DOCUMENT_DB == 'true') {
+            this.debug(
+              `document db replacing unionWith`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+            // Add lookups for each additional collection to the pipeline
+            // Step 1: Create new collections from each set with a new _id and rename _id to customerId
+            const newCollectionNames = await Promise.all(
+              sets.map(async (collName, index) => {
+                const newCollName = `new_${collName}`;
+                this.debug(
+                  `document db new col name ${collName}`,
+                  this.getCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+                const collectionHandle =
+                  this.connection.db.collection(collName);
+                await collectionHandle
+                  .aggregate([
+                    {
+                      $addFields: { customerId: '$_id' },
+                    },
+                    {
+                      $project: { _id: 0 },
+                    },
+                    {
+                      $out: newCollName,
+                    },
+                  ])
+                  .toArray(); // Execute the aggregation pipeline and create new collections
+                return newCollName;
+              })
+            );
+
+            //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
+
+            // Step 2: Bulk insert documents from each new collection into a final collection, in batches
+            const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
+            const finalCollection = `final_${collectionName}`;
+            await Promise.all(
+              newCollectionNames.map(async (newCollName) => {
+                const cursor = this.connection.db
+                  .collection(newCollName)
+                  .find();
+                let batch = [];
+                while (await cursor.hasNext()) {
+                  const doc = await cursor.next();
+                  batch.push({
+                    insertOne: {
+                      document: doc,
+                    },
+                  });
+
+                  if (batch.length >= BATCH_SIZE) {
+                    await this.connection.db
+                      .collection(finalCollection)
+                      .bulkWrite(batch);
+                    batch = []; // Reset the batch for the next group of documents
+                  }
+                }
+
+                // Process any remaining documents in the last batch
+                if (batch.length > 0) {
+                  await this.connection.db
+                    .collection(finalCollection)
+                    .bulkWrite(batch);
+                }
+              })
+            );
+
+            // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
+            await this.connection.db
+              .collection(finalCollection)
+              .aggregate([
+                {
+                  $group: {
+                    _id: '$customerId', // Group by customerId
+                    customerId: { $first: '$customerId' },
+                  },
+                },
+                {
+                  $project: {
+                    _id: '$customerId',
+                  },
+                },
+                {
+                  $out: thisCollectionName, // Output the final aggregated documents into the same collection
+                },
+              ])
+              .toArray();
+
+            this.debug(
+              `document db final col name ${finalCollection}`,
+              this.getCustomersFromQuery.name,
+              session,
+              account.id
+            );
+
+            //drop all intermediate collections
+            try {
+              this.debug(
+                `trying to release finalcollection`,
+                this.getCustomersFromQuery.name,
+                session,
+                account.id
+              );
+              //toggle for testing segments
+              await this.connection.db.collection(finalCollection).drop();
+              this.debug(
+                `dropped successfully`,
+                this.getCustomersFromQuery.name,
+                session,
+                account.id
+              );
+            } catch (e) {
+              this.debug(
+                `error dropping collection: ${e}`,
+                this.getCustomersFromQuery.name,
+                session,
+                account.id
+              );
+            }
+
+            newCollectionNames.map(async (collection) => {
+              try {
+                this.debug(
+                  `trying to release collection`,
+                  this.getCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+                //toggle for testing segments
+                await this.connection.db.collection(collection).drop();
+                this.debug(
+                  `dropped successfully`,
+                  this.getCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+              } catch (e) {
+                this.debug(
+                  `error dropping collection: ${e}`,
+                  this.getCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+              }
+            });
+          } else {
+            /*
+          [
+            { $group: { _id: "$customerId" } }
+          ];
+          */
+            // Add each additional collection to the pipeline
+            if (sets.length > 1) {
+              sets.forEach((collName) => {
+                unionAggregation.push({ $unionWith: { coll: collName } });
+                //unionAggregation.push({ $unionWith: { coll: collName, pipeline: [{ $group: { _id: "$customerId" } }] } });
+              });
+            }
+            //unique users
+            //unionAggregation.push({ $group: { _id: "$customerId" } });
+            unionAggregation.push({ $group: { _id: '$_id' } });
+
+            // dump results to thisCollectionName
+            unionAggregation.push({ $out: thisCollectionName });
+
+            //console.log("the first collection is", sets[0]);
+            // Perform the aggregation on the first collection
+            const collectionHandle = this.connection.db.collection(sets[0]);
+            await collectionHandle.aggregate(unionAggregation).toArray();
+          }
+
+          if (topLevel) {
+            //for each count drop the collections up to the last one
+            sets.map(async (collection) => {
+              try {
+                this.debug(
+                  `trying to release collection`,
+                  this.getSegmentCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+                //toggle for testing segments
+                await this.connection.db.collection(collection).drop();
+                this.debug(
+                  `dropped successfully`,
+                  this.getSegmentCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+              } catch (e) {
+                this.debug(
+                  `error dropping collection: ${e}`,
+                  this.getSegmentCustomersFromQuery.name,
+                  session,
+                  account.id
+                );
+              }
+            });
+          }
+          return thisCollectionName; // mergedSet;
+        }
+        //shouldn't get here;
+        return ''; // Default: Return an empty set
       }
-      return thisCollectionName; // mergedSet;
-    }
-    //shouldn't get here;
-    return ''; // Default: Return an empty set
+    );
   }
 
   /**
@@ -2697,37 +3832,42 @@ export class CustomersService {
     count: number,
     intermediateCollection: string
   ) {
-    if (statement.statements && statement.statements.length > 0) {
-      // Statement has a subquery, recursively evaluate the subquery
-      this.debug(
-        `recursive subquery call`,
-        this.getSegmentCustomersFromSubQuery.name,
-        session,
-        account.id
-      );
-      return this.getSegmentCustomersFromQuery(
-        statement,
-        account,
-        session,
-        false,
-        count,
-        intermediateCollection
-      );
-    } else {
-      this.debug(
-        `singleStatement call`,
-        this.getSegmentCustomersFromSubQuery.name,
-        session,
-        account.id
-      );
-      return await this.getCustomersFromStatement(
-        statement,
-        account,
-        session,
-        count,
-        intermediateCollection
-      );
-    }
+    return Sentry.startSpan(
+      { name: 'CustomersService.getSegmentCustomersFromSubQuery' },
+      async () => {
+        if (statement.statements && statement.statements.length > 0) {
+          // Statement has a subquery, recursively evaluate the subquery
+          this.debug(
+            `recursive subquery call`,
+            this.getSegmentCustomersFromSubQuery.name,
+            session,
+            account.id
+          );
+          return this.getSegmentCustomersFromQuery(
+            statement,
+            account,
+            session,
+            false,
+            count,
+            intermediateCollection
+          );
+        } else {
+          this.debug(
+            `singleStatement call`,
+            this.getSegmentCustomersFromSubQuery.name,
+            session,
+            account.id
+          );
+          return await this.getCustomersFromStatement(
+            statement,
+            account,
+            session,
+            count,
+            intermediateCollection
+          );
+        }
+      }
+    );
   }
 
   /**
@@ -2878,15 +4018,20 @@ export class CustomersService {
     count: number,
     intermediateCollection: string
   ) {
-    const { type, segmentId } = statement;
-    const collectionOfCustomersFromSegment =
-      await this.segmentsService.getSegmentCustomers(
-        account,
-        session,
-        segmentId,
-        intermediateCollection
-      );
-    return collectionOfCustomersFromSegment;
+    return Sentry.startSpan(
+      { name: 'CustomersService.getSegmentCustomersFromSubQuery' },
+      async () => {
+        const { type, segmentId } = statement;
+        const collectionOfCustomersFromSegment =
+          await this.segmentsService.getSegmentCustomers(
+            account,
+            session,
+            segmentId,
+            intermediateCollection
+          );
+        return collectionOfCustomersFromSegment;
+      }
+    );
   }
 
   /**
@@ -3057,286 +4202,300 @@ export class CustomersService {
     count: number,
     intermediateCollection: string
   ) {
-    const userId = (<Account>account).id;
-    this.debug(
-      'In get customers from message statement',
-      this.customersFromMessageStatement.name,
-      session,
-      account.id
-    );
+    return Sentry.startSpan(
+      { name: 'CustomersService.customersFromMessageStatement' },
+      async () => {
+        const userId = (<Account>account).id;
+        this.debug(
+          'In get customers from message statement',
+          this.customersFromMessageStatement.name,
+          session,
+          account.id
+        );
 
-    this.debug(
-      `the type of message is: ${typeOfMessage}`,
-      this.customersFromMessageStatement.name,
-      session,
-      account.id
-    );
+        this.debug(
+          `the type of message is: ${typeOfMessage}`,
+          this.customersFromMessageStatement.name,
+          session,
+          account.id
+        );
 
-    this.debug(
-      `account id is: ${userId}`,
-      this.customersFromMessageStatement.name,
-      session,
-      account.id
-    );
+        this.debug(
+          `account id is: ${userId}`,
+          this.customersFromMessageStatement.name,
+          session,
+          account.id
+        );
 
-    const {
-      type,
-      eventCondition,
-      from,
-      fromSpecificMessage,
-      happenCondition,
-      time,
-      tag,
-    } = statement;
+        const {
+          type,
+          eventCondition,
+          from,
+          fromSpecificMessage,
+          happenCondition,
+          time,
+          tag,
+        } = statement;
 
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
-    const workspaceIdCondition = `workspaceId = '${workspace.id}'`;
-    //to do change clickhouse?
-    //const workspaceIdCondition = `userId = '${workspace.id}'`;
-    //console.log('statement is', statement);
+        const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+        const workspaceIdCondition = `workspaceId = '${workspace.id}'`;
+        //to do change clickhouse?
+        //const workspaceIdCondition = `userId = '${workspace.id}'`;
+        //console.log('statement is', statement);
 
-    let journeyIds = [];
+        let journeyIds = [];
 
-    if (from.key === 'ANY') {
-      // Get all journeys associated with the account
-      console.log('ji any');
-      journeyIds = await this.getJourneys(account, session);
-    } else if (from.key === 'WITH_TAG') {
-      // Get all journeys with the specific tag
-      console.log('ji with tag');
-      journeyIds = await this.getJourneysWithTag(account, session, tag);
-    }
-
-    console.log('THe journey ids are', journeyIds);
-
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    const stepIds = [];
-    for (const journeyId of journeyIds) {
-      const steps = await this.stepsService.transactionalfindAllByTypeInJourney(
-        account,
-        StepType.MESSAGE,
-        journeyId,
-        queryRunner,
-        session
-      );
-      stepIds.push(...steps.map((step) => step.id));
-    }
-
-    console.log('step ids are,', JSON.stringify(stepIds, null, 2));
-
-    const userIdCondition = `userId = '${userId}'`;
-    let sqlQuery = `SELECT customerId FROM message_status WHERE `;
-
-    if (
-      type === 'Email' ||
-      type === 'Push' ||
-      type === 'SMS' ||
-      type === 'In-App' ||
-      type === 'Webhook'
-    ) {
-      //wasn;t really sure why this was here before
-      /*
-      if (from.key !== 'ANY') {
-        sqlQuery += `stepId = '${fromSpecificMessage.key}' AND `;
-      }
-      */
-
-      // Update SQL query based on step IDs case 1, 2
-      if (stepIds.length > 0) {
-        //console.log("in step ids > 0");
-        // Assuming stepIds are unique and need to be included in the SQL query
-        const stepIdCondition = `stepId IN (${stepIds
-          .map((id) => `'${id}'`)
-          .join(', ')})`;
-        sqlQuery += `${stepIdCondition} AND `;
-      }
-
-      //to do: add support for any and for tags
-
-      switch (eventCondition) {
-        case 'received':
-          //if it hasnt been sent it cant be opened or clicked
-          if (happenCondition === 'has not') {
-            sqlQuery += `event != 'sent' AND `;
-            sqlQuery += `event != 'opened' AND `;
-            sqlQuery += `event != 'clicked' AND `;
-          } else {
-            sqlQuery += `event = 'sent' AND `;
-          }
-          break;
-        case 'opened':
-          if (happenCondition === 'has not') {
-            sqlQuery += `event != 'opened' AND `;
-            //sqlQuery += `event != 'clicked' AND `;
-          } else {
-            sqlQuery += `event = 'opened' AND `;
-          }
-          break;
-        case 'clicked':
-          if (happenCondition === 'has not') {
-            sqlQuery += `event != 'clicked' AND `;
-          } else {
-            sqlQuery += `event = 'clicked' AND `;
-          }
-          break;
-      }
-      sqlQuery += `${workspaceIdCondition} `;
-
-      //during
-      if (
-        time &&
-        time.comparisonType === 'during' &&
-        time.timeAfter &&
-        time.timeBefore
-      ) {
-        const timeAfter = new Date(time.timeAfter).toISOString();
-        const timeBefore = new Date(time.timeBefore).toISOString();
-        const formattedTimeBefore = timeBefore.split('.')[0]; // Remove milliseconds if not supported by ClickHouse
-        const formattedTimeAfter = timeAfter.split('.')[0]; // Remove milliseconds if not supported by ClickHouse
-        sqlQuery += `AND createdAt >= '${formattedTimeAfter}' AND createdAt <= '${formattedTimeBefore}' `;
-      } else if (time && time.comparisonType === 'before' && time.timeBefore) {
-        const timeBefore = new Date(time.timeBefore).toISOString();
-        const formattedTimeBefore = timeBefore.split('.')[0];
-        sqlQuery += `AND createdAt <= '${formattedTimeBefore}' `;
-      } else if (time && time.comparisonType === 'after' && time.timeAfter) {
-        const timeAfter = new Date(time.timeAfter).toISOString();
-        const formattedTimeAfter = timeAfter.split('.')[0];
-        sqlQuery += `AND createdAt >= '${timeAfter}' `;
-      }
-
-      this.debug(
-        `the final SQL query is:\n${sqlQuery}`,
-        this.customersFromMessageStatement.name,
-        session,
-        account.id
-      );
-
-      const countEvents = await this.clickhouseClient.query({
-        query: sqlQuery,
-        format: 'CSV',
-        //query_params: { customerId },
-      });
-      this.debug(
-        `creating collection`,
-        this.customersFromMessageStatement.name,
-        session,
-        account.id
-      );
-      const collectionHandle = this.connection.db.collection(
-        intermediateCollection
-      );
-      const batchSize = 1000; // Define batch size
-      let batch = [];
-
-      // Async function to handle batch insertion
-      async function processBatch(batch) {
-        try {
-          const result = await collectionHandle.insertMany(batch);
-          //console.log('Batch of documents inserted:', result);
-        } catch (err) {
-          console.error('Error inserting documents:', err);
+        if (from.key === 'ANY') {
+          // Get all journeys associated with the account
+          console.log('ji any');
+          journeyIds = await this.getJourneys(account, session);
+        } else if (from.key === 'WITH_TAG') {
+          // Get all journeys with the specific tag
+          console.log('ji with tag');
+          journeyIds = await this.getJourneysWithTag(account, session, tag);
         }
-      }
 
-      const stream = countEvents.stream();
+        console.log('THe journey ids are', journeyIds);
 
-      // to do this needs to be tested on a very large set of customers to check streaming logic is sound
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
 
-      stream.on('data', async (rows: Row[]) => {
-        stream.pause();
-
-        for (const row of rows) {
-          const cleanedText = row.text.replace(/^"(.*)"$/, '$1'); // Removes surrounding quotes
-          //console.log("cleaned text is", cleanedText);
-          //const objectId = new Types.ObjectId(cleanedText);
-          const objectId = cleanedText;
-          batch.push({ _id: objectId }); // Convert each ObjectId into an object
-
-          if (batch.length >= batchSize) {
-            await processBatch(batch);
-            batch = []; // Reset batch after insertion
-          } else {
-            stream.resume(); // Resume the stream if batch size not reached
-          }
+        const stepIds = [];
+        for (const journeyId of journeyIds) {
+          const steps =
+            await this.stepsService.transactionalfindAllByTypeInJourney(
+              account,
+              StepType.MESSAGE,
+              journeyId,
+              queryRunner,
+              session
+            );
+          stepIds.push(...steps.map((step) => step.id));
         }
-        // Resume the stream after batch processing
-        //stream.resume();
 
-        /*
-        rows.forEach((row: Row) => {
-          const cleanedText = row.text.replace(/^"(.*)"$/, '$1'); // Removes surrounding quotes
-          console.log("cleaned text is", cleanedText);
-          const objectId = new Types.ObjectId(cleanedText);
-          batch.push({ _id: objectId }); // Convert each ObjectId into an object
-          if (batch.length >= batchSize) {
-            // Using async function to handle the insertion
-            (async () => {
-              try {
-                const result = await collectionHandle.insertMany(batch);
-                console.log('Batch of documents inserted:', result);
-                batch = []; // Reset batch after insertion
-              } catch (err) {
-                console.error('Error inserting documents:', err);
-              }
-            })();
-          }
-        });
+        console.log('step ids are,', JSON.stringify(stepIds, null, 2));
+
+        const userIdCondition = `userId = '${userId}'`;
+        let sqlQuery = `SELECT customerId FROM message_status WHERE `;
+
+        if (
+          type === 'Email' ||
+          type === 'Push' ||
+          type === 'SMS' ||
+          type === 'In-App' ||
+          type === 'Webhook'
+        ) {
+          //wasn;t really sure why this was here before
+          /*
+        if (from.key !== 'ANY') {
+          sqlQuery += `stepId = '${fromSpecificMessage.key}' AND `;
+        }
         */
-      });
 
-      //console.log("batch is", JSON.stringify(batch, null, 2));
-
-      const intermediateCollectionResult = await new Promise((resolve) => {
-        stream.on('end', async () => {
-          if (batch.length > 0) {
-            //console.log("batch is", JSON.stringify(batch, null, 2));
-
-            // Insert any remaining documents
-            try {
-              const result = await collectionHandle.insertMany(batch);
-              //console.log('Final batch of documents inserted:', result);
-            } catch (err) {
-              console.error('Error inserting documents:', err);
-            }
+          // Update SQL query based on step IDs case 1, 2
+          if (stepIds.length > 0) {
+            //console.log("in step ids > 0");
+            // Assuming stepIds are unique and need to be included in the SQL query
+            const stepIdCondition = `stepId IN (${stepIds
+              .map((id) => `'${id}'`)
+              .join(', ')})`;
+            sqlQuery += `${stepIdCondition} AND `;
           }
+
+          //to do: add support for any and for tags
+
+          switch (eventCondition) {
+            case 'received':
+              //if it hasnt been sent it cant be opened or clicked
+              if (happenCondition === 'has not') {
+                sqlQuery += `event != 'sent' AND `;
+                sqlQuery += `event != 'opened' AND `;
+                sqlQuery += `event != 'clicked' AND `;
+              } else {
+                sqlQuery += `event = 'sent' AND `;
+              }
+              break;
+            case 'opened':
+              if (happenCondition === 'has not') {
+                sqlQuery += `event != 'opened' AND `;
+                //sqlQuery += `event != 'clicked' AND `;
+              } else {
+                sqlQuery += `event = 'opened' AND `;
+              }
+              break;
+            case 'clicked':
+              if (happenCondition === 'has not') {
+                sqlQuery += `event != 'clicked' AND `;
+              } else {
+                sqlQuery += `event = 'clicked' AND `;
+              }
+              break;
+          }
+          sqlQuery += `${workspaceIdCondition} `;
+
+          //during
+          if (
+            time &&
+            time.comparisonType === 'during' &&
+            time.timeAfter &&
+            time.timeBefore
+          ) {
+            const timeAfter = new Date(time.timeAfter).toISOString();
+            const timeBefore = new Date(time.timeBefore).toISOString();
+            const formattedTimeBefore = timeBefore.split('.')[0]; // Remove milliseconds if not supported by ClickHouse
+            const formattedTimeAfter = timeAfter.split('.')[0]; // Remove milliseconds if not supported by ClickHouse
+            sqlQuery += `AND createdAt >= '${formattedTimeAfter}' AND createdAt <= '${formattedTimeBefore}' `;
+          } else if (
+            time &&
+            time.comparisonType === 'before' &&
+            time.timeBefore
+          ) {
+            const timeBefore = new Date(time.timeBefore).toISOString();
+            const formattedTimeBefore = timeBefore.split('.')[0];
+            sqlQuery += `AND createdAt <= '${formattedTimeBefore}' `;
+          } else if (
+            time &&
+            time.comparisonType === 'after' &&
+            time.timeAfter
+          ) {
+            const timeAfter = new Date(time.timeAfter).toISOString();
+            const formattedTimeAfter = timeAfter.split('.')[0];
+            sqlQuery += `AND createdAt >= '${timeAfter}' `;
+          }
+
           this.debug(
-            'Completed!',
+            `the final SQL query is:\n${sqlQuery}`,
             this.customersFromMessageStatement.name,
             session,
             account.id
           );
 
-          //console.log("intermediate collection is", intermediateCollection );
-          //const documents = await collectionHandle.find({}).toArray();
-          //  documents.forEach(doc => console.log(doc));
-          //console.log("finished print items in", intermediateCollection );
+          const countEvents = await this.clickhouseClient.query({
+            query: sqlQuery,
+            format: 'CSV',
+            //query_params: { customerId },
+          });
+          this.debug(
+            `creating collection`,
+            this.customersFromMessageStatement.name,
+            session,
+            account.id
+          );
+          const collectionHandle = this.connection.db.collection(
+            intermediateCollection
+          );
+          const batchSize = 1000; // Define batch size
+          let batch = [];
 
-          //return intermediateCollection;
+          // Async function to handle batch insertion
+          async function processBatch(batch) {
+            try {
+              const result = await collectionHandle.insertMany(batch);
+              //console.log('Batch of documents inserted:', result);
+            } catch (err) {
+              console.error('Error inserting documents:', err);
+            }
+          }
 
-          resolve(intermediateCollection);
-        });
-      });
+          const stream = countEvents.stream();
 
-      return intermediateCollectionResult;
+          // to do this needs to be tested on a very large set of customers to check streaming logic is sound
 
-      /*
-      this.debug(
-        `set from custoners from messages is:\n${customerIds}`,
-        this.customersFromMessageStatement.name,
-        session,
-        account.id
-      );
-      return customerIds;
-      */
-    }
-    //to do: check what we should do in this case
-    //throw "Invalid statement type";
-    return intermediateCollection;
+          stream.on('data', async (rows: Row[]) => {
+            stream.pause();
 
-    //return false;
+            for (const row of rows) {
+              const cleanedText = row.text.replace(/^"(.*)"$/, '$1'); // Removes surrounding quotes
+              //console.log("cleaned text is", cleanedText);
+              //const objectId = new Types.ObjectId(cleanedText);
+              const objectId = cleanedText;
+              batch.push({ _id: objectId }); // Convert each ObjectId into an object
+
+              if (batch.length >= batchSize) {
+                await processBatch(batch);
+                batch = []; // Reset batch after insertion
+              } else {
+                stream.resume(); // Resume the stream if batch size not reached
+              }
+            }
+            // Resume the stream after batch processing
+            //stream.resume();
+
+            /*
+          rows.forEach((row: Row) => {
+            const cleanedText = row.text.replace(/^"(.*)"$/, '$1'); // Removes surrounding quotes
+            console.log("cleaned text is", cleanedText);
+            const objectId = new Types.ObjectId(cleanedText);
+            batch.push({ _id: objectId }); // Convert each ObjectId into an object
+            if (batch.length >= batchSize) {
+              // Using async function to handle the insertion
+              (async () => {
+                try {
+                  const result = await collectionHandle.insertMany(batch);
+                  console.log('Batch of documents inserted:', result);
+                  batch = []; // Reset batch after insertion
+                } catch (err) {
+                  console.error('Error inserting documents:', err);
+                }
+              })();
+            }
+          });
+          */
+          });
+
+          //console.log("batch is", JSON.stringify(batch, null, 2));
+
+          const intermediateCollectionResult = await new Promise((resolve) => {
+            stream.on('end', async () => {
+              if (batch.length > 0) {
+                //console.log("batch is", JSON.stringify(batch, null, 2));
+
+                // Insert any remaining documents
+                try {
+                  const result = await collectionHandle.insertMany(batch);
+                  //console.log('Final batch of documents inserted:', result);
+                } catch (err) {
+                  console.error('Error inserting documents:', err);
+                }
+              }
+              this.debug(
+                'Completed!',
+                this.customersFromMessageStatement.name,
+                session,
+                account.id
+              );
+
+              //console.log("intermediate collection is", intermediateCollection );
+              //const documents = await collectionHandle.find({}).toArray();
+              //  documents.forEach(doc => console.log(doc));
+              //console.log("finished print items in", intermediateCollection );
+
+              //return intermediateCollection;
+
+              resolve(intermediateCollection);
+            });
+          });
+
+          return intermediateCollectionResult;
+
+          /*
+        this.debug(
+          `set from custoners from messages is:\n${customerIds}`,
+          this.customersFromMessageStatement.name,
+          session,
+          account.id
+        );
+        return customerIds;
+        */
+        }
+        //to do: check what we should do in this case
+        //throw "Invalid statement type";
+        return intermediateCollection;
+
+        //return false;
+      }
+    );
   }
 
   correctValueType(
@@ -3427,253 +4586,267 @@ export class CustomersService {
     count: number,
     intermediateCollection: string
   ) {
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    return Sentry.startSpan(
+      { name: 'CustomersService.customersFromAttributeStatement' },
+      async () => {
+        const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-    //console.log('generating attribute mongo query');
-    this.debug(
-      'generating attribute mongo query\n',
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
-    );
-    const {
-      key,
-      comparisonType,
-      subComparisonType,
-      value,
-      valueType,
-      subComparisonValue,
-      dateComparisonType,
-    } = statement;
-    const query: any = {
-      workspaceId: workspace.id,
-    };
-
-    this.debug(
-      `key is: ${key}`,
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
-    );
-
-    this.debug(
-      `comparison type is: ${comparisonType}`,
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
-    );
-
-    this.debug(
-      `value is: ${value}`,
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
-    );
-
-    this.debug(
-      `value type is: ${typeof value}`,
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
-    );
-
-    switch (comparisonType) {
-      case 'is equal to':
-        //checked
-        query[key] = this.correctValueType(valueType, value, account, session);
-        break;
-      case 'is not equal to':
-        //checked
-        query[key] = {
-          $ne: this.correctValueType(valueType, value, account, session),
+        //console.log('generating attribute mongo query');
+        this.debug(
+          'generating attribute mongo query\n',
+          this.customersFromAttributeStatement.name,
+          session,
+          account.id
+        );
+        const {
+          key,
+          comparisonType,
+          subComparisonType,
+          value,
+          valueType,
+          subComparisonValue,
+          dateComparisonType,
+        } = statement;
+        const query: any = {
+          workspaceId: workspace.id,
         };
-        break;
-      case 'contains':
-        // doesnt seem to be working
-        query[key] = { $regex: new RegExp(value, 'i') };
-        break;
-      case 'does not contain':
-        // doesnt seem to be working
-        query[key] = { $not: new RegExp(value, 'i') };
-        break;
-      case 'exist':
-        //checked
-        query[key] = { $exists: true };
-        break;
-      case 'not exist':
-        //checked
-        query[key] = { $exists: false };
-        break;
-      case 'is greater than':
-        query[key] = {
-          $gt: this.correctValueType(valueType, value, account, session),
-        };
-        break;
-      case 'is less than':
-        query[key] = {
-          $lt: this.correctValueType(valueType, value, account, session),
-        };
-        break;
-      // nested object
-      case 'key':
-        if (subComparisonType === 'equal to') {
-          query[key] = { [value]: subComparisonValue };
-        } else if (subComparisonType === 'not equal to') {
-          query[key] = { [value]: { $ne: subComparisonValue } };
-        } else if (subComparisonType === 'exist') {
-          query[key] = { [value]: { $exists: true } };
-        } else if (subComparisonType === 'not exist') {
-          query[key] = { [value]: { $exists: false } };
-        } else {
-          throw new Error('Invalid sub-comparison type for nested property');
-        }
-        break;
-      case 'after':
-        //console.log("value type is", typeof value);
-        //console.log("value is", value);
-        let afterDate: Date;
-        let isoDateStringAfter: string;
-        if (valueType === 'Date' && dateComparisonType === 'relative') {
-          afterDate = this.parseRelativeDate(value);
-          isoDateStringAfter = afterDate.toISOString();
-        } else {
-          // Use the Date constructor for parsing RFC 2822 formatted dates
-          afterDate = new Date(value);
-          isoDateStringAfter = afterDate.toISOString();
-        }
-        //console.log("afterDate type is", typeof afterDate);
-        //console.log("after date is", afterDate);
-        // Check if afterDate is valid
-        if (isNaN(afterDate.getTime())) {
-          throw new Error('Invalid date format');
-        }
-        //query[key] = { $gt: afterDate };
-        query[key] = { $gt: isoDateStringAfter };
-        break;
-      case 'before':
-        //console.log("value type is", typeof value);
-        //console.log("value is", value);
-        let beforeDate: Date;
-        let isoDateStringBefore: string;
-        if (valueType === 'Date' && dateComparisonType === 'relative') {
-          beforeDate = this.parseRelativeDate(value);
-          isoDateStringBefore = beforeDate.toISOString();
-        } else {
-          // Directly use the Date constructor for parsing RFC 2822 formatted dates
-          beforeDate = new Date(value);
-          isoDateStringBefore = beforeDate.toISOString();
-        }
-        //console.log("beforeDate type is", typeof beforeDate);
-        //console.log("before date is", beforeDate);
-        // Check if beforeDate is valid
-        if (isNaN(beforeDate.getTime())) {
-          throw new Error('Invalid date format');
-        }
-        //query[key] = { $lt: this.toMongoDate(beforeDate) };
-        //query[key] = { $lt: beforeDate };
-        query[key] = { $lt: isoDateStringBefore };
-        break;
-      case 'during':
-        //console.log("value type is", typeof value);
-        //console.log("value is", value);
-        //console.log("subComparisonValue is", subComparisonValue);
-        let startDate: Date, endDate: Date;
-        let isoStart: string, isoEnd: string;
-        if (valueType === 'Date' && dateComparisonType === 'relative') {
-          startDate = this.parseRelativeDate(value);
-          endDate = this.parseRelativeDate(subComparisonValue);
-          isoStart = startDate.toISOString();
-          isoEnd = endDate.toISOString();
-        } else {
-          // Use the Date constructor for parsing RFC 2822 formatted dates
-          startDate = new Date(value);
-          endDate = new Date(subComparisonValue);
-          isoStart = startDate.toISOString();
-          isoEnd = endDate.toISOString();
-        }
-        //console.log("startDate type is", typeof startDate);
-        //console.log("startDate is", startDate);
-        //console.log("endDate type is", typeof endDate);
-        //console.log("endDate is", endDate);
-        // Check if dates are valid
-        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-          throw new Error('Invalid date format');
-        }
-        //query[key] = { $gte: startDate, $lte: endDate };
-        query[key] = { $gte: isoStart, $lte: isoEnd };
-        break;
-      // Add more cases for other comparison types as needed
-      default:
-        throw new Error('Invalid comparison type');
-    }
 
-    this.debug(
-      ` generated attribute query is: ${JSON.stringify(query, null, 2)}`,
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
+        this.debug(
+          `key is: ${key}`,
+          this.customersFromAttributeStatement.name,
+          session,
+          account.id
+        );
+
+        this.debug(
+          `comparison type is: ${comparisonType}`,
+          this.customersFromAttributeStatement.name,
+          session,
+          account.id
+        );
+
+        this.debug(
+          `value is: ${value}`,
+          this.customersFromAttributeStatement.name,
+          session,
+          account.id
+        );
+
+        this.debug(
+          `value type is: ${typeof value}`,
+          this.customersFromAttributeStatement.name,
+          session,
+          account.id
+        );
+
+        switch (comparisonType) {
+          case 'is equal to':
+            //checked
+            query[key] = this.correctValueType(
+              valueType,
+              value,
+              account,
+              session
+            );
+            break;
+          case 'is not equal to':
+            //checked
+            query[key] = {
+              $ne: this.correctValueType(valueType, value, account, session),
+            };
+            break;
+          case 'contains':
+            // doesnt seem to be working
+            query[key] = { $regex: new RegExp(value, 'i') };
+            break;
+          case 'does not contain':
+            // doesnt seem to be working
+            query[key] = { $not: new RegExp(value, 'i') };
+            break;
+          case 'exist':
+            //checked
+            query[key] = { $exists: true };
+            break;
+          case 'not exist':
+            //checked
+            query[key] = { $exists: false };
+            break;
+          case 'is greater than':
+            query[key] = {
+              $gt: this.correctValueType(valueType, value, account, session),
+            };
+            break;
+          case 'is less than':
+            query[key] = {
+              $lt: this.correctValueType(valueType, value, account, session),
+            };
+            break;
+          // nested object
+          case 'key':
+            if (subComparisonType === 'equal to') {
+              query[key] = { [value]: subComparisonValue };
+            } else if (subComparisonType === 'not equal to') {
+              query[key] = { [value]: { $ne: subComparisonValue } };
+            } else if (subComparisonType === 'exist') {
+              query[key] = { [value]: { $exists: true } };
+            } else if (subComparisonType === 'not exist') {
+              query[key] = { [value]: { $exists: false } };
+            } else {
+              throw new Error(
+                'Invalid sub-comparison type for nested property'
+              );
+            }
+            break;
+          case 'after':
+            //console.log("value type is", typeof value);
+            //console.log("value is", value);
+            let afterDate: Date;
+            let isoDateStringAfter: string;
+            if (valueType === 'Date' && dateComparisonType === 'relative') {
+              afterDate = this.parseRelativeDate(value);
+              isoDateStringAfter = afterDate.toISOString();
+            } else {
+              // Use the Date constructor for parsing RFC 2822 formatted dates
+              afterDate = new Date(value);
+              isoDateStringAfter = afterDate.toISOString();
+            }
+            //console.log("afterDate type is", typeof afterDate);
+            //console.log("after date is", afterDate);
+            // Check if afterDate is valid
+            if (isNaN(afterDate.getTime())) {
+              throw new Error('Invalid date format');
+            }
+            //query[key] = { $gt: afterDate };
+            query[key] = { $gt: isoDateStringAfter };
+            break;
+          case 'before':
+            //console.log("value type is", typeof value);
+            //console.log("value is", value);
+            let beforeDate: Date;
+            let isoDateStringBefore: string;
+            if (valueType === 'Date' && dateComparisonType === 'relative') {
+              beforeDate = this.parseRelativeDate(value);
+              isoDateStringBefore = beforeDate.toISOString();
+            } else {
+              // Directly use the Date constructor for parsing RFC 2822 formatted dates
+              beforeDate = new Date(value);
+              isoDateStringBefore = beforeDate.toISOString();
+            }
+            //console.log("beforeDate type is", typeof beforeDate);
+            //console.log("before date is", beforeDate);
+            // Check if beforeDate is valid
+            if (isNaN(beforeDate.getTime())) {
+              throw new Error('Invalid date format');
+            }
+            //query[key] = { $lt: this.toMongoDate(beforeDate) };
+            //query[key] = { $lt: beforeDate };
+            query[key] = { $lt: isoDateStringBefore };
+            break;
+          case 'during':
+            //console.log("value type is", typeof value);
+            //console.log("value is", value);
+            //console.log("subComparisonValue is", subComparisonValue);
+            let startDate: Date, endDate: Date;
+            let isoStart: string, isoEnd: string;
+            if (valueType === 'Date' && dateComparisonType === 'relative') {
+              startDate = this.parseRelativeDate(value);
+              endDate = this.parseRelativeDate(subComparisonValue);
+              isoStart = startDate.toISOString();
+              isoEnd = endDate.toISOString();
+            } else {
+              // Use the Date constructor for parsing RFC 2822 formatted dates
+              startDate = new Date(value);
+              endDate = new Date(subComparisonValue);
+              isoStart = startDate.toISOString();
+              isoEnd = endDate.toISOString();
+            }
+            //console.log("startDate type is", typeof startDate);
+            //console.log("startDate is", startDate);
+            //console.log("endDate type is", typeof endDate);
+            //console.log("endDate is", endDate);
+            // Check if dates are valid
+            if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+              throw new Error('Invalid date format');
+            }
+            //query[key] = { $gte: startDate, $lte: endDate };
+            query[key] = { $gte: isoStart, $lte: isoEnd };
+            break;
+          // Add more cases for other comparison types as needed
+          default:
+            throw new Error('Invalid comparison type');
+        }
+
+        this.debug(
+          ` generated attribute query is: ${JSON.stringify(query, null, 2)}`,
+          this.customersFromAttributeStatement.name,
+          session,
+          account.id
+        );
+
+        this.debug(
+          'now grabbing customers with the query',
+          this.customersFromAttributeStatement.name,
+          session,
+          account.id
+        );
+
+        this.debug(
+          'in the aggregate construction - attribute',
+          this.customersFromAttributeStatement.name,
+          session,
+          account.id
+        );
+
+        this.debug(
+          `creating collection`,
+          this.customersFromAttributeStatement.name,
+          session,
+          account.id
+        );
+
+        this.connection.db.collection(intermediateCollection);
+
+        const aggregationPipeline: any[] = [
+          { $match: query },
+          {
+            $project: {
+              //customerId: "$_id", // or another field that uniquely identifies the customer
+              //_id: 0 // Optionally exclude the default _id if it's not needed
+              _id: 1,
+            },
+          },
+          { $out: intermediateCollection },
+        ];
+
+        const docs = await this.CustomerModel.aggregate(
+          aggregationPipeline
+        ).exec();
+
+        this.debug(
+          `Here are the docs: ${JSON.stringify(docs, null, 2)}`,
+          this.customersFromAttributeStatement.name,
+          session,
+          account.id
+        );
+        return intermediateCollection;
+        /*
+      const correlationValues = new Set<string>();
+
+      docs.forEach((custData) => {
+        correlationValues.add(custData._id.toString());
+      });
+
+      this.debug(
+        `Here are the correlationValues: ${correlationValues}`,
+        this.customersFromAttributeStatement.name,
+        session,
+        account.id
+      );
+
+      return correlationValues;
+      */
+      }
     );
-
-    this.debug(
-      'now grabbing customers with the query',
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
-    );
-
-    this.debug(
-      'in the aggregate construction - attribute',
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
-    );
-
-    this.debug(
-      `creating collection`,
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
-    );
-
-    this.connection.db.collection(intermediateCollection);
-
-    const aggregationPipeline: any[] = [
-      { $match: query },
-      {
-        $project: {
-          //customerId: "$_id", // or another field that uniquely identifies the customer
-          //_id: 0 // Optionally exclude the default _id if it's not needed
-          _id: 1,
-        },
-      },
-      { $out: intermediateCollection },
-    ];
-
-    const docs = await this.CustomerModel.aggregate(aggregationPipeline).exec();
-
-    this.debug(
-      `Here are the docs: ${JSON.stringify(docs, null, 2)}`,
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
-    );
-    return intermediateCollection;
-    /*
-    const correlationValues = new Set<string>();
-
-    docs.forEach((custData) => {
-      correlationValues.add(custData._id.toString());
-    });
-
-    this.debug(
-      `Here are the correlationValues: ${correlationValues}`,
-      this.customersFromAttributeStatement.name,
-      session,
-      account.id
-    );
-
-    return correlationValues;
-    */
   }
 
   /**
@@ -3715,6 +4888,30 @@ export class CustomersService {
   }
 
   /**
+   * Gets the primary key for a given user
+   *
+   * @returns string
+   */
+  async getPrimaryKeyStrict(
+    workspaceId: string,
+    session: string
+  ): Promise<CustomerKeysDocument> {
+    let primaryKey: CustomerKeysDocument =
+      await this.cacheService.getIgnoreError(
+        'PrimaryKey',
+        workspaceId,
+        async () => {
+          return await this.CustomerKeysModel.findOne({
+            workspaceId,
+            isPrimary: true,
+          });
+        }
+      );
+
+    return primaryKey;
+  }
+
+  /**
    * Gets set of customers from a single statement that
    * includes Events,
    *
@@ -3751,395 +4948,178 @@ export class CustomersService {
     count: number,
     intermediateCollection: string
   ) {
-    const { eventName, comparisonType, value, time, additionalProperties } =
-      statement;
+    return Sentry.startSpan(
+      { name: 'CustomersService.customersFromEventStatement' },
+      async () => {
+        const { eventName, comparisonType, value, time, additionalProperties } =
+          statement;
 
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+        const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-    // ****
-    const mongoQuery: any = {
-      event: eventName,
-      workspaceId: workspace.id,
-    };
+        // ****
+        const mongoQuery: any = {
+          event: eventName,
+          workspaceId: workspace.id,
+        };
 
-    if (time) {
-      console.log('the statement is', JSON.stringify(statement, null, 2));
-      const { dateComparisonType, timeAfter, timeBefore } = time;
-      switch (time.comparisonType) {
-        case 'after':
-          //console.log("value type is", typeof value);
-          //console.log("value is", value);
-          let afterDate: Date;
-          let isoDateStringAfter: string;
-          if (dateComparisonType === 'relative') {
-            afterDate = this.parseRelativeDate(timeAfter);
-            isoDateStringAfter = afterDate.toISOString();
-          } else {
-            // Use the Date constructor for parsing RFC 2822 formatted dates
-            afterDate = new Date(timeAfter);
-            isoDateStringAfter = afterDate.toISOString();
+        if (time) {
+          console.log('the statement is', JSON.stringify(statement, null, 2));
+          const { dateComparisonType, timeAfter, timeBefore } = time;
+          switch (time.comparisonType) {
+            case 'after':
+              //console.log("value type is", typeof value);
+              //console.log("value is", value);
+              let afterDate: Date;
+              let isoDateStringAfter: string;
+              if (dateComparisonType === 'relative') {
+                afterDate = this.parseRelativeDate(timeAfter);
+                isoDateStringAfter = afterDate.toISOString();
+              } else {
+                // Use the Date constructor for parsing RFC 2822 formatted dates
+                afterDate = new Date(timeAfter);
+                isoDateStringAfter = afterDate.toISOString();
+              }
+              //console.log("afterDate type is", typeof afterDate);
+              //console.log("after date is", afterDate);
+              // Check if afterDate is valid
+              if (isNaN(afterDate.getTime())) {
+                throw new Error('Invalid date format');
+              }
+              //query[key] = { $gt: afterDate };
+              mongoQuery.createdAt = { $gt: isoDateStringAfter };
+              break;
+            case 'before':
+              //console.log("value type is", typeof value);
+              //console.log("value is", value);
+              let beforeDate: Date;
+              let isoDateStringBefore: string;
+              if (dateComparisonType === 'relative') {
+                beforeDate = this.parseRelativeDate(timeBefore);
+                isoDateStringBefore = beforeDate.toISOString();
+              } else {
+                // Directly use the Date constructor for parsing RFC 2822 formatted dates
+                beforeDate = new Date(timeBefore);
+                isoDateStringBefore = beforeDate.toISOString();
+              }
+              //console.log("beforeDate type is", typeof beforeDate);
+              //console.log("before date is", beforeDate);
+              // Check if beforeDate is valid
+              if (isNaN(beforeDate.getTime())) {
+                throw new Error('Invalid date format');
+              }
+              //query[key] = { $lt: this.toMongoDate(beforeDate) };
+              //query[key] = { $lt: beforeDate };
+              mongoQuery.createdAt = { $lt: isoDateStringBefore };
+              break;
+            case 'during':
+              //console.log("value type is", typeof value);
+              //console.log("value is", value);
+              //console.log("subComparisonValue is", subComparisonValue);
+              let startDate: Date, endDate: Date;
+              let isoStart: string, isoEnd: string;
+              if (dateComparisonType === 'relative') {
+                startDate = this.parseRelativeDate(timeAfter);
+                // this is not a type, the front end is making the later date timeBefore
+                endDate = this.parseRelativeDate(timeBefore);
+                isoStart = startDate.toISOString();
+                isoEnd = endDate.toISOString();
+              } else {
+                // Use the Date constructor for parsing RFC 2822 formatted dates
+                startDate = new Date(timeAfter);
+                // this is not a type, the front end is making the later date timeBefore
+                endDate = new Date(timeBefore);
+                isoStart = startDate.toISOString();
+                isoEnd = endDate.toISOString();
+              }
+              //console.log("startDate type is", typeof startDate);
+              //console.log("startDate is", startDate);
+              //console.log("endDate type is", typeof endDate);
+              //console.log("endDate is", endDate);
+              // Check if dates are valid
+              if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+                throw new Error('Invalid date format');
+              }
+              //query[key] = { $gte: startDate, $lte: endDate };
+              mongoQuery.createdAt = { $gte: isoStart, $lte: isoEnd };
+              break;
+            /*
+          case 'before':
+            //.toUTCString()
+            mongoQuery.createdAt = {
+              $lt: new Date(time.timeBefore).toISOString(),
+            };
+            break;
+          case 'after':
+            mongoQuery.createdAt = {
+              $gt: new Date(time.timeAfter).toISOString(),
+            };
+            break;
+          case 'during':
+            mongoQuery.createdAt = {
+              $gte: new Date(time.timeAfter).toISOString(),
+              $lte: new Date(time.timeBefore).toISOString(),
+            };
+            break;
+          default:
+            break;
+          */
           }
-          //console.log("afterDate type is", typeof afterDate);
-          //console.log("after date is", afterDate);
-          // Check if afterDate is valid
-          if (isNaN(afterDate.getTime())) {
-            throw new Error('Invalid date format');
-          }
-          //query[key] = { $gt: afterDate };
-          mongoQuery.createdAt = { $gt: isoDateStringAfter };
-          break;
-        case 'before':
-          //console.log("value type is", typeof value);
-          //console.log("value is", value);
-          let beforeDate: Date;
-          let isoDateStringBefore: string;
-          if (dateComparisonType === 'relative') {
-            beforeDate = this.parseRelativeDate(timeBefore);
-            isoDateStringBefore = beforeDate.toISOString();
-          } else {
-            // Directly use the Date constructor for parsing RFC 2822 formatted dates
-            beforeDate = new Date(timeBefore);
-            isoDateStringBefore = beforeDate.toISOString();
-          }
-          //console.log("beforeDate type is", typeof beforeDate);
-          //console.log("before date is", beforeDate);
-          // Check if beforeDate is valid
-          if (isNaN(beforeDate.getTime())) {
-            throw new Error('Invalid date format');
-          }
-          //query[key] = { $lt: this.toMongoDate(beforeDate) };
-          //query[key] = { $lt: beforeDate };
-          mongoQuery.createdAt = { $lt: isoDateStringBefore };
-          break;
-        case 'during':
-          //console.log("value type is", typeof value);
-          //console.log("value is", value);
-          //console.log("subComparisonValue is", subComparisonValue);
-          let startDate: Date, endDate: Date;
-          let isoStart: string, isoEnd: string;
-          if (dateComparisonType === 'relative') {
-            startDate = this.parseRelativeDate(timeAfter);
-            // this is not a type, the front end is making the later date timeBefore
-            endDate = this.parseRelativeDate(timeBefore);
-            isoStart = startDate.toISOString();
-            isoEnd = endDate.toISOString();
-          } else {
-            // Use the Date constructor for parsing RFC 2822 formatted dates
-            startDate = new Date(timeAfter);
-            // this is not a type, the front end is making the later date timeBefore
-            endDate = new Date(timeBefore);
-            isoStart = startDate.toISOString();
-            isoEnd = endDate.toISOString();
-          }
-          //console.log("startDate type is", typeof startDate);
-          //console.log("startDate is", startDate);
-          //console.log("endDate type is", typeof endDate);
-          //console.log("endDate is", endDate);
-          // Check if dates are valid
-          if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-            throw new Error('Invalid date format');
-          }
-          //query[key] = { $gte: startDate, $lte: endDate };
-          mongoQuery.createdAt = { $gte: isoStart, $lte: isoEnd };
-          break;
-        /*
-        case 'before':
-          //.toUTCString()
-          mongoQuery.createdAt = {
-            $lt: new Date(time.timeBefore).toISOString(),
-          };
-          break;
-        case 'after':
-          mongoQuery.createdAt = {
-            $gt: new Date(time.timeAfter).toISOString(),
-          };
-          break;
-        case 'during':
-          mongoQuery.createdAt = {
-            $gte: new Date(time.timeAfter).toISOString(),
-            $lte: new Date(time.timeBefore).toISOString(),
-          };
-          break;
-        default:
-          break;
-        */
-      }
-      console.log('time query is', JSON.stringify(mongoQuery, null, 2));
-    }
-
-    //sub property not fully tested yet
-    if (additionalProperties) {
-      const propertiesQuery: any[] = [];
-      for (const property of additionalProperties.properties) {
-        const propQuery: any = {};
-        propQuery[`payload.${property.key}`] =
-          this.getValueComparison(property);
-        propertiesQuery.push(propQuery);
-      }
-
-      if (additionalProperties.comparison === 'all') {
-        if (propertiesQuery.length > 0) {
-          mongoQuery.$and = propertiesQuery;
+          console.log('time query is', JSON.stringify(mongoQuery, null, 2));
         }
-      } else if (additionalProperties.comparison === 'any') {
-        if (propertiesQuery.length > 0) {
-          mongoQuery.$or = propertiesQuery;
+
+        //sub property not fully tested yet
+        if (additionalProperties) {
+          const propertiesQuery: any[] = [];
+          for (const property of additionalProperties.properties) {
+            const propQuery: any = {};
+            propQuery[`payload.${property.key}`] =
+              this.getValueComparison(property);
+            propertiesQuery.push(propQuery);
+          }
+
+          if (additionalProperties.comparison === 'all') {
+            if (propertiesQuery.length > 0) {
+              mongoQuery.$and = propertiesQuery;
+            }
+          } else if (additionalProperties.comparison === 'any') {
+            if (propertiesQuery.length > 0) {
+              mongoQuery.$or = propertiesQuery;
+            }
+          }
         }
-      }
-    }
 
-    this.connection.db.collection(intermediateCollection);
+        this.connection.db.collection(intermediateCollection);
 
-    if (comparisonType === 'has performed') {
-      this.debug(
-        'in the aggregate construction - has performed',
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
+        if (comparisonType === 'has performed') {
+          this.debug(
+            'in the aggregate construction - has performed',
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
 
-      //first we make the aggregation call with non-mobile events
-      //we treat mobile seperately to handle anonymous users
+          //first we make the aggregation call with non-mobile events
+          //we treat mobile seperately to handle anonymous users
 
-      const aggregationPipeline: any[] = [
-        { $match: mongoQuery },
-        {
-          $lookup: {
-            from: 'customers',
-            localField: 'correlationValue',
-            foreignField: await this.getPrimaryKey(account, session),
-            as: 'matchedCustomers',
-          },
-        },
-        { $unwind: '$matchedCustomers' },
-        {
-          $group: {
-            _id: '$matchedCustomers._id',
-            count: { $sum: 1 },
-          },
-        },
-        { $match: { count: { $gte: value } } },
-        /*
-        {
-          $group: {
-            _id: null,
-            customerIds: { $push: '$_id' },
-          },
-        },
-        */
-        { $out: intermediateCollection },
-        //to do
-      ];
-
-      this.debug(
-        'aggregate query is/n\n',
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      this.debug(
-        JSON.stringify(aggregationPipeline, null, 2),
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      //fetch users here
-      const result: any = await this.eventsService.getCustomersbyEventsMongo(
-        aggregationPipeline
-      );
-      /*
-      * Example result is: 
-      [
-        {
-          "_id": null,
-          "customerIds": [
-            "658515aba1256bc5c2232ba7",
-            "658515aba1256bc5c2232bad",
-            "6585156aa1256bc5c2232ba0"
-          ]
-        }
-      ]
-      Empty example: []
-      */
-
-      //now we make the aggregation call with mobile events
-      mongoQuery.source = 'mobile';
-      //console.log("mongoquery in eventssegment is ", JSON.stringify(mongoQuery, null, 2) );
-
-      const aggregationPipelineMobile: any[] = [
-        { $match: mongoQuery },
-        {
-          $addFields: {
-            //convertedCorrelationValue: { $toObjectId: '$correlationValue' },
-            convertedCorrelationValue: '$correlationValue',
-          },
-        },
-        {
-          $lookup: {
-            from: 'customers',
-            localField: 'convertedCorrelationValue',
-            foreignField: '_id',
-            as: 'matchedCustomers',
-          },
-        },
-        { $unwind: '$matchedCustomers' },
-        {
-          $group: {
-            _id: '$matchedCustomers._id',
-            count: { $sum: 1 },
-          },
-        },
-        { $match: { count: { $gte: value } } },
-        /*
-        {
-          $group: {
-            _id: null,
-            customerIds: { $push: '$_id' },
-          },
-        },
-        */
-        {
-          $merge: {
-            into: intermediateCollection, // specify the target collection name
-            on: '_id', // assuming '_id' is your unique identifier
-            whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
-            whenNotMatched: 'insert', // inserts the document if no match is found
-          },
-        },
-        //to do
-      ];
-
-      this.debug(
-        'aggregate mobile query is/n\n',
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      this.debug(
-        JSON.stringify(aggregationPipelineMobile, null, 2),
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      //fetch users here
-      const mobileResult: any =
-        await this.eventsService.getCustomersbyEventsMongo(
-          aggregationPipelineMobile
-        );
-
-      // we do one more merge with mobile users for those who may include the event correlationValues in their other_ids field
-      const aggregationPipelineMobileOtherIds: any[] = [
-        { $match: mongoQuery },
-        {
-          $lookup: {
-            from: 'customers',
-            localField: 'correlationValue',
-            foreignField: 'other_ids',
-            as: 'matchedCustomersFromOtherIds',
-          },
-        },
-        { $unwind: '$matchedCustomersFromOtherIds' },
-        {
-          $group: {
-            _id: '$matchedCustomersFromOtherIds._id',
-            count: { $sum: 1 },
-          },
-        },
-        { $match: { count: { $gte: value } } }, // Replace `value` with the minimum count of matches you want
-        {
-          $merge: {
-            into: intermediateCollection, // Specify the same intermediateCollection name as the first pipeline
-            on: '_id', // Merge on the `_id` field
-            whenMatched: 'keepExisting', // You could choose another option like 'replace', 'merge', or 'fail' based on your requirements
-            whenNotMatched: 'insert', // Insert if the _id was not matched (new entry)
-          },
-        },
-        // Add any additional stages you may need
-      ];
-
-      this.debug(
-        'aggregate mobile other ids query is/n\n',
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      this.debug(
-        JSON.stringify(aggregationPipelineMobileOtherIds, null, 2),
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      //fetch users here
-      const mobileResultOtherIds: any =
-        await this.eventsService.getCustomersbyEventsMongo(
-          aggregationPipelineMobileOtherIds
-        );
-
-      return intermediateCollection;
-    } else if (comparisonType === 'has not performed') {
-      /*
-       * we first check if the event has ever been performed
-       * if not we return all customers
-       *
-       * if event has been performed by any user, we get the customer ids of the users who have performed
-       * then filter for all other customer ids ie never performed event
-       *
-       */
-      this.debug(
-        'in the aggregate construction - has not performed',
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      //first check
-      const checkEventExists = [
-        {
-          $match: mongoQuery,
-        },
-        {
-          $group: {
-            _id: '$event',
-            count: { $sum: 1 },
-          },
-        },
-      ];
-      const check = await this.eventsService.getCustomersbyEventsMongo(
-        checkEventExists
-      );
-      this.debug(
-        'the check is',
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-      this.debug(
-        JSON.stringify(check, null, 2),
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      if (check.length < 1) {
-        this.debug(
-          'no events of this name',
-          this.customersFromEventStatement.name,
-          session,
-          account.id
-        ); //the event does not exist, so we should return all customers
-        const allUsers = [
-          {
-            $match: {
-              workspaceId: workspace.id,
+          const aggregationPipeline: any[] = [
+            { $match: mongoQuery },
+            {
+              $lookup: {
+                from: 'customers',
+                localField: 'correlationValue',
+                foreignField: await this.getPrimaryKey(account, session),
+                as: 'matchedCustomers',
+              },
             },
-          },
-          /*
+            { $unwind: '$matchedCustomers' },
+            {
+              $group: {
+                _id: '$matchedCustomers._id',
+                count: { $sum: 1 },
+              },
+            },
+            { $match: { count: { $gte: value } } },
+            /*
           {
             $group: {
               _id: null,
@@ -4147,255 +5127,478 @@ export class CustomersService {
             },
           },
           */
+            { $out: intermediateCollection },
+            //to do
+          ];
+
+          this.debug(
+            'aggregate query is/n\n',
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          this.debug(
+            JSON.stringify(aggregationPipeline, null, 2),
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          //fetch users here
+          const result: any =
+            await this.eventsService.getCustomersbyEventsMongo(
+              aggregationPipeline
+            );
+          /*
+        * Example result is: 
+        [
+          {
+            "_id": null,
+            "customerIds": [
+              "658515aba1256bc5c2232ba7",
+              "658515aba1256bc5c2232bad",
+              "6585156aa1256bc5c2232ba0"
+            ]
+          }
+        ]
+        Empty example: []
+        */
+
+          //now we make the aggregation call with mobile events
+          mongoQuery.source = 'mobile';
+          //console.log("mongoquery in eventssegment is ", JSON.stringify(mongoQuery, null, 2) );
+
+          const aggregationPipelineMobile: any[] = [
+            { $match: mongoQuery },
+            {
+              $addFields: {
+                //convertedCorrelationValue: { $toObjectId: '$correlationValue' },
+                convertedCorrelationValue: '$correlationValue',
+              },
+            },
+            {
+              $lookup: {
+                from: 'customers',
+                localField: 'convertedCorrelationValue',
+                foreignField: '_id',
+                as: 'matchedCustomers',
+              },
+            },
+            { $unwind: '$matchedCustomers' },
+            {
+              $group: {
+                _id: '$matchedCustomers._id',
+                count: { $sum: 1 },
+              },
+            },
+            { $match: { count: { $gte: value } } },
+            /*
+          {
+            $group: {
+              _id: null,
+              customerIds: { $push: '$_id' },
+            },
+          },
+          */
+            {
+              $merge: {
+                into: intermediateCollection, // specify the target collection name
+                on: '_id', // assuming '_id' is your unique identifier
+                whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
+                whenNotMatched: 'insert', // inserts the document if no match is found
+              },
+            },
+            //to do
+          ];
+
+          this.debug(
+            'aggregate mobile query is/n\n',
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          this.debug(
+            JSON.stringify(aggregationPipelineMobile, null, 2),
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          //fetch users here
+          const mobileResult: any =
+            await this.eventsService.getCustomersbyEventsMongo(
+              aggregationPipelineMobile
+            );
+
+          // we do one more merge with mobile users for those who may include the event correlationValues in their other_ids field
+          const aggregationPipelineMobileOtherIds: any[] = [
+            { $match: mongoQuery },
+            {
+              $lookup: {
+                from: 'customers',
+                localField: 'correlationValue',
+                foreignField: 'other_ids',
+                as: 'matchedCustomersFromOtherIds',
+              },
+            },
+            { $unwind: '$matchedCustomersFromOtherIds' },
+            {
+              $group: {
+                _id: '$matchedCustomersFromOtherIds._id',
+                count: { $sum: 1 },
+              },
+            },
+            { $match: { count: { $gte: value } } }, // Replace `value` with the minimum count of matches you want
+            {
+              $merge: {
+                into: intermediateCollection, // Specify the same intermediateCollection name as the first pipeline
+                on: '_id', // Merge on the `_id` field
+                whenMatched: 'keepExisting', // You could choose another option like 'replace', 'merge', or 'fail' based on your requirements
+                whenNotMatched: 'insert', // Insert if the _id was not matched (new entry)
+              },
+            },
+            // Add any additional stages you may need
+          ];
+
+          this.debug(
+            'aggregate mobile other ids query is/n\n',
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          this.debug(
+            JSON.stringify(aggregationPipelineMobileOtherIds, null, 2),
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          //fetch users here
+          const mobileResultOtherIds: any =
+            await this.eventsService.getCustomersbyEventsMongo(
+              aggregationPipelineMobileOtherIds
+            );
+
+          return intermediateCollection;
+        } else if (comparisonType === 'has not performed') {
+          /*
+           * we first check if the event has ever been performed
+           * if not we return all customers
+           *
+           * if event has been performed by any user, we get the customer ids of the users who have performed
+           * then filter for all other customer ids ie never performed event
+           *
+           */
+          this.debug(
+            'in the aggregate construction - has not performed',
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          //first check
+          const checkEventExists = [
+            {
+              $match: mongoQuery,
+            },
+            {
+              $group: {
+                _id: '$event',
+                count: { $sum: 1 },
+              },
+            },
+          ];
+          const check = await this.eventsService.getCustomersbyEventsMongo(
+            checkEventExists
+          );
+          this.debug(
+            'the check is',
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+          this.debug(
+            JSON.stringify(check, null, 2),
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          if (check.length < 1) {
+            this.debug(
+              'no events of this name',
+              this.customersFromEventStatement.name,
+              session,
+              account.id
+            ); //the event does not exist, so we should return all customers
+            const allUsers = [
+              {
+                $match: {
+                  workspaceId: workspace.id,
+                },
+              },
+              /*
+            {
+              $group: {
+                _id: null,
+                customerIds: { $push: '$_id' },
+              },
+            },
+            */
+              {
+                $project: {
+                  _id: 1,
+                  //_id: 0,
+                  //allCustomerIds: '$customerIds'
+                },
+              },
+              { $out: intermediateCollection },
+            ];
+
+            const result = await this.CustomerModel.aggregate(allUsers).exec();
+            //console.log("outputted to", intermediateCollection);
+
+            return intermediateCollection;
+          }
+
+          this.debug(
+            'event exists',
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          /*
+           *  Find customers who perform event (non mobile) (pipeline1), then merge with users who perform event (mobile) (pipeline2)
+           *  filter these customers out, return the remaining customers
+           *
+           */
+
+          const primaryKey = await this.getPrimaryKey(account, session); // Ensure this is done outside the pipeline
+
+          const pipeline1 = [
+            { $match: mongoQuery },
+            {
+              $lookup: {
+                from: 'customers',
+                localField: 'correlationValue',
+                foreignField: primaryKey,
+                as: 'matchedCustomers',
+              },
+            },
+            { $unwind: '$matchedCustomers' },
+            {
+              $project: {
+                _id: '$matchedCustomers._id', // Projects the _id of the matched customers
+              },
+            },
+            { $out: intermediateCollection },
+          ];
+
+          const result = await this.eventsService.getCustomersbyEventsMongo(
+            pipeline1
+          );
+
+          const mobileMongoQuery = cloneDeep(mongoQuery);
+          mobileMongoQuery.source = 'mobile';
+
+          const pipeline2 = [
+            { $match: mobileMongoQuery },
+            {
+              $addFields: {
+                //convertedCorrelationValue: { $toObjectId: '$correlationValue' },
+                convertedCorrelationValue: '$correlationValue',
+              },
+            },
+            {
+              $lookup: {
+                from: 'customers',
+                localField: 'convertedCorrelationValue',
+                foreignField: '_id',
+                as: 'matchedOnCorrelationValue',
+              },
+            },
+            { $unwind: '$matchedOnCorrelationValue' },
+            {
+              $project: {
+                _id: '$matchedOnCorrelationValue._id', // Projects the _id of the matched customers
+              },
+            },
+            {
+              $merge: {
+                into: intermediateCollection,
+                on: '_id',
+                whenMatched: 'keepExisting',
+                whenNotMatched: 'insert',
+              },
+            },
+          ];
+
+          this.debug(
+            'about to run pipeline 2/n\n',
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          this.debug(
+            JSON.stringify(pipeline2, null, 2),
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          const result2 = await this.eventsService.getCustomersbyEventsMongo(
+            pipeline2
+          );
+
+          const pipeline_other_ids = [
+            { $match: mobileMongoQuery },
+            {
+              $addFields: {
+                //convertedCorrelationValue: { $toObjectId: '$correlationValue' },
+                convertedCorrelationValue: '$correlationValue',
+              },
+            },
+            {
+              $lookup: {
+                from: 'customers',
+                localField: 'convertedCorrelationValue',
+                foreignField: 'other_ids',
+                as: 'matchedOnCorrelationValue',
+              },
+            },
+            { $unwind: '$matchedOnCorrelationValue' },
+            {
+              $project: {
+                _id: '$matchedOnCorrelationValue._id', // Projects the _id of the matched customers
+              },
+            },
+            {
+              $merge: {
+                into: intermediateCollection,
+                on: '_id',
+                whenMatched: 'keepExisting',
+                whenNotMatched: 'insert',
+              },
+            },
+          ];
+
+          const pipeline3 = [
+            {
+              $lookup: {
+                from: intermediateCollection,
+                localField: '_id',
+                foreignField: '_id',
+                as: 'matchedInIntermediate',
+              },
+            },
+            {
+              $match: {
+                matchedInIntermediate: { $size: 0 },
+              },
+            },
+            {
+              $project: {
+                _id: 1,
+              },
+            },
+            { $out: intermediateCollection },
+          ];
+
+          this.debug(
+            'about to run pipeline 3/n\n',
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          this.debug(
+            JSON.stringify(pipeline3, null, 2),
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          const result3 = await this.CustomerModel.aggregate(pipeline3).exec();
+          //const result3 = await this.eventsService.getCustomersbyEventsMongo(pipeline3);
+
+          /*
+        const aggregationPipeline: any[] = [
+          { $match: mongoQuery },
+          {
+            $lookup: {
+              from: 'customers',
+              localField: 'correlationValue',
+              foreignField: primaryKey,
+              as: 'matchedCustomers',
+            },
+          },
+          {
+            $group: {
+              _id: '$event',
+              correlationValues: { $addToSet: '$correlationValue' },
+              matchedCustomers: { $addToSet: '$matchedCustomers._id' },
+            },
+          },
+          {
+            $lookup: {
+              from: 'customers',
+              let: {
+                matchedCustomerIds: '$matchedCustomers',
+                correlationValues: '$correlationValues',
+              },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        {
+                          $not: {
+                            $in: [
+                              '$' +  primaryKey,//(await this.getPrimaryKey(account, session)),
+                              { $ifNull: ['$$correlationValues', []] },
+                            ],
+                          },
+                        },
+                        {
+                          $not: {
+                            $in: [
+                              '$_id',
+                              { $ifNull: ['$$matchedCustomerIds', []] },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              ],
+              as: 'unmatchedCustomers',
+            },
+          },
+          { $unwind: "$unmatchedCustomers" },
           {
             $project: {
-              _id: 1,
-              //_id: 0,
-              //allCustomerIds: '$customerIds'
+              _id: "$unmatchedCustomers._id",
             },
           },
           { $out: intermediateCollection },
         ];
+        */
 
-        const result = await this.CustomerModel.aggregate(allUsers).exec();
-        //console.log("outputted to", intermediateCollection);
-
+          return intermediateCollection;
+        } else {
+          return intermediateCollection;
+          //return new Set<string>();
+        }
         return intermediateCollection;
+        //return false;
       }
-
-      this.debug(
-        'event exists',
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      /*
-       *  Find customers who perform event (non mobile) (pipeline1), then merge with users who perform event (mobile) (pipeline2)
-       *  filter these customers out, return the remaining customers
-       *
-       */
-
-      const primaryKey = await this.getPrimaryKey(account, session); // Ensure this is done outside the pipeline
-
-      const pipeline1 = [
-        { $match: mongoQuery },
-        {
-          $lookup: {
-            from: 'customers',
-            localField: 'correlationValue',
-            foreignField: primaryKey,
-            as: 'matchedCustomers',
-          },
-        },
-        { $unwind: '$matchedCustomers' },
-        {
-          $project: {
-            _id: '$matchedCustomers._id', // Projects the _id of the matched customers
-          },
-        },
-        { $out: intermediateCollection },
-      ];
-
-      const result = await this.eventsService.getCustomersbyEventsMongo(
-        pipeline1
-      );
-
-      const mobileMongoQuery = cloneDeep(mongoQuery);
-      mobileMongoQuery.source = 'mobile';
-
-      const pipeline2 = [
-        { $match: mobileMongoQuery },
-        {
-          $addFields: {
-            //convertedCorrelationValue: { $toObjectId: '$correlationValue' },
-            convertedCorrelationValue: '$correlationValue',
-          },
-        },
-        {
-          $lookup: {
-            from: 'customers',
-            localField: 'convertedCorrelationValue',
-            foreignField: '_id',
-            as: 'matchedOnCorrelationValue',
-          },
-        },
-        { $unwind: '$matchedOnCorrelationValue' },
-        {
-          $project: {
-            _id: '$matchedOnCorrelationValue._id', // Projects the _id of the matched customers
-          },
-        },
-        {
-          $merge: {
-            into: intermediateCollection,
-            on: '_id',
-            whenMatched: 'keepExisting',
-            whenNotMatched: 'insert',
-          },
-        },
-      ];
-
-      this.debug(
-        'about to run pipeline 2/n\n',
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      this.debug(
-        JSON.stringify(pipeline2, null, 2),
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      const result2 = await this.eventsService.getCustomersbyEventsMongo(
-        pipeline2
-      );
-
-      const pipeline_other_ids = [
-        { $match: mobileMongoQuery },
-        {
-          $addFields: {
-            //convertedCorrelationValue: { $toObjectId: '$correlationValue' },
-            convertedCorrelationValue: '$correlationValue',
-          },
-        },
-        {
-          $lookup: {
-            from: 'customers',
-            localField: 'convertedCorrelationValue',
-            foreignField: 'other_ids',
-            as: 'matchedOnCorrelationValue',
-          },
-        },
-        { $unwind: '$matchedOnCorrelationValue' },
-        {
-          $project: {
-            _id: '$matchedOnCorrelationValue._id', // Projects the _id of the matched customers
-          },
-        },
-        {
-          $merge: {
-            into: intermediateCollection,
-            on: '_id',
-            whenMatched: 'keepExisting',
-            whenNotMatched: 'insert',
-          },
-        },
-      ];
-
-      const pipeline3 = [
-        {
-          $lookup: {
-            from: intermediateCollection,
-            localField: '_id',
-            foreignField: '_id',
-            as: 'matchedInIntermediate',
-          },
-        },
-        {
-          $match: {
-            matchedInIntermediate: { $size: 0 },
-          },
-        },
-        {
-          $project: {
-            _id: 1,
-          },
-        },
-        { $out: intermediateCollection },
-      ];
-
-      this.debug(
-        'about to run pipeline 3/n\n',
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      this.debug(
-        JSON.stringify(pipeline3, null, 2),
-        this.customersFromEventStatement.name,
-        session,
-        account.id
-      );
-
-      const result3 = await this.CustomerModel.aggregate(pipeline3).exec();
-      //const result3 = await this.eventsService.getCustomersbyEventsMongo(pipeline3);
-
-      /*
-      const aggregationPipeline: any[] = [
-        { $match: mongoQuery },
-        {
-          $lookup: {
-            from: 'customers',
-            localField: 'correlationValue',
-            foreignField: primaryKey,
-            as: 'matchedCustomers',
-          },
-        },
-        {
-          $group: {
-            _id: '$event',
-            correlationValues: { $addToSet: '$correlationValue' },
-            matchedCustomers: { $addToSet: '$matchedCustomers._id' },
-          },
-        },
-        {
-          $lookup: {
-            from: 'customers',
-            let: {
-              matchedCustomerIds: '$matchedCustomers',
-              correlationValues: '$correlationValues',
-            },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      {
-                        $not: {
-                          $in: [
-                            '$' +  primaryKey,//(await this.getPrimaryKey(account, session)),
-                            { $ifNull: ['$$correlationValues', []] },
-                          ],
-                        },
-                      },
-                      {
-                        $not: {
-                          $in: [
-                            '$_id',
-                            { $ifNull: ['$$matchedCustomerIds', []] },
-                          ],
-                        },
-                      },
-                    ],
-                  },
-                },
-              },
-            ],
-            as: 'unmatchedCustomers',
-          },
-        },
-        { $unwind: "$unmatchedCustomers" },
-        {
-          $project: {
-            _id: "$unmatchedCustomers._id",
-          },
-        },
-        { $out: intermediateCollection },
-      ];
-      */
-
-      return intermediateCollection;
-    } else {
-      return intermediateCollection;
-      //return new Set<string>();
-    }
-    return intermediateCollection;
-    //return false;
+    );
   }
 
   /*
@@ -4814,7 +6017,7 @@ export class CustomersService {
       } else if (time && time.comparisonType === 'after' && time.timeAfter) {
         const timeAfter = new Date(time.timeAfter).toISOString();
         const formattedTimeAfter = timeAfter.split('.')[0];
-        sqlQuery += `AND createdAt >= '${timeAfter}' `;
+        sqlQuery += `AND createdAt >= '${formattedTimeAfter}' `;
       }
       this.debug(
         `the final SQL query is:\n ${sqlQuery}`,
@@ -5942,6 +7145,15 @@ export class CustomersService {
 
         newPK.isPrimary = true;
         await newPK.save({ session: clientSession });
+        const collection = this.connection.db.collection('customers');
+        await createIndexIfNotExists(
+          collection,
+          { [newPK.key]: 1, workspaceId: 1 },
+          {
+            unique: true,
+            partialFilterExpression: { [newPK.key]: { $exists: true } },
+          }
+        );
       }
     } catch (error) {
       this.error(error, this.updatePrimaryKey.name, session);
@@ -5965,6 +7177,7 @@ export class CustomersService {
     if (!body.token)
       throw new HttpException('No FCM token given', HttpStatus.BAD_REQUEST);
 
+    const organization = auth.account.teams[0].organization;
     const workspace = auth.workspace;
 
     let customer = await this.CustomerModel.findOne({
@@ -5973,6 +7186,8 @@ export class CustomersService {
     });
 
     if (!customer) {
+      await this.checkCustomerLimit(organization);
+
       this.error('Customer not found', this.sendFCMToken.name, session);
 
       customer = await this.CustomerModel.create({
@@ -6008,6 +7223,7 @@ export class CustomersService {
       return;
     }
 
+    const organization = auth.account.teams[0].organization;
     const workspace = auth.workspace;
 
     let customer = await this.CustomerModel.findOne({
@@ -6016,6 +7232,8 @@ export class CustomersService {
     });
 
     if (!customer) {
+      await this.checkCustomerLimit(organization);
+
       this.error(
         'Invalid customer id. Creating new anonymous customer...',
         this.identifyCustomer.name,

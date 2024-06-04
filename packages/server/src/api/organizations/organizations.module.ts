@@ -27,7 +27,7 @@ import { BullModule } from '@nestjs/bullmq';
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
     BullModule.registerQueue({
-      name: 'message',
+      name: '{message}',
     }),
     TypeOrmModule.forFeature([
       Account,
@@ -37,7 +37,7 @@ import { BullModule } from '@nestjs/bullmq';
       OrganizationInvites,
     ]),
     forwardRef(() => AuthModule),
-    WebhooksModule,
+    forwardRef(() => WebhooksModule),
   ],
   controllers: [OrganizationsController],
   providers: [S3Service, OrganizationService],

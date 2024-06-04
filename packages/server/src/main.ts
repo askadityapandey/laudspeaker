@@ -1,5 +1,4 @@
-// DO NOT IMPORT ANYTHING BEFORE TRACER
-import './tracer';
+import p from '../package.json';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import {
@@ -20,11 +19,11 @@ import * as os from 'os';
 
 const morgan = require('morgan');
 
-const numCPUs = os.cpus().length;
+const numCPUs = process.env.NODE_ENV === 'development' ? 1 : os.cpus().length;
 
 if (cluster.isPrimary) {
   console.log(`Primary ${process.pid} is running`);
-
+  console.log(`[${process.env.LAUDSPEAKER_PROCESS_TYPE}] Starting.`);
   // Fork workers.
   for (let i = 0; i < numCPUs; i++) {
     cluster.fork();
@@ -42,7 +41,10 @@ if (cluster.isPrimary) {
 
   Sentry.init({
     dsn: process.env.SENTRY_DSN_URL_BACKEND,
-    environment: process.env.SENTRY_ENVIRONMENT || process.env.ENVIRONMENT,
+    environment:
+      process.env.SENTRY_ENVIRONMENT ||
+      process.env.NODE_ENV ||
+      process.env.ENVIRONMENT,
     release: process.env.SENTRY_RELEASE,
     integrations: [
       new Sentry.Integrations.Express({
@@ -54,8 +56,9 @@ if (cluster.isPrimary) {
       new ProfilingIntegration(),
       ...Sentry.autoDiscoverNodePerformanceMonitoringIntegrations(),
     ],
+    debug: false,
     // Performance Monitoring
-    tracesSampleRate: 1.0, // Capture 100% of the transactions, reduce in production!
+    tracesSampleRate: process.env.NODE_ENV == 'production' ? 0.25 : 1.0,
     // Set sampling rate for profiling - this is relative to tracesSampleRate
     profilesSampleRate: 1.0, // Capture 100% of the transactions, reduce in production!
     maxBreadcrumbs: Number.MAX_SAFE_INTEGER,
@@ -68,136 +71,86 @@ if (cluster.isPrimary) {
     );
   }
 
-  global.timeoutIds = new Map<
-    NodeJS.Timeout,
-    { callback: Function; delay: number; args: any[] }
-  >();
+  async function initializeApp() {
+    let app;
 
-  function customSetTimeout(
-    callback: (...args: any[]) => void,
-    delay: number,
-    ...args: any[]
-  ): NodeJS.Timeout {
-    const id: any = originalSetTimeout(
-      () => {
-        callback(...args);
-        global.timeoutIds.delete(id);
-      },
-      delay,
-      ...args
-    );
+    if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'WEB') {
+      const httpsOptions = {
+        key:
+          parseInt(process.env.PORT) == 443
+            ? readFileSync(process.env.KEY_PATH, 'utf8')
+            : null,
+        cert:
+          parseInt(process.env.PORT) == 443
+            ? readFileSync(process.env.CERT_PATH, 'utf8')
+            : null,
+      };
 
-    global.timeoutIds.set(id, { callback, delay, args });
-    return id;
+      app = await NestFactory.create(
+        AppModule,
+        new ExpressAdapter(expressApp),
+        {
+          rawBody: true,
+          httpsOptions:
+            parseInt(process.env.PORT) == 443 ? httpsOptions : undefined,
+        }
+      );
+
+      const rawBodyBuffer = (req, res, buf, encoding) => {
+        if (buf && buf.length) {
+          req.rawBody = buf.toString(encoding || 'utf8');
+        }
+      };
+      app.use(urlencoded({ verify: rawBodyBuffer, extended: true }));
+      if (process.env.SERVE_CLIENT_FROM_NEST) app.setGlobalPrefix('api');
+      app.set('trust proxy', 1);
+      app.enableCors();
+
+      const morganMiddleware = morgan(
+        ':method :url :status :res[content-length] :remote-addr :user-agent - :response-time ms :total-time ms',
+        {
+          stream: {
+            // Configure Morgan to use our custom logger with the http severity
+            write: (message) => logger.log(message.trim(), AppModule.name),
+          },
+        }
+      );
+      app.use(morganMiddleware);
+
+      app.useGlobalPipes(
+        new ValidationPipe({
+          whitelist: true,
+          transform: true,
+          exceptionFactory: (errors) =>
+            console.log(JSON.stringify(errors, null, 2)),
+        })
+      );
+    } else {
+      app = await NestFactory.createApplicationContext(AppModule);
+    }
+
+    const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
+
+    app.useLogger(logger);
+
+    return app;
   }
-
-  // Assuming you want to add __promisify__
-  (customSetTimeout as any).__promisify__ = (delay: number, ...args: any[]) => {
-    return new Promise((resolve) =>
-      originalSetTimeout(resolve, delay, ...args)
-    );
-  };
-
-  // Replace the global setTimeout
-  global.setTimeout = customSetTimeout as any;
-
-  global.intervalIds = new Map<
-    NodeJS.Timeout,
-    { callback: Function; delay: number; args: any[] }
-  >();
-
-  function customSetInterval(
-    callback: (...args: any[]) => void,
-    delay: number,
-    ...args: any[]
-  ): NodeJS.Timeout {
-    const id: any = originalSetInterval(
-      () => {
-        callback(...args);
-        global.intervalIds.delete(id);
-      },
-      delay,
-      ...args
-    );
-
-    global.intervalIds.set(id, { callback, delay, args });
-    return id;
-  }
-
-  // Assuming you want to add __promisify__
-  (customSetInterval as any).__promisify__ = (
-    delay: number,
-    ...args: any[]
-  ) => {
-    return new Promise((resolve) =>
-      originalSetInterval(resolve, delay, ...args)
-    );
-  };
-
-  // Replace the global setTimeout
-  global.setInterval = customSetInterval as any;
 
   async function bootstrap() {
-    const httpsOptions = {
-      key:
-        parseInt(process.env.PORT) == 443
-          ? readFileSync(process.env.KEY_PATH, 'utf8')
-          : null,
-      cert:
-        parseInt(process.env.PORT) == 443
-          ? readFileSync(process.env.CERT_PATH, 'utf8')
-          : null,
-    };
-
     expressApp.use(Sentry.Handlers.requestHandler());
     expressApp.use(Sentry.Handlers.tracingHandler());
-
-    const app: NestExpressApplication = await NestFactory.create(
-      AppModule,
-      new ExpressAdapter(expressApp),
-      {
-        rawBody: true,
-        httpsOptions:
-          parseInt(process.env.PORT) == 443 ? httpsOptions : undefined,
-      }
-    );
-    const port: number = parseInt(process.env.PORT);
-
     expressApp.use(Sentry.Handlers.errorHandler());
 
-    const rawBodyBuffer = (req, res, buf, encoding) => {
-      if (buf && buf.length) {
-        req.rawBody = buf.toString(encoding || 'utf8');
-      }
-    };
-    app.use(urlencoded({ verify: rawBodyBuffer, extended: true }));
-    if (process.env.SERVE_CLIENT_FROM_NEST) app.setGlobalPrefix('api');
-    app.set('trust proxy', 1);
-    app.enableCors();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        exceptionFactory: (errors) =>
-          console.log(JSON.stringify(errors, null, 2)),
-      })
-    );
-    const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
-    const morganMiddleware = morgan(
-      ':method :url :status :res[content-length] :remote-addr :user-agent - :response-time ms :total-time ms',
-      {
-        stream: {
-          // Configure Morgan to use our custom logger with the http severity
-          write: (message) => logger.log(message.trim(), AppModule.name),
-        },
-      }
-    );
-    app.useLogger(logger);
-    app.use(morganMiddleware);
+    const app: NestExpressApplication = await initializeApp();
+    const port: number = parseInt(process.env.PORT);
 
-    await app.listen(port, () => {
-      console.log('[WEB]', `http://localhost:${port}`);
-    });
+    if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'WEB') {
+      await app.listen(port, () => {
+        console.log('[WEB]', `http://localhost:${port}`);
+      });
+    }
+
+    console.log(`[${process.env.LAUDSPEAKER_PROCESS_TYPE}] Started.`);
   }
 
   bootstrap();

@@ -214,7 +214,7 @@ export class EventsController {
     @Req() { user }: Request,
     @Body() { token }: { token: string }
   ) {
-    await this.eventsService.sendTestPush(<Account>user, token);
+    return this.eventsService.sendTestPush(<Account>user, token);
   }
 
   @Post('/sendTestPushByCustomer')
@@ -224,7 +224,7 @@ export class EventsController {
     @Req() { user }: Request,
     @Body() body: CustomerPushTest
   ) {
-    await this.eventsService.sendTestPushByCustomer(<Account>user, body);
+    return this.eventsService.sendTestPushByCustomer(<Account>user, body);
   }
 
   @Get('/attributes/:resourceId?')
@@ -283,16 +283,18 @@ export class EventsController {
   async getCustomEvents(
     @Req() { user }: Request,
     @Query('take') take?: string,
-    @Query('skip') skip?: string,
-    @Query('search') search?: string
+    @Query('search') search?: string,
+    @Query('anchor') anchor?: string,
+    @Query('cursorEventId') cursorEventId?: string
   ) {
     const session = randomUUID();
     return this.eventsService.getCustomEvents(
       <Account>user,
       session,
       take && +take,
-      skip && +skip,
-      search
+      search,
+      anchor,
+      cursorEventId
     );
   }
 
@@ -323,11 +325,10 @@ export class EventsController {
     @Body() body: any
   ): Promise<void | HttpException> {
     const session = randomUUID();
-    this.eventsService.batch(
+    return this.eventsService.batch(
       <{ account: Account; workspace: Workspaces }>user,
       body,
       session
     );
-    return;
   }
 }

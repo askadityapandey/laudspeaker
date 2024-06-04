@@ -17,22 +17,33 @@ import {
 import { CustomersModule } from '../customers/customers.module';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { Step } from '../steps/entities/step.entity';
-import { KafkaModule } from '../kafka/kafka.module';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
+import { Organization } from '../organizations/entities/organization.entity';
+import { OrganizationPlan } from '../organizations/entities/organization-plan.entity';
+
+function getProvidersList() {
+  let providerList: Array<any> = [SlackService, WebhooksService];
+
+  if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
+    providerList = [...providerList, SlackProcessor];
+  }
+
+  return providerList;
+}
 
 @Module({
   imports: [
     BullModule.registerQueue({
-      name: 'slack',
+      name: '{slack}',
     }),
     BullModule.registerQueue({
-      name: 'message',
+      name: '{message}',
     }),
     BullModule.registerQueue({
-      name: 'customers',
+      name: '{customers}',
     }),
     BullModule.registerQueue({
-      name: 'events_pre',
+      name: '{events_pre}',
     }),
     TypeOrmModule.forFeature([
       Account,
@@ -41,16 +52,17 @@ import { Workspaces } from '../workspaces/entities/workspaces.entity';
       State,
       Step,
       Workspaces,
+      Organization,
+      OrganizationPlan,
     ]),
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
     forwardRef(() => CustomersModule),
-    KafkaModule,
   ],
   controllers: [SlackController],
-  providers: [SlackProcessor, SlackService, WebhooksService],
+  providers: getProvidersList(),
   exports: [SlackService],
 })
 export class SlackModule {}

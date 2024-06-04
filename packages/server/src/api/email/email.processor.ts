@@ -1,6 +1,6 @@
 /* eslint-disable no-case-declarations */
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
-import { Job } from 'bullmq';
+import { Job, MetricsTime } from 'bullmq';
 import { Inject, LoggerService } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
@@ -28,7 +28,23 @@ export enum MessageType {
 }
 
 @Injectable()
-@Processor('message', { removeOnComplete: { age: 0, count: 0 } })
+@Processor('{message}', {
+  stalledInterval: process.env.MESSAGE_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.MESSAGE_PROCESSOR_STALLED_INTERVAL
+    : 30000,
+  removeOnComplete: {
+    age: 0,
+    count: process.env.MESSAGE_PROCESSOR_REMOVE_ON_COMPLETE
+      ? +process.env.MESSAGE_PROCESSOR_REMOVE_ON_COMPLETE
+      : 0,
+  },
+  metrics: {
+    maxDataPoints: MetricsTime.ONE_WEEK,
+  },
+  concurrency: process.env.MESSAGE_PROCESSOR_CONCURRENCY
+    ? +process.env.MESSAGE_PROCESSOR_CONCURRENCY
+    : 1,
+})
 export class MessageProcessor extends WorkerHost {
   private MAXIMUM_SMS_LENGTH = 1600;
   private MAXIMUM_PUSH_LENGTH = 256;
@@ -189,7 +205,7 @@ export class MessageProcessor extends WorkerHost {
         [
           {
             stepId: job.data.stepId,
-            createdAt: new Date().toISOString(),
+            createdAt: new Date(),
             customerId: job.data.customerId,
             event: 'error',
             eventProvider: job.data.eventProvider,
@@ -235,7 +251,7 @@ export class MessageProcessor extends WorkerHost {
             [
               {
                 stepId: job.data.stepId,
-                createdAt: new Date().toISOString(),
+                createdAt: new Date(),
                 customerId: job.data.customerId,
                 event: 'sent',
                 eventProvider: ClickHouseEventProvider.SENDGRID,
@@ -292,7 +308,7 @@ export class MessageProcessor extends WorkerHost {
             [
               {
                 stepId: job.data.stepId,
-                createdAt: new Date().toISOString(),
+                createdAt: new Date(),
                 customerId: job.data.customerId,
                 event: 'sent',
                 eventProvider: ClickHouseEventProvider.MAILGUN,
@@ -369,7 +385,7 @@ export class MessageProcessor extends WorkerHost {
         [
           {
             stepId: job.data.stepId,
-            createdAt: new Date().toISOString(),
+            createdAt: new Date(),
             customerId: job.data.customerId,
             event: 'error',
             eventProvider: ClickHouseEventProvider.TWILIO,
@@ -395,7 +411,7 @@ export class MessageProcessor extends WorkerHost {
         [
           {
             stepId: job.data.stepId,
-            createdAt: new Date().toISOString(),
+            createdAt: new Date(),
             customerId: job.data.customerId,
             event: 'sent',
             eventProvider: ClickHouseEventProvider.TWILIO,
@@ -472,7 +488,7 @@ export class MessageProcessor extends WorkerHost {
           {
             workspaceId: workspace?.id,
             event: 'error',
-            createdAt: new Date().toISOString(),
+            createdAt: new Date(),
             eventProvider: ClickHouseEventProvider.PUSH,
             messageId: null,
             stepId: job.data.args.stepId,
@@ -530,7 +546,7 @@ export class MessageProcessor extends WorkerHost {
           {
             stepId: job.data.stepId,
             customerId: job.data.customerId,
-            createdAt: new Date().toISOString(),
+            createdAt: new Date(),
             event: 'sent',
             eventProvider: ClickHouseEventProvider.PUSH,
             messageId: messageId,

@@ -18,17 +18,13 @@ import { useDispatch } from "react-redux";
 import DrawerLayout from "components/DrawerLayout";
 import Verify from "pages/Verify";
 import SmsBuilder from "pages/SmsBuilder";
-import Database from "pages/Integrations/Database";
-import Integrations from "pages/Integrations/Integrations";
 import Modal from "components/Elements/Modal";
 import ApiService from "services/api.service";
 import Account from "types/Account";
 import { GenericButton } from "components/Elements";
 import ResetPassword from "pages/ResetPassword";
-import ModalBuilder from "pages/ModalBuilder";
 import WebhookBuilder from "pages/WebhookBuilder";
 import EventTracker from "pages/EventTracker";
-import ModalBackgroundProvider from "pages/ModalBuilder/ModalBackgroundProvider";
 import FlowBuilderv2 from "pages/FlowBuilderv2";
 import FlowViewerv2 from "pages/FlowViewerv2";
 import Onboardingv2 from "pages/Onboardingv2";
@@ -48,7 +44,6 @@ import JavascriptSnippetSettings from "pages/JavascriptSnippetSettings";
 import CustomModalSettings from "pages/CustomModalSettings";
 import TrackerTemplateTable from "pages/TrackerTemplateTable";
 import { LaudspeakerProvider } from "@laudspeaker/react";
-import AppConfig from "constants/app";
 import Personv2 from "pages/Personv2";
 import SegmentCreation from "pages/SegmentCreation/index";
 import PushBuilder from "pages/PushBuilder/PushBuilder";
@@ -64,6 +59,7 @@ import ManualSegmentCreator from "pages/ManualSegmentCreator";
 import SegmentViewer from "pages/SegmentViewer";
 import DataTransferTable from "pages/DataTransferTable";
 import DataTransfer from "pages/DataTransfer";
+import SubscriptionPayment from "pages/SubscriptionPayment/SubscriptionPayment";
 
 interface IProtected {
   children: ReactElement;
@@ -150,6 +146,7 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
   const [isLoaded, setIsLoaded] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [isCompanySetuped, setIsCompanySetuped] = useState(false);
+  const [isPlanActive, setIsPlanActive] = useState(false);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -158,6 +155,9 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
       const { verified, workspace } = data;
       setIsVerified(verified);
       setIsCompanySetuped(!!workspace?.id);
+      const { isActive } = data;
+      //console.log("here is the whole data", JSON.stringify(data, null, 2));
+      setIsPlanActive(isActive);
       setIsLoaded(true);
     } catch (e) {
       toast.error("Error while loading data");
@@ -166,14 +166,41 @@ const VerificationProtected: FC<VerificationProtectedProps> = ({
     }
   };
 
+  /*
+  const loadPlanStatus = async () => {
+    try {
+      const { data: planData } = await ApiService.get({
+        url: "/accounts/check-active-plan",
+      });
+      console.log("after setup")
+      console.log(JSON.stringify(planData, null, 2))
+      console.log("plandata is a ", planData.isActive)
+      setIsPlanActive(planData.isActive);
+      console.log("isPlanActive is a", isPlanActive)
+      console.log("is loaded");
+    } catch (e) {
+      toast.error("Error while loading data");
+    }
+  }
+  */
+
   useEffect(() => {
     loadData();
   }, []);
 
   useEffect(() => {
-    if (isLoaded && !isCompanySetuped) navigate("/company-setup");
-    if (isLoaded && !isVerified) navigate("/verification");
-  }, [isLoaded]);
+    if (isLoaded) {
+      if (!isVerified) {
+        navigate("/verification");
+      } else if (!isCompanySetuped) {
+        navigate("/company-setup");
+      } else if (!isPlanActive) {
+        //console.log("am i getting here");
+        //console.log(isPlanActive)
+        navigate("/payment-gate");
+      }
+    }
+  }, [isLoaded, isVerified, isCompanySetuped, isPlanActive]);
 
   return isVerified && isCompanySetuped ? <>{children}</> : <></>;
 };
@@ -269,7 +296,7 @@ const RouteComponent: React.FC = () => {
             expectedOnboarding: data.expectedOnboarding,
             verified: data.verified,
             pk: data.workspace.pk,
-            pushPlatforms: data.workspace.pushPlatforms,
+            // pushPlatforms: data.workspace.pushPlatforms,
           },
         });
       } catch (e) {
@@ -321,6 +348,24 @@ const RouteComponent: React.FC = () => {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/reset-password/:id" element={<ResetPassword />} />
         <Route path="/company-setup" element={<CompanySetup />} />
+        <Route
+          path="/verification"
+          element={
+            <Protected>
+              <Verificationv2 />
+            </Protected>
+          }
+        />
+        <Route
+          path="/payment-gate"
+          element={
+            <Protected>
+              <VerificationProtected>
+                <SubscriptionPayment />
+              </VerificationProtected>
+            </Protected>
+          }
+        />
         <Route
           path="/flow"
           element={
@@ -591,7 +636,7 @@ const RouteComponent: React.FC = () => {
                 <DrawerLayout
                   crumbs={[
                     { text: "Message Template", link: "/templates" },
-                    { text: "Create a Push" },
+                    { text: "Create a SMS" },
                   ]}
                 >
                   <SmsBuilder />
@@ -640,7 +685,7 @@ const RouteComponent: React.FC = () => {
                   expandable
                   crumbs={[
                     { text: "Message template", link: "/templates" },
-                    { text: "Create a push" },
+                    { text: "Create a webhook" },
                   ]}
                 >
                   <WebhookBuilder />
@@ -761,14 +806,6 @@ const RouteComponent: React.FC = () => {
           }
         /> */}
         <Route
-          path="/verification"
-          element={
-            <Protected>
-              <Verificationv2 />
-            </Protected>
-          }
-        />
-        <Route
           path="/settings"
           element={
             <Protected>
@@ -782,6 +819,18 @@ const RouteComponent: React.FC = () => {
         />
         <Route
           path="/settings/email"
+          element={
+            <Protected>
+              <VerificationProtected>
+                <DrawerLayout>
+                  <EmailSettings />
+                </DrawerLayout>
+              </VerificationProtected>
+            </Protected>
+          }
+        />
+        <Route
+          path="/settings/email/:service/:id"
           element={
             <Protected>
               <VerificationProtected>
@@ -819,7 +868,7 @@ const RouteComponent: React.FC = () => {
           }
         />
         <Route
-          path="/settings/push"
+          path="/settings/push/:id"
           element={
             <Protected>
               <VerificationProtected>

@@ -5,6 +5,7 @@ import {
   HttpException,
   forwardRef,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { Correlation, CustomersService } from '../customers/customers.service';
 import { CustomerDocument } from '../customers/schemas/customer.schema';
@@ -29,7 +30,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Job, Queue, UnrecoverableError } from 'bullmq';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import mongoose, { ClientSession, Model } from 'mongoose';
+import mongoose, { ClientSession, Model, SortOrder } from 'mongoose';
 import { EventDocument, Event } from './schemas/event.schema';
 import mockData from '../../fixtures/mockData';
 import { EventKeys, EventKeysDocument } from './schemas/event-keys.schema';
@@ -74,6 +75,8 @@ import {
 import { Liquid } from 'liquidjs';
 import { cleanTagsForSending } from '@/shared/utils/helpers';
 import { randomUUID } from 'crypto';
+import * as Sentry from '@sentry/node';
+import { FindType } from '../customers/enums/FindType.enum';
 
 @Injectable()
 export class EventsService {
@@ -89,13 +92,11 @@ export class EventsService {
     public CustomerKeysModel: Model<CustomerKeysDocument>,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('message') private readonly messageQueue: Queue,
-    @InjectQueue('events') private readonly eventQueue: Queue,
-    @InjectQueue('events_pre')
+    @InjectQueue('{message}') private readonly messageQueue: Queue,
+    @InjectQueue('{events}') private readonly eventQueue: Queue,
+    @InjectQueue('{events_pre}')
     private readonly eventPreprocessorQueue: Queue,
-    @InjectQueue(JobTypes.slack) private readonly slackQueue: Queue,
-    @InjectQueue(JobTypes.events)
-    private readonly eventsQueue: Queue,
+    @InjectQueue('{slack}') private readonly slackQueue: Queue,
     @InjectModel(Event.name)
     private EventModel: Model<EventDocument>,
     @InjectModel(PosthogEvent.name)
@@ -107,10 +108,42 @@ export class EventsService {
     @InjectModel(PosthogEventType.name)
     private PosthogEventTypeModel: Model<PosthogEventTypeDocument>,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @InjectQueue('webhooks') private readonly webhooksQueue: Queue,
+    @InjectQueue('{webhooks}') private readonly webhooksQueue: Queue,
     @Inject(forwardRef(() => JourneysService))
     private readonly journeysService: JourneysService
   ) {
+    this.tagEngine.registerTag('api_call', {
+      parse(token) {
+        this.items = token.args.split(' ');
+      },
+      async render(ctx) {
+        const url = this.liquid.parseAndRenderSync(
+          this.items[0],
+          ctx.getAll(),
+          ctx.opts
+        );
+
+        try {
+          const res = await fetch(url, { method: 'GET' });
+
+          if (res.status !== 200)
+            throw new Error('Error while processing api_call tag');
+
+          const data = res.headers
+            .get('Content-Type')
+            .includes('application/json')
+            ? await res.json()
+            : await res.text();
+
+          if (this.items[1] === ':save' && this.items[2]) {
+            ctx.push({ [this.items[2]]: data });
+          }
+        } catch (e) {
+          throw new Error('Error while processing api_call tag');
+        }
+      },
+    });
+
     const session = randomUUID();
     (async () => {
       try {
@@ -118,6 +151,9 @@ export class EventsService {
         await collection.createIndex({ event: 1, workspaceId: 1 });
         await collection.createIndex({ correlationKey: 1, workspaceId: 1 });
         await collection.createIndex({ correlationValue: 1, workspaceId: 1 });
+        await collection.createIndex({ createdAt: 1 });
+        await collection.createIndex({ workspaceId: 1, _id: -1 });
+        await collection.createIndex({ event: 'text' });
       } catch (e) {
         this.error(e, EventsService.name, session);
       }
@@ -233,7 +269,7 @@ export class EventsService {
     const jobQueues = {
       [JobTypes.email]: this.messageQueue,
       [JobTypes.slack]: this.slackQueue,
-      [JobTypes.events]: this.eventsQueue,
+      [JobTypes.events]: this.eventQueue,
       [JobTypes.webhooks]: this.webhooksQueue,
     };
 
@@ -492,90 +528,236 @@ export class EventsService {
     account: Account,
     session: string,
     take = 100,
-    skip = 0,
-    search = ''
+    search = '',
+    anchor = '',
+    id = '',
+    lastPageId = ''
   ) {
-    this.debug(
-      ` in customEvents`,
-      this.getCustomEvents.name,
-      session,
-      account.id
+    return Sentry.startSpan(
+      { name: 'EventsService.getCustomEvents' },
+      async () => {
+        this.debug(
+          ` in customEvents`,
+          this.getCustomEvents.name,
+          session,
+          account.id
+        );
+
+        const result = await this.getCustomEventsCursorSearch(
+          account,
+          session,
+          take,
+          search,
+          anchor,
+          id,
+          lastPageId
+        );
+
+        return result;
+      }
+    );
+  }
+
+  async getCustomEventsCursorSearch(
+    account: Account,
+    session: string,
+    pageSize: number,
+    search: string,
+    anchor: string,
+    cursorEventId: string,
+    lastPageId: string
+  ) {
+    let direction;
+    // anchor options: first_page, previous, next, last_page
+    // direction: 1 or -1. 1 means we're going to the next page, -1 means previous
+    // cursorEventId is the event id we need to search after or before, depending
+    // on the direction
+    ({ anchor, direction, cursorEventId } =
+      this.computeCustomEventsQueryVariables(anchor, direction, cursorEventId));
+    const { filter, sort, limit } = this.prepareCustomEventsQuery(
+      account,
+      pageSize,
+      search,
+      anchor,
+      direction,
+      cursorEventId
     );
 
-    //console.log("in customEvents")
-    const searchRegExp = new RegExp(`.*${search}.*`, 'i');
+    const customEvents = await this.executeCustomEventsQuery(
+      filter,
+      sort,
+      limit
+    );
+
+    var resultSetHasMoreThanPageSize = false;
+
+    // since we always fetch pageSize + 1 events, pop the last element in the resultset
+    if (customEvents.length > pageSize) {
+      customEvents.pop();
+      resultSetHasMoreThanPageSize = true;
+    }
+
+    // if we're going the reverse direction (direction == -1 / previous page)
+    // we need to reverse the customEvents array so we have the most recent
+    // event at the top
+    if (direction == -1) {
+      customEvents.reverse();
+    }
+
+    var showNext =
+      (direction == 1 && resultSetHasMoreThanPageSize) ||
+      (direction == -1 && anchor == 'previous');
+    var showPrev =
+      (direction == -1 && resultSetHasMoreThanPageSize) ||
+      (direction == 1 && anchor == 'next');
+    var showLast =
+      (anchor == 'first_page' && resultSetHasMoreThanPageSize) ||
+      anchor != 'last_page' ||
+      (direction == 1 && resultSetHasMoreThanPageSize);
+
+    var showNextCursorEventId = '';
+    var showPrevCursorEventId = '';
+
+    if (showNext)
+      showNextCursorEventId = customEvents[customEvents.length - 1]._id;
+
+    if (showPrev) showPrevCursorEventId = customEvents[0]._id;
+
+    const filteredCustomEvents =
+      this.filterCustomEventsAttributes(customEvents);
+
+    const result = {
+      data: filteredCustomEvents,
+      showPrev: showPrev,
+      showNext: showNext,
+      showPrevCursorEventId: showPrevCursorEventId,
+      showNextCursorEventId: showNextCursorEventId,
+      showLast: showLast,
+      anchor: anchor,
+    };
+
+    return result;
+  }
+
+  computeCustomEventsQueryVariables(
+    anchor: string,
+    direction: number,
+    cursorEventId: string
+  ) {
+    // initial load of events_tracker page
+    if (cursorEventId == '' && anchor == '') {
+      anchor = 'first_page';
+    }
+
+    if (anchor == 'first_page') {
+      direction = 1;
+      cursorEventId = '';
+    } else if (anchor == 'last_page') {
+      direction = -1;
+      cursorEventId = '';
+    } else if (anchor == 'next') {
+      direction = 1;
+    } else if (anchor == 'previous') {
+      direction = -1;
+    }
+
+    return { anchor, direction, cursorEventId };
+  }
+
+  prepareCustomEventsQuery(
+    account: Account,
+    pageSize: number,
+    search: string,
+    anchor: string,
+    direction: number,
+    cursorEventId: string
+  ) {
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-    const totalPages =
-      Math.ceil(
-        (await this.EventModel.count({
-          event: searchRegExp,
-          workspaceId: workspace.id,
-          //ownerId: (<Account>account).id,
-        }).exec()) / take
-      ) || 1;
-
-    //console.log("regex", searchRegExp );
-    //console.log("ownderId", (<Account>account).id );
-
-    /*
-    const customEvents = await this.EventModel.find({
-      event: searchRegExp,
-      ownerId: (<Account>account).id,
-    }, {
-      ownerId: 0, // Exclude the ownerId field
-      __v: 0 // Exclude the __v (version key) field
-    })
-      .sort({ createdAt: 'desc' })
-      .skip(skip)
-      .limit(take > 100 ? 100 : take)
-      .exec();
-    */
-    const customEvents = await this.EventModel.aggregate([
-      {
-        $match: {
-          event: searchRegExp,
-          workspaceId: workspace.id,
-          //ownerId: (<Account>account).id,
-        },
-      },
-      {
-        $addFields: {
-          createdAt: { $toDate: '$_id' }, // Convert _id to a date and assign to createdAt
-        },
-      },
-      {
-        $project: {
-          _id: 0, // Exclude the _id field
-          ownerId: 0, // Exclude the ownerId field
-          workspaceId: 0, // Exclude the ownerId field
-          __v: 0, // Exclude the __v field
-          // Note: No need to explicitly include other fields; they are included by default
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      { $skip: skip },
-      { $limit: take > 100 ? 100 : take },
-    ]).exec();
-
-    return {
-      /*
-      data: customEvents.map((customEvent) => ({
-        ...customEvent.toObject(),
-        //createdAt: customEvent._id.getTimestamp(),
-        createdAt: customEvent._id.getTimestamp(),
-        
-      })),
-      */
-      data: customEvents.map((customEvent) => {
-        const cleanedEvent = {
-          ...customEvent,
-          // Perform any additional transformations here if necessary
-        };
-        return cleanedEvent;
-      }),
-      totalPages,
+    const filter = {
+      workspaceId: workspace.id,
     };
+
+    if (search !== '') {
+      const searchRegExp = new RegExp(`.*${search}.*`, 'i');
+      filter['event'] = searchRegExp;
+
+      // disable the use of text index until autocomplete is implemented
+      // text search supports whole word search only
+      // const searchObj = {
+      //   $search: `"${search}"`,
+      //   $caseSensitive: false
+      // }
+
+      // filter["$text"] = searchObj;
+    }
+
+    // default sort is most recent events first (_id desc)
+    const sort: Record<string, SortOrder> = {
+      _id: -1,
+    };
+
+    // next page should find events with id < last event id on current page
+    if (direction == 1) {
+      if (cursorEventId != '')
+        filter['_id'] = { $lt: new mongoose.Types.ObjectId(cursorEventId) };
+    }
+    // previous page should find the first events with id > first event id on current page
+    else {
+      if (cursorEventId != '')
+        filter['_id'] = { $gt: new mongoose.Types.ObjectId(cursorEventId) };
+      sort['_id'] = 1;
+    }
+
+    // fetch one more to find out if there is a next page
+    // if direction == 1, then next page is ->
+    const limit = pageSize + 1;
+
+    const query = {
+      filter,
+      sort,
+      limit,
+    };
+
+    return query;
+  }
+
+  async executeCustomEventsQuery(
+    filter: Record<string, any>,
+    sort: Record<string, SortOrder>,
+    limit: number
+  ) {
+    const projection = {};
+
+    const result = await this.EventModel.find(filter, projection)
+      .sort(sort)
+      .limit(limit)
+      .lean()
+      .exec();
+
+    const parsedResult = this.parseCustomEventsQueryResult(result);
+
+    return parsedResult;
+  }
+
+  parseCustomEventsQueryResult(result) {
+    for (var i = 0; i < result.length; i++) {
+      result[i]._id = result[i]._id.toString();
+    }
+
+    return result;
+  }
+
+  filterCustomEventsAttributes(customEvents) {
+    const attributesToRemove = ['_id', 'workspaceId'];
+
+    for (const attribute of attributesToRemove) {
+      for (var i = 0; i < customEvents.length; i++) {
+        delete customEvents[i][attribute];
+      }
+    }
+
+    return customEvents;
   }
 
   //to do need to specify how this is
@@ -708,6 +890,7 @@ export class EventsService {
     if (!body.token)
       throw new HttpException('No FCM token given', HttpStatus.BAD_REQUEST);
 
+    const organization = auth.account.teams[0].organization;
     const workspace = auth.workspace;
 
     let customer = await this.customersService.CustomerModel.findOne({
@@ -717,6 +900,8 @@ export class EventsService {
 
     if (!customer) {
       this.error('Customer not found', this.sendFCMToken.name, session);
+
+      await this.customersService.checkCustomerLimit(organization);
 
       customer = await this.customersService.CustomerModel.create({
         isAnonymous: true,
@@ -751,6 +936,7 @@ export class EventsService {
       return;
     }
 
+    const organization = auth.account.teams[0].organization;
     const workspace = auth.workspace;
 
     let customer = await this.customersService.CustomerModel.findOne({
@@ -759,6 +945,8 @@ export class EventsService {
     });
 
     if (!customer) {
+      await this.customersService.checkCustomerLimit(organization);
+
       this.error(
         'Invalid customer id. Creating new anonymous customer...',
         this.identifyCustomer.name,
@@ -933,58 +1121,64 @@ export class EventsService {
 
           const messaging = admin.messaging(firebaseApp);
 
-          await messaging.send({
-            token:
-              platform === PushPlatforms.ANDROID
-                ? customer.androidDeviceToken
-                : customer.iosDeviceToken,
-            notification: {
-              title: await this.tagEngine.parseAndRender(
-                settings.title,
-                filteredTags || {},
-                {
-                  strictVariables: true,
-                }
-              ),
-              body: await this.tagEngine.parseAndRender(
-                settings.description,
-                filteredTags || {},
-                {
-                  strictVariables: true,
-                }
-              ),
-            },
-            android:
-              platform === PushPlatforms.ANDROID
-                ? {
-                    notification: {
-                      sound: 'default',
-                      imageUrl: settings?.image?.imageSrc,
-                    },
+          try {
+            await messaging.send({
+              token:
+                platform === PushPlatforms.ANDROID
+                  ? customer.androidDeviceToken
+                  : customer.iosDeviceToken,
+              notification: {
+                title: await this.tagEngine.parseAndRender(
+                  settings.title,
+                  filteredTags || {},
+                  {
+                    strictVariables: true,
                   }
-                : undefined,
-            apns:
-              platform === PushPlatforms.IOS
-                ? {
-                    payload: {
-                      aps: {
-                        badge: 1,
+                ),
+                body: await this.tagEngine.parseAndRender(
+                  settings.description,
+                  filteredTags || {},
+                  {
+                    strictVariables: true,
+                  }
+                ),
+              },
+              android:
+                platform === PushPlatforms.ANDROID
+                  ? {
+                      notification: {
                         sound: 'default',
-                        category: settings.clickBehavior?.type,
-                        contentAvailable: true,
-                        mutableContent: true,
+                        imageUrl: settings?.image?.imageSrc,
                       },
-                    },
-                    fcmOptions: {
-                      imageUrl: settings?.image?.imageSrc,
-                    },
-                  }
-                : undefined,
-            data: body.pushObject.fields.reduce((acc, field) => {
-              acc[field.key] = field.value;
-              return acc;
-            }, {}),
-          });
+                    }
+                  : undefined,
+              apns:
+                platform === PushPlatforms.IOS
+                  ? {
+                      payload: {
+                        aps: {
+                          badge: 1,
+                          sound: 'default',
+                          category: settings.clickBehavior?.type,
+                          contentAvailable: true,
+                          mutableContent: true,
+                        },
+                      },
+                      fcmOptions: {
+                        imageUrl: settings?.image?.imageSrc,
+                      },
+                    }
+                  : undefined,
+              data: body.pushObject.fields.reduce((acc, field) => {
+                acc[field.key] = field.value;
+                return acc;
+              }, {}),
+            });
+          } catch (e) {
+            if (e instanceof Error) {
+              throw new BadRequestException(e.message);
+            }
+          }
         })
     );
   }
@@ -994,66 +1188,73 @@ export class EventsService {
     MobileBatchDto: MobileBatchDto,
     session: string
   ) {
-    let err: any;
+    return Sentry.startSpan({ name: 'EventsService.batch' }, async () => {
+      let err: any;
 
-    try {
-      for (const thisEvent of MobileBatchDto.batch) {
-        if (thisEvent.source === 'message') {
-          const clickHouseRecord: ClickHouseMessage = {
-            workspaceId: thisEvent.payload.workspaceID,
-            stepId: thisEvent.payload.stepID,
-            customerId: thisEvent.payload.customerID,
-            templateId: String(thisEvent.payload.templateID),
-            messageId: thisEvent.payload.messageID,
-            event: thisEvent.event === '$delivered' ? 'delivered' : 'opened',
-            eventProvider: ClickHouseEventProvider.PUSH,
-            processed: false,
-            createdAt: new Date().toISOString(),
-          };
-          await this.webhooksService.insertMessageStatusToClickhouse(
-            [clickHouseRecord],
-            session
-          );
-        } else {
-          switch (thisEvent.event) {
-            case '$identify':
-              this.debug(
-                `Handling $identify event for correlationKey: ${thisEvent.correlationValue}`,
-                this.batch.name,
-                session,
-                auth.account.id
-              );
-              await this.handleIdentify(auth, thisEvent, session);
-              break;
-            case '$set':
-              this.debug(
-                `Handling $set event for correlationKey: ${thisEvent.correlationValue}`,
-                this.batch.name,
-                session,
-                auth.account.id
-              );
-              await this.handleSet(auth, thisEvent, session);
-              break;
-            default:
-              await this.customPayload(
-                { account: auth.account, workspace: auth.workspace },
-                thisEvent,
-                session
-              );
-              if (!thisEvent.correlationValue) {
-                throw new Error('correlation value is empty');
-              }
-              break;
+      try {
+        for (const thisEvent of MobileBatchDto.batch) {
+          if (
+            thisEvent.source === 'message' &&
+            thisEvent.event === '$delivered'
+          )
+            continue;
+          if (thisEvent.source === 'message' && thisEvent.event === '$opened') {
+            const clickHouseRecord: ClickHouseMessage = {
+              workspaceId: thisEvent.payload.workspaceID,
+              stepId: thisEvent.payload.stepID,
+              customerId: thisEvent.payload.customerID,
+              templateId: String(thisEvent.payload.templateID),
+              messageId: thisEvent.payload.messageID,
+              event: 'opened',
+              eventProvider: ClickHouseEventProvider.PUSH,
+              processed: false,
+              createdAt: new Date(),
+            };
+            await this.webhooksService.insertMessageStatusToClickhouse(
+              [clickHouseRecord],
+              session
+            );
+          } else {
+            switch (thisEvent.event) {
+              case '$identify':
+                this.debug(
+                  `Handling $identify event for correlationKey: ${thisEvent.correlationValue}`,
+                  this.batch.name,
+                  session,
+                  auth.account.id
+                );
+                await this.handleIdentify(auth, thisEvent, session);
+                break;
+              case '$set':
+                this.debug(
+                  `Handling $set event for correlationKey: ${thisEvent.correlationValue}`,
+                  this.batch.name,
+                  session,
+                  auth.account.id
+                );
+                await this.handleSet(auth, thisEvent, session);
+                break;
+              default:
+                await this.customPayload(
+                  { account: auth.account, workspace: auth.workspace },
+                  thisEvent,
+                  session
+                );
+                if (!thisEvent.correlationValue) {
+                  throw new Error('correlation value is empty');
+                }
+                break;
+            }
           }
         }
+        //}
+      } catch (e) {
+        this.error(e, this.batch.name, session, auth.account.email);
+        err = e;
+      } finally {
+        if (err) throw err;
       }
-      //}
-    } catch (e) {
-      this.error(e, this.batch.name, session);
-      err = e;
-    } finally {
-      if (err) throw err;
-    }
+    });
   }
 
   async handleSet(
@@ -1200,95 +1401,17 @@ export class EventsService {
     primaryKeyValue?: string,
     primaryKeyName?: string,
     event?: EventDto
-  ): Promise<{ customer: any; findType: number }> {
-    let customer;
-    let findType;
-
-    // Try to find by primary key if provided
-    if (primaryKeyValue) {
-      customer = await this.customersService.CustomerModel.findOne({
-        [primaryKeyName]: primaryKeyValue,
+  ): Promise<{ customer: any; findType: FindType }> {
+    let { customer, findType } =
+      await this.customersService.findOrCreateCustomerBySearchOptions(
         workspaceId,
-      });
-      if (customer) findType = 1;
-    }
-
-    // If not found by primary key, try finding by _id
-    if (!customer && event.correlationValue) {
-      customer = await this.customersService.CustomerModel.findOne({
-        _id: event.correlationValue,
-        workspaceId,
-      });
-
-      if (customer) findType = 2;
-    }
-
-    // If still not found, try finding by other_ids array containing the correlationValue
-    if (!customer && event.correlationValue) {
-      customer = await this.customersService.CustomerModel.findOne({
-        other_ids: { $in: [event.correlationValue] },
-        workspaceId,
-      });
-      if (customer) findType = 3;
-    }
-
-    // If customer still not found, create a new one
-    if (!customer) {
-      const upsertData = {
-        $setOnInsert: {
-          _id: event.correlationValue,
-          workspaceId,
-          createdAt: new Date(),
+        {
+          primaryKey: { name: primaryKeyName, value: primaryKeyValue },
         },
-      };
-
-      if (primaryKeyValue && primaryKeyName) {
-        upsertData.$setOnInsert[primaryKeyName] = primaryKeyValue;
-        upsertData.$setOnInsert['isAnonymous'] = false;
-      }
-
-      try {
-        customer = await this.customersService.CustomerModel.findOneAndUpdate(
-          { _id: event.correlationValue, workspaceId },
-          upsertData,
-          { upsert: true, new: true }
-        );
-        findType = 4; // Set findType to 4 to indicate an upsert operation
-      } catch (error: any) {
-        // Check if the error is a duplicate key error
-        if (error.code === 11000) {
-          customer = await this.customersService.CustomerModel.findOne({
-            _id: event.correlationValue,
-            workspaceId,
-          });
-          findType = 5; // Optionally, set a different findType to indicate handling of a duplicate key error
-        } else {
-          this.error(error, this.findOrCreateCustomer.name, session);
-        }
-      }
-    }
-
-    if (event.$fcm) {
-      const { iosDeviceToken, androidDeviceToken } = event.$fcm;
-      const deviceTokenField = iosDeviceToken
-        ? 'iosDeviceToken'
-        : 'androidDeviceToken';
-      const deviceTokenValue = iosDeviceToken || androidDeviceToken;
-      const deviceTokenSetAtField = iosDeviceToken
-        ? 'iosDeviceTokenSetAt'
-        : 'androidDeviceTokenSetAt';
-      if (customer[deviceTokenField] !== deviceTokenValue)
-        customer = await this.customersService.CustomerModel.findOneAndUpdate(
-          { _id: customer._id, workspaceId },
-          {
-            $set: {
-              [deviceTokenField]: deviceTokenValue,
-              [deviceTokenSetAtField]: new Date(), // Dynamically sets the appropriate deviceTokenSetAt field
-            },
-          },
-          { new: true }
-        );
-    }
+        session,
+        {},
+        event
+      );
 
     return { customer, findType };
   }
@@ -1358,7 +1481,7 @@ export class EventsService {
       event
     );
     //check the customer does not have another primary key already if it does this is not supported right now
-    if (findType == 2) {
+    if (findType == FindType.CORRELATION_VALUE) {
       if (
         customer.primaryKeyName &&
         customer.primaryKeyName !== primaryKeyValue

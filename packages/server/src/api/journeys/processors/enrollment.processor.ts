@@ -16,17 +16,28 @@ import { Account } from '../../accounts/entities/accounts.entity';
 import { Journey } from '../entities/journey.entity';
 import { Step } from '../../steps/entities/step.entity';
 import { StepsService } from '@/api/steps/steps.service';
+import { CustomersService } from '@/api/customers/customers.service';
+import { JourneysService } from '@/api/journeys/journeys.service';
 
 @Injectable()
-@Processor('enrollment', { removeOnComplete: { count: 100 } })
+@Processor('{enrollment}', {
+  stalledInterval: process.env.ENROLLMENT_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.ENROLLMENT_PROCESSOR_STALLED_INTERVAL
+    : 600000,
+  removeOnComplete: { count: 100 },
+})
 export class EnrollmentProcessor extends WorkerHost {
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('start') private readonly startQueue: Queue,
+    @InjectQueue('{start}') private readonly startQueue: Queue,
     @Inject(StepsService)
-    private readonly stepsService: StepsService
+    private readonly stepsService: StepsService,
+    @Inject(CustomersService)
+    private readonly customersService: CustomersService,
+    @Inject(JourneysService)
+    private journeyService: JourneysService
   ) {
     super();
   }
@@ -99,9 +110,7 @@ export class EnrollmentProcessor extends WorkerHost {
       {
         account: Account;
         journey: Journey;
-        count: number;
         session: string;
-        collectionName: string;
       },
       any,
       string
@@ -112,6 +121,26 @@ export class EnrollmentProcessor extends WorkerHost {
       collectionName: string;
       job: { name: string; data: any };
     };
+    let collectionName: string;
+    let count: number;
+
+    try {
+      ({ collectionName, count } = await this.customersService.getAudienceSize(
+        job.data.account,
+        job.data.journey.inclusionCriteria,
+        job.data.session,
+        null
+      ));
+    } catch (error) {
+      this.error(
+        error,
+        this.process.name,
+        job.data.session,
+        job.data.account.email
+      );
+
+      throw error;
+    }
     const queryRunner = await this.dataSource.createQueryRunner();
     const client = await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -121,19 +150,27 @@ export class EnrollmentProcessor extends WorkerHost {
         job.data.journey,
         job.data.journey.inclusionCriteria,
         job.data.journey?.journeySettings?.maxEntries?.enabled &&
-          job.data.count >
+          count >
             parseInt(job.data.journey?.journeySettings?.maxEntries?.maxEntries)
           ? parseInt(job.data.journey?.journeySettings?.maxEntries?.maxEntries)
-          : job.data.count,
+          : count,
         queryRunner,
         client,
         job.data.session,
-        job.data.collectionName
+        collectionName
       );
       await queryRunner.manager.save(Journey, {
         ...job.data.journey,
         isEnrolling: false,
       });
+
+      const workspace =
+        job.data.account?.teams?.[0]?.organization?.workspaces?.[0];
+
+      await this.journeyService.cleanupJourneyCache({
+        workspaceId: workspace.id,
+      });
+
       await queryRunner.commitTransaction();
       if (triggerStartTasks) {
         await this.startQueue.add(

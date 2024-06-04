@@ -1,13 +1,13 @@
-import { PushFirebasePlatforms } from '@/api/accounts/entities/accounts.entity';
-import { Integration } from '@/api/integrations/entities/integration.entity';
-import { Journey } from '@/api/journeys/entities/journey.entity';
-import { Organization } from '@/api/organizations/entities/organization.entity';
-import { Segment } from '@/api/segments/entities/segment.entity';
-import { Step } from '@/api/steps/entities/step.entity';
+import { PushFirebasePlatforms } from '../../accounts/entities/accounts.entity';
+import { Integration } from '../../integrations/entities/integration.entity';
+import { Journey } from '../../journeys/entities/journey.entity';
+import { Organization } from '../../organizations/entities/organization.entity';
+import { Segment } from '../../segments/entities/segment.entity';
+import { Step } from '../../steps/entities/step.entity';
 import {
   PushPlatforms,
   Template,
-} from '@/api/templates/entities/template.entity';
+} from '../../templates/entities/template.entity';
 import {
   BaseEntity,
   Column,
@@ -17,6 +17,11 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { WorkspaceMailgunConnection } from './workspace-mailgun-connection.entity';
+import { WorkspaceSendgridConnection } from './workspace-sendgrid-connection.entity';
+import { WorkspaceTwilioConnection } from './workspace-twilio-connection.entity';
+import { WorkspacePushConnection } from './workspace-push-connection.entity';
+import { WorkspaceResendConnection } from './workspace-resend-connection.entity';
 
 export enum PlanType {
   FREE = 'free',
@@ -164,4 +169,34 @@ export class Workspaces extends BaseEntity {
 
   @Column({ type: 'varchar', nullable: true })
   resendSendingEmail?: string;
+
+  @OneToMany(
+    () => WorkspaceMailgunConnection,
+    (connection) => connection.workspace
+  )
+  mailgunConnections: WorkspaceMailgunConnection[];
+
+  @OneToMany(
+    () => WorkspaceSendgridConnection,
+    (connection) => connection.workspace
+  )
+  sendgridConnections: WorkspaceSendgridConnection[];
+
+  @OneToMany(
+    () => WorkspaceResendConnection,
+    (connection) => connection.workspace
+  )
+  resendConnections: WorkspaceResendConnection[];
+
+  @OneToMany(
+    () => WorkspaceTwilioConnection,
+    (connection) => connection.workspace
+  )
+  twilioConnections: WorkspaceTwilioConnection[];
+
+  @OneToMany(
+    () => WorkspacePushConnection,
+    (connection) => connection.workspace
+  )
+  pushConnections: WorkspacePushConnection[];
 }

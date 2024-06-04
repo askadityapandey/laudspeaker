@@ -121,7 +121,6 @@ const PushSettings = () => {
     try {
       const { data } = await ApiService.get<Account>({ url: "/accounts" });
       const { pushPlatforms } = data.workspace;
-
       handleUpdateConfig({
         connectedPlatforms: {
           iOS: pushPlatforms?.iOS,

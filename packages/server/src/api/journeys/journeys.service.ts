@@ -5,9 +5,11 @@ import {
   HttpException,
   NotFoundException,
   forwardRef,
+  HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
+  Between,
   DataSource,
   FindOptionsWhere,
   In,
@@ -83,6 +85,10 @@ import { RedisService } from '@liaoliaots/nestjs-redis';
 import { JourneyChange } from './entities/journey-change.entity';
 import isObjectDeepEqual from '@/utils/isObjectDeepEqual';
 import { JourneyLocation } from './entities/journey-location.entity';
+import { format, eachDayOfInterval, eachWeekOfInterval } from 'date-fns';
+import { CacheService } from '@/common/services/cache.service';
+import { EntityComputedFieldsHelper } from '@/common/helper/entityComputedFields.helper';
+import { EntityWithComputedFields } from '@/common/entities/entityWithComputedFields.entity';
 
 export enum JourneyStatus {
   ACTIVE = 'Active',
@@ -245,9 +251,10 @@ export class JourneysService {
     @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
-    @InjectQueue('transition') private readonly transitionQueue: Queue,
+    @InjectQueue('{transition}') private readonly transitionQueue: Queue,
     @Inject(RedisService) private redisService: RedisService,
-    @InjectQueue('enrollment') private readonly enrollmentQueue: Queue
+    @InjectQueue('{enrollment}') private readonly enrollmentQueue: Queue,
+    @Inject(CacheService) private cacheService: CacheService
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -929,7 +936,10 @@ export class JourneysService {
     showDisabled?: boolean,
     search = '',
     filterStatusesString = ''
-  ): Promise<{ data: Journey[]; totalPages: number }> {
+  ): Promise<{
+    data: EntityWithComputedFields<Journey>[];
+    totalPages: number;
+  }> {
     try {
       const filterStatusesParts = filterStatusesString.split(',');
       const isActive = filterStatusesParts.includes(JourneyStatus.ACTIVE);
@@ -1002,30 +1012,262 @@ export class JourneysService {
           where: whereOrParts,
         })) / take || 1
       );
-      const orderOptions = {};
-      if (orderBy && orderType) {
-        orderOptions[orderBy] = orderType;
-      }
-      const journeys = await this.journeysRepository.find({
-        where: whereOrParts,
-        order: orderOptions,
-        take: take < 100 ? take : 100,
-        skip,
-        relations: ['latestChanger'],
-      });
 
-      const journeysWithEnrolledCustomersCount = journeys.map((journey) => ({
-        ...journey,
-        latestChanger: null,
-        latestChangerEmail: journey.latestChanger?.email,
-        enrolledCustomers: +journey.enrollment_count,
-      }));
+      let query = this.journeysRepository
+        .createQueryBuilder('journey')
+        .where(whereOrParts)
+        .take(take < 100 ? take : 100)
+        .skip(skip)
+        .leftJoin('journey.latestChanger', 'account')
+        .loadRelationCountAndMap(
+          'journey.totalEnrolled',
+          'journey.journeyLocations'
+        )
+        .addSelect('account.email', 'latestChangerEmail');
 
-      return { data: journeysWithEnrolledCustomersCount, totalPages };
+      if (orderBy)
+        query = query.addOrderBy(
+          `journey.${orderBy}`,
+          orderType == 'desc' ? 'DESC' : 'ASC'
+        );
+
+      const journeys = await query.getRawAndEntities();
+      const computedFieldsList = ['latestChangerEmail', 'totalEnrolled'];
+
+      const result = EntityComputedFieldsHelper.processCollection<Journey>(
+        journeys,
+        computedFieldsList
+      );
+
+      return { data: result, totalPages };
     } catch (err) {
       this.error(err, this.findAll.name, session, account.email);
       throw err;
     }
+  }
+
+  async getJourneyStatistics(
+    account: Account,
+    id: string,
+    session: string,
+    startTime?: Date,
+    endTime?: Date,
+    frequency?: 'daily' | 'weekly'
+  ) {
+    const journey = await this.findByID(account, id, session);
+    if (!journey) throw new NotFoundException('Journey not found');
+
+    if (!startTime || startTime > endTime) {
+      startTime = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      endTime = new Date();
+    } else {
+      if (!endTime) endTime = new Date();
+    }
+
+    if (!frequency) frequency = 'daily';
+
+    const dbFrequency = frequency == 'weekly' ? 'week' : 'day';
+
+    const pointDates =
+      frequency === 'daily'
+        ? eachDayOfInterval({ start: startTime, end: endTime })
+        : // Postgres' week starts on Monday
+          eachWeekOfInterval(
+            { start: startTime, end: endTime },
+            { weekStartsOn: 1 }
+          );
+
+    const totalPoints = pointDates.length;
+
+    const enrollementGroupedByDate =
+      await this.journeyLocationsService.journeyLocationsRepository
+        .createQueryBuilder('location')
+        .where({
+          journey: journey.id,
+          journeyEntryAt: Between(
+            startTime.toISOString(),
+            endTime.toISOString()
+          ),
+        })
+        .select([
+          `date_trunc('${dbFrequency}', "journeyEntryAt") as "date"`,
+          `count(*)::INTEGER as group_count`,
+        ])
+        .groupBy('date')
+        .orderBy('date', 'ASC')
+        .getRawMany();
+
+    const terminalSteps = await this.stepsService.findAllTerminalInJourney(
+      journey.id,
+      session,
+      ['step.id']
+    );
+    const terminalStepIds = terminalSteps.map((step) => step.id);
+
+    const finishedGroupedByDate =
+      await this.journeyLocationsService.journeyLocationsRepository
+        .createQueryBuilder('location')
+        .where({
+          journey: journey.id,
+          stepEntryAt: Between(startTime.toISOString(), endTime.toISOString()),
+          step: In(terminalStepIds),
+        })
+        .select([
+          `date_trunc('${dbFrequency}', "journeyEntryAt") as "date"`,
+          `count(*)::INTEGER as group_count`,
+        ])
+        .groupBy('date')
+        .orderBy('date', 'ASC')
+        .getRawMany();
+
+    const enrolledCount = enrollementGroupedByDate.reduce((acc, group) => {
+      return acc + group['group_count'];
+    }, 0);
+
+    const finishedCount = finishedGroupedByDate.reduce((acc, group) => {
+      return acc + group['group_count'];
+    }, 0);
+
+    const enrolledDataPoints: number[] = new Array(totalPoints).fill(
+      0,
+      0,
+      totalPoints
+    );
+    const finishedDataPoints: number[] = new Array(totalPoints).fill(
+      0,
+      0,
+      totalPoints
+    );
+
+    for (const group of enrollementGroupedByDate) {
+      for (var i = 0; i < pointDates.length; i++) {
+        if (group.date.getTime() == pointDates[i].getTime())
+          enrolledDataPoints[i] += group.group_count;
+      }
+    }
+
+    for (const group of finishedGroupedByDate) {
+      for (var i = 0; i < pointDates.length; i++) {
+        if (group.date.getTime() == pointDates[i].getTime())
+          finishedDataPoints[i] += group.group_count;
+      }
+    }
+
+    return {
+      enrolledDataPoints,
+      finishedDataPoints,
+      enrolledCount,
+      finishedCount,
+    };
+  }
+
+  async getJourneyCustomers(
+    account: Account,
+    id: string,
+    session: string,
+    take = 100,
+    skip = 0,
+    search?: string,
+    sortBy?: string,
+    sortType?: string,
+    filter?: 'all' | 'in-progress' | 'finished'
+  ) {
+    const journey = await this.findByID(account, id, session);
+    if (!journey) throw new NotFoundException('Journey not found');
+
+    if (take > 100) take = 100;
+    if (!search) search = '';
+    if (!filter) filter = 'all';
+
+    if (sortBy !== 'status' && sortBy !== 'latestSave') sortBy = 'latestSave';
+    if (sortType !== 'desc' && sortType !== 'asc') sortType = 'desc';
+
+    const baseQuery = `
+      SELECT * FROM
+        (
+          SELECT
+            "customer" as "customerId",
+            "journeyEntry" as "lastUpdate",
+            NOT (
+                  (step.metadata)::json #>'{destination}' IS NOT NULL 
+                  OR EXISTS (
+                      SELECT 1 
+                      FROM jsonb_array_elements(step.metadata -> 'branches') AS branch 
+                      WHERE (branch ->> 'destination') IS NOT NULL
+                  )
+                  OR (step.metadata -> 'timeBranch' ->> 'destination') IS NOT NULL
+                )
+            as "isFinished"
+          FROM journey_location
+          LEFT JOIN step ON step.id = journey_location."stepId"
+          WHERE journey_location."journeyId" = $1 AND "customer" LIKE $2
+        ) as a
+      ${
+        filter === 'all'
+          ? ''
+          : filter === 'in-progress'
+          ? `WHERE a."isFinished" = false`
+          : filter === 'finished'
+          ? `WHERE a."isFinished" = true`
+          : ''
+      }
+      ORDER BY a.${sortBy === 'status' ? `"isFinished"` : `"lastUpdate"`} ${
+      sortType === 'asc' ? 'ASC' : 'DESC'
+    }
+    `;
+
+    const countQuery = `SELECT COUNT(*) as count FROM (${baseQuery}) as a`;
+    const responseCount =
+      await this.journeyLocationsService.journeyLocationsRepository.query(
+        countQuery,
+        [journey.id, `%${search}%`]
+      );
+
+    let count = +responseCount?.[0].count;
+    if (isNaN(count)) count = 0;
+
+    const totalPages = Math.ceil(count / take) || 1;
+
+    const paginationQueryPart = `\n
+      LIMIT $3
+      OFFSET $4`;
+
+    const data =
+      await this.journeyLocationsService.journeyLocationsRepository.query(
+        ` ${baseQuery}${paginationQueryPart}`,
+        [journey.id, `%${search}%`, take, skip]
+      );
+
+    const workspace = account.teams?.[0]?.organization?.workspaces?.[0];
+
+    const pk = await this.customersService.CustomerKeysModel.findOne({
+      isPrimary: true,
+      workspaceId: workspace.id,
+    });
+
+    if (pk) {
+      const customerIds = data.map((item) => item.customerId);
+
+      const customers = this.CustomerModel.find({
+        _id: { $in: customerIds },
+      }).cursor();
+
+      for await (const customer of customers) {
+        const dataItem = data.find((item) => item.customerId === customer.id);
+
+        if (dataItem) dataItem[pk.key] = customer[pk.key];
+      }
+    }
+
+    return {
+      data: data.map((item) => ({
+        customerId: item.customerId,
+        [pk.key]: item[pk.key],
+        status: item.isFinished ? 'Finished' : 'Enrolled',
+        lastUpdate: +item.lastUpdate,
+      })),
+      totalPages,
+    };
   }
 
   async getJourneyChanges(
@@ -1408,6 +1650,9 @@ export class JourneysService {
         }
       );
       await this.trackChange(account, id);
+
+      await this.cleanupJourneyCache({ workspaceId: workspace.id });
+
       return result;
     } catch (err) {
       this.error(err, this.markDeleted.name, session, account.email);
@@ -1457,6 +1702,8 @@ export class JourneysService {
 
       await this.trackChange(account, journeyResult.id);
 
+      await this.cleanupJourneyCache({ workspaceId: workspace.id });
+
       return journeyResult;
     } catch (error) {
       this.error(error, this.setPaused.name, session, account.email);
@@ -1482,7 +1729,42 @@ export class JourneysService {
 
     try {
       if (!account) throw new HttpException('User not found', 404);
-      const workspace = account.teams?.[0]?.organization?.workspaces?.[0];
+
+      const organization = account.teams?.[0]?.organization;
+      const workspace = organization.workspaces?.[0];
+
+      const activeJourneysCount = await queryRunner.manager.countBy(Journey, {
+        workspace: {
+          id: In(organization.workspaces.map((workspace) => workspace.id)),
+        },
+        isActive: true,
+      });
+
+      if (organization.plan.activeJourneyLimit != -1) {
+        if (activeJourneysCount + 1 > organization.plan.activeJourneyLimit) {
+          throw new HttpException(
+            'Active journeys limit has been exceeded',
+            HttpStatus.PAYMENT_REQUIRED
+          );
+        }
+      }
+
+      const accountWithConnections = await queryRunner.manager.findOne(
+        Account,
+        {
+          where: { id: account.id },
+          relations: [
+            'teams.organization.workspaces',
+            'teams.organization.workspaces.mailgunConnections.sendingOptions',
+            'teams.organization.workspaces.sendgridConnections.sendingOptions',
+            'teams.organization.workspaces.resendConnections.sendingOptions',
+            'teams.organization.workspaces.twilioConnections',
+            'teams.organization.workspaces.pushConnections',
+          ],
+        }
+      );
+
+      await this.cleanupJourneyCache({ workspaceId: workspace.id });
 
       journey = await queryRunner.manager.findOne(Journey, {
         where: {
@@ -1533,13 +1815,6 @@ export class JourneysService {
       if (!alg.isAcyclic(graph))
         throw new Error('Flow has infinite loops, cannot start.');
 
-      const { collectionName, count } =
-        await this.customersService.getAudienceSize(
-          account,
-          journey.inclusionCriteria,
-          session,
-          null
-        );
       if (
         journey.journeyEntrySettings.entryTiming.type ===
         EntryTiming.WhenPublished
@@ -1566,8 +1841,6 @@ export class JourneysService {
       await this.enrollmentQueue.add('enroll', {
         account,
         journey,
-        count,
-        collectionName,
         session,
       });
     } catch (e) {
@@ -1607,6 +1880,8 @@ export class JourneysService {
       });
 
       await this.trackChange(account, journeyResult.id);
+
+      await this.cleanupJourneyCache({ workspaceId: workspace.id });
     } catch (err) {
       this.error(err, this.stop.name, session, account.email);
       throw err;
@@ -1787,6 +2062,10 @@ export class JourneysService {
               return node.id === relevantEdges[0].target;
             })[0].data.stepId;
             metadata.channel = nodes[i].data['template']['type'];
+
+            metadata.connectionId = nodes[i].data.connectionId;
+            metadata.sendingOptionId = nodes[i].data.sendingOptionId;
+
             metadata.customName = nodes[i].data['customName'] || 'Unknown name';
             if (nodes[i].data['template']['selected'])
               metadata.template = nodes[i].data['template']['selected']['id'];
@@ -2716,5 +2995,12 @@ export class JourneysService {
       changedState: journey,
       previousChange: previousChange ? { id: previousChange.id } : undefined,
     });
+  }
+
+  async cleanupJourneyCache(data: { workspaceId: string }) {
+    // invalidate journeys cache entry set in eventPreprocessor
+    if (data.workspaceId) {
+      await this.cacheService.delete('Journeys', data.workspaceId);
+    }
   }
 }

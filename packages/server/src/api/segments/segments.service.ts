@@ -26,6 +26,9 @@ import e, { query } from 'express';
 import { CountSegmentUsersSizeDTO } from './dto/size-count.dto';
 import { randomUUID } from 'crypto';
 import { Filter, Document } from 'mongodb';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import * as Sentry from '@sentry/node';
 
 @Injectable()
 export class SegmentsService {
@@ -40,7 +43,9 @@ export class SegmentsService {
     private customersService: CustomersService,
     private workflowsService: WorkflowsService,
     private readonly audiencesHelper: AudiencesHelper,
-    @InjectConnection() private readonly connection: mongoose.Connection
+    @InjectConnection() private readonly connection: mongoose.Connection,
+    @InjectQueue('{segment_update}')
+    private readonly segmentUpdateQueue: Queue
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -438,94 +443,48 @@ export class SegmentsService {
     }
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
+    const organization = account.teams[0].organization;
+    const organizationPlan = organization.plan;
+
+    const segmentsCount = await this.segmentRepository.countBy({
+      workspace: {
+        id: In(organization.workspaces.map((workspace) => workspace.id)),
+      },
+    });
+
+    if (organizationPlan.segmentLimit != -1) {
+      if (segmentsCount + 1 > organizationPlan.segmentLimit) {
+        throw new HttpException(
+          'Segment limit has been exceeded',
+          HttpStatus.PAYMENT_REQUIRED
+        );
+      }
+    }
+
     let err;
-    const queryRunner = this.dataSource.createQueryRunner();
+    const queryRunner = await this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
       const segment = await queryRunner.manager.save(Segment, {
         ...createSegmentDTO,
         workspace: { id: workspace.id },
+        isUpdating: true,
       });
-
-      this.debug(
-        `SegmentDTO is: ${createSegmentDTO}`,
-        this.create.name,
-        session,
-        account.id
-      );
-
-      // this.customersService.createSegmentQuery(createSegmentDTO.inclusionCriteria.query);
       if (segment.type === SegmentType.AUTOMATIC) {
-        const collectionPrefix = this.generateRandomString();
-        const customersInSegment =
-          await this.customersService.getSegmentCustomersFromQuery(
-            createSegmentDTO.inclusionCriteria.query,
-            account,
-            session,
-            true,
-            0,
-            collectionPrefix
-          );
-
-        this.debug(
-          `we have customersInSegment: ${customersInSegment}`,
-          this.create.name,
-          session,
-          account.id
-        );
-
-        const batchSize = 500; // Set an appropriate batch size
-        const collectionName = customersInSegment; // Name of the MongoDB collection
-        const mongoCollection = this.connection.db.collection(collectionName);
-
-        let processedCount = 0;
-        const totalDocuments = await mongoCollection.countDocuments();
-
-        while (processedCount < totalDocuments) {
-          // Fetch a batch of documents
-          const customerDocuments = await mongoCollection
-            .find({})
-            .skip(processedCount)
-            .limit(batchSize)
-            .toArray();
-          // Map the MongoDB documents to SegmentCustomers entities
-          const segmentCustomersArray: SegmentCustomers[] =
-            customerDocuments.map((doc) => {
-              const segmentCustomer = new SegmentCustomers();
-              segmentCustomer.customerId = doc._id.toString();
-              segmentCustomer.segment = segment.id;
-              segmentCustomer.workspace =
-                account?.teams?.[0]?.organization?.workspaces?.[0];
-              // Set other properties as needed
-              return segmentCustomer;
-            });
-          // Batch insert into PostgreSQL database
-          await queryRunner.manager.save(
-            SegmentCustomers,
-            segmentCustomersArray
-          );
-          // Update the count of processed documents
-          processedCount += customerDocuments.length;
-        }
-
-        try {
-          await this.deleteCollectionsWithPrefix(collectionPrefix);
-        } catch (e) {
-          this.error(e, this.create.name, session, account.id);
-        }
+        await this.segmentUpdateQueue.add('createDynamic', {
+          segment,
+          createSegmentDTO,
+          account,
+        });
       }
       await queryRunner.commitTransaction();
       return segment;
     } catch (e) {
-      err = e;
       this.error(e, this.create.name, session, account.email);
       await queryRunner.rollbackTransaction();
     } finally {
       await queryRunner.release();
-      if (err) {
-        throw err;
-      }
     }
   }
 
@@ -541,84 +500,88 @@ export class SegmentsService {
     createSegmentDTO: CountSegmentUsersSizeDTO,
     session: string
   ) {
-    this.debug(
-      `SegmentDTO is: ${JSON.stringify(
-        createSegmentDTO.inclusionCriteria.query.type,
-        null,
-        2
-      )}`,
-      this.size.name,
-      session,
-      account.id
-    );
-
-    if (createSegmentDTO.inclusionCriteria.query.type === 'any') {
-      const collectionPrefix = this.generateRandomString();
-      const customersInSegment =
-        await this.customersService.getSegmentCustomersFromQuery(
-          createSegmentDTO.inclusionCriteria.query,
-          account,
-          session,
-          true,
-          0,
-          collectionPrefix
-        );
-
-      if (!customersInSegment || customersInSegment.length === 0) {
-        return { size: 0, total: 1 };
-      }
-
-      const mongoCollection = this.connection.db.collection(customersInSegment);
-
-      const segmentDocuments = await mongoCollection.countDocuments();
-      const totalCount = await this.customersService.customersSize(
-        account,
-        session
+    return Sentry.startSpan({ name: 'SegmentsService.size' }, async () => {
+      this.debug(
+        `SegmentDTO is: ${JSON.stringify(
+          createSegmentDTO.inclusionCriteria.query.type,
+          null,
+          2
+        )}`,
+        this.size.name,
+        session,
+        account.id
       );
-      try {
-        await this.deleteCollectionsWithPrefix(collectionPrefix);
-      } catch (e) {
-        this.error(e, this.size.name, session, account.id);
-      }
-      return { size: segmentDocuments, total: totalCount };
-    } else if (createSegmentDTO.inclusionCriteria.query.type === 'all') {
-      const collectionPrefix = this.generateRandomString();
-      const customersInSegment =
-        await this.customersService.getSegmentCustomersFromQuery(
-          createSegmentDTO.inclusionCriteria.query,
+
+      if (createSegmentDTO.inclusionCriteria.query.type === 'any') {
+        const collectionPrefix = this.generateRandomString();
+        const customersInSegment =
+          await this.customersService.getSegmentCustomersFromQuery(
+            createSegmentDTO.inclusionCriteria.query,
+            account,
+            session,
+            true,
+            0,
+            collectionPrefix
+          );
+
+        if (!customersInSegment || customersInSegment.length === 0) {
+          return { size: 0, total: 1 };
+        }
+
+        const mongoCollection =
+          this.connection.db.collection(customersInSegment);
+
+        const segmentDocuments = await mongoCollection.countDocuments();
+        const totalCount = await this.customersService.customersSize(
           account,
-          session,
-          true,
-          0,
-          collectionPrefix
+          session
         );
+        try {
+          await this.deleteCollectionsWithPrefix(collectionPrefix);
+        } catch (e) {
+          this.error(e, this.size.name, session, account.id);
+        }
+        return { size: segmentDocuments, total: totalCount };
+      } else if (createSegmentDTO.inclusionCriteria.query.type === 'all') {
+        const collectionPrefix = this.generateRandomString();
+        const customersInSegment =
+          await this.customersService.getSegmentCustomersFromQuery(
+            createSegmentDTO.inclusionCriteria.query,
+            account,
+            session,
+            true,
+            0,
+            collectionPrefix
+          );
 
-      if (!customersInSegment || customersInSegment.length === 0) {
-        return { size: 0, total: 1 };
-      }
+        if (!customersInSegment || customersInSegment.length === 0) {
+          return { size: 0, total: 1 };
+        }
 
-      const mongoCollection = this.connection.db.collection(customersInSegment);
+        const mongoCollection =
+          this.connection.db.collection(customersInSegment);
 
-      const segmentDocuments = await mongoCollection.countDocuments();
-      const totalCount = await this.customersService.customersSize(
-        account,
-        session
-      );
-      try {
-        await this.deleteCollectionsWithPrefix(collectionPrefix);
-      } catch (e) {
-        this.debug(
-          `could not drop: ${collectionPrefix}`,
-          this.size.name,
-          session,
-          account.id
+        const segmentDocuments = await mongoCollection.countDocuments();
+        const totalCount = await this.customersService.customersSize(
+          account,
+          session
         );
-        this.error(e, this.size.name, session);
+        try {
+          await this.deleteCollectionsWithPrefix(collectionPrefix);
+        } catch (e) {
+          this.debug(
+            `could not drop: ${collectionPrefix}`,
+            this.size.name,
+            session,
+            account.id
+          );
+          this.error(e, this.size.name, session);
+        }
+        return { size: segmentDocuments, total: totalCount };
+      } else {
+        throw new Error(`Shouldn't be making it here`);
       }
-      return { size: segmentDocuments, total: totalCount };
-    } else {
-      throw new Error(`Shouldn't be making it here`);
-    }
+    });
   }
 
   public async update(
@@ -630,76 +593,24 @@ export class SegmentsService {
     const segment = await this.findOne(account, id, session);
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
+    if (segment.isUpdating) {
+      throw new BadRequestException(
+        'The segment is still updating. Please, try later'
+      );
+    }
+
     await this.segmentRepository.update(
       { id, workspace: { id: workspace.id } },
-      { ...updateSegmentDTO, workspace: { id: workspace.id } }
+      { ...updateSegmentDTO, workspace: { id: workspace.id }, isUpdating: true }
     );
 
-    (async () => {
-      const forDelete = await this.segmentCustomersRepository.findBy({
-        segment: id, //{ id: segment.id },
-      });
-
-      for (const { customerId } of forDelete) {
-        const customer = await this.customersService.CustomerModel.findById(
-          customerId
-        ).exec();
-        await this.updateAutomaticSegmentCustomerInclusion(
-          account,
-          customer,
-          session
-        );
-        await this.customersService.recheckDynamicInclusion(
-          account,
-          customer,
-          session
-        );
-      }
-
-      const amount = await this.customersService.CustomerModel.count({
-        workspaceId: workspace.id,
-      });
-
-      const batchOptions = {
-        current: 0,
-        documentsCount: amount || 0,
-        batchSize: 500,
-      };
-
-      while (batchOptions.current < batchOptions.documentsCount) {
-        const batch = await this.customersService.CustomerModel.find({
-          workspaceId: workspace.id,
-        })
-          .skip(batchOptions.current)
-          .limit(batchOptions.batchSize)
-          .exec();
-
-        for (const customer of batch) {
-          await this.updateAutomaticSegmentCustomerInclusion(
-            account,
-            customer,
-            session
-          );
-        }
-
-        batchOptions.current += batchOptions.batchSize;
-      }
-
-      const records = await this.segmentCustomersRepository.findBy({
-        segment: id, //{ id: segment.id },
-      });
-
-      for (const { customerId } of records) {
-        const customer = await this.customersService.CustomerModel.findById(
-          customerId
-        ).exec();
-        await this.customersService.recheckDynamicInclusion(
-          account,
-          customer,
-          session
-        );
-      }
-    })();
+    await this.segmentUpdateQueue.add('updateDynamic', {
+      account,
+      id,
+      updateSegmentDTO,
+      session,
+      workspace,
+    });
   }
 
   public async delete(account: Account, id: string, session: string) {
@@ -786,7 +697,7 @@ export class SegmentsService {
     for (const segment of segments) {
       try {
         // We skip manual segments and empty inclusion criteria
-        if (segment.type && segment.type === 'manual') {
+        if (segment.type && (segment.type === 'manual' || segment.isUpdating)) {
           continue;
         }
         if (
@@ -1186,14 +1097,14 @@ export class SegmentsService {
     if (segment.type !== SegmentType.MANUAL)
       throw new BadRequestException("This segment isn't manual");
 
-    const { stats } = await this.customersService.loadCSV(
+    await this.segmentUpdateQueue.add('updateManual', {
       account,
+      segment,
       csvFile,
-      session
-    );
+      session,
+    });
 
-    await this.assignCustomers(account, segment.id, stats.customers, session);
-    return { stats };
+    return;
   }
 
   public async updateAutomaticSegmentCustomerInclusion(

@@ -28,6 +28,7 @@ import { StepsModule } from '../steps/steps.module';
 import { JourneyLocation } from './entities/journey-location.entity';
 import { JourneyLocationsService } from './journey-locations.service';
 import { JourneyChange } from './entities/journey-change.entity';
+import { CacheService } from '@/common/services/cache.service';
 
 @Module({
   imports: [
@@ -49,22 +50,22 @@ import { JourneyChange } from './entities/journey-change.entity';
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
     BullModule.registerQueue({
-      name: 'message',
+      name: '{message}',
     }),
     BullModule.registerQueue({
-      name: 'transition',
+      name: '{transition}',
     }),
     BullModule.registerQueue({
-      name: 'slack',
+      name: '{slack}',
     }),
     BullModule.registerQueue({
-      name: 'customers',
+      name: '{customers}',
     }),
     BullModule.registerQueue({
-      name: 'events',
+      name: '{events}',
     }),
     BullModule.registerQueue({
-      name: 'enrollment',
+      name: '{enrollment}',
     }),
     AudiencesModule,
     forwardRef(() => CustomersModule),
@@ -74,7 +75,7 @@ import { JourneyChange } from './entities/journey-change.entity';
     SlackModule,
   ],
   controllers: [JourneysController],
-  providers: [JourneysService, JourneyLocationsService],
+  providers: [JourneysService, JourneyLocationsService, CacheService],
   exports: [JourneysService],
 })
 export class JourneysModule {}

@@ -33,7 +33,7 @@ export class AuthService {
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('message') private readonly messageQueue: Queue,
+    @InjectQueue('{message}') private readonly messageQueue: Queue,
     @InjectRepository(Account)
     public readonly accountRepository: Repository<Account>,
     @InjectRepository(Verification)
@@ -212,7 +212,10 @@ export class AuthService {
       where: {
         apiKey,
       },
-      relations: ['organization.owner.teams.organization.workspaces'],
+      relations: [
+        'organization.owner.teams.organization.workspaces',
+        'organization.owner.teams.organization.plan',
+      ],
     });
     return { account: workspace.organization.owner, workspace: workspace };
   }

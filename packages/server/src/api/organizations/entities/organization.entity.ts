@@ -1,9 +1,5 @@
-import {
-  Account,
-  PushFirebasePlatforms,
-} from '@/api/accounts/entities/accounts.entity';
-import { PushPlatforms } from '@/api/templates/entities/template.entity';
-import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
+import { Account } from '../../accounts/entities/accounts.entity';
+import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import {
   BaseEntity,
   Column,
@@ -14,6 +10,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { OrganizationTeam } from './organization-team.entity';
+import { OrganizationPlan } from './organization-plan.entity';
 
 export enum PlanType {
   FREE = 'free',
@@ -33,6 +30,18 @@ export class Organization extends BaseEntity {
     onDelete: 'CASCADE',
   })
   public teams: OrganizationTeam[];
+
+  @JoinColumn()
+  @OneToOne(
+    () => OrganizationPlan,
+    (organizationPlan) => organizationPlan.organization,
+    {
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE',
+      nullable: false,
+    }
+  )
+  public plan: OrganizationPlan;
 
   @OneToMany(() => Workspaces, (workspace) => workspace.organization, {
     onDelete: 'CASCADE',
