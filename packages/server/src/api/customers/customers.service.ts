@@ -1614,7 +1614,7 @@ export class CustomersService {
       // TODO: need to namespace the user and system attributes
       // so there won't any collisions
       const upsertData = {
-        _id: newId,
+        //_id: newId,
         workspaceId,
         createdAt: new Date(),
         laudspeakerSystemSource: systemSource,
@@ -1643,6 +1643,7 @@ export class CustomersService {
         result.customer = await this.CustomerModel.create(upsertData);
 
         result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
+
       } catch (error: any) {
         // Check if the error is a duplicate key error
         if (error.code === 11000) {
@@ -1671,6 +1672,7 @@ export class CustomersService {
         ? 'iosDeviceTokenSetAt'
         : 'androidDeviceTokenSetAt';
       if (result.customer[deviceTokenField] !== deviceTokenValue)
+
         result.customer = await this.CustomerModel.findOneAndUpdate(
           { _id: result.customer._id, workspaceId },
           {
@@ -4662,7 +4664,7 @@ export class CustomersService {
           mongoQuery.source = 'mobile';
           //console.log("mongoquery in eventssegment is ", JSON.stringify(mongoQuery, null, 2) );
 
-          const aggregationPipelineMobile: any[] = [
+          let aggregationPipelineMobile: any[] = [
             { $match: mongoQuery },
             {
               $addFields: {
@@ -4694,36 +4696,89 @@ export class CustomersService {
             },
           },
           */
-            {
-              $merge: {
-                into: intermediateCollection, // specify the target collection name
-                on: '_id', // assuming '_id' is your unique identifier
-                whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
-                whenNotMatched: 'insert', // inserts the document if no match is found
-              },
-            },
-            //to do
           ];
-
-          this.debug(
-            'aggregate mobile query is/n\n',
-            this.customersFromEventStatement.name,
-            session,
-            account.id
-          );
-
-          this.debug(
-            JSON.stringify(aggregationPipelineMobile, null, 2),
-            this.customersFromEventStatement.name,
-            session,
-            account.id
-          );
-
-          //fetch users here
-          const mobileResult: any =
-            await this.eventsService.getCustomersbyEventsMongo(
-              aggregationPipelineMobile
+          if (process.env.DOCUMENT_DB === 'true'){
+            aggregationPipelineMobile.push(
+              {
+                $merge: {
+                  into: "events_test_col",//intermediateCollection, // specify the target collection name
+                  on: '_id', // assuming '_id' is your unique identifier
+                  whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
+                  whenNotMatched: 'insert', // inserts the document if no match is found
+                },
+              }
             );
+
+          }
+          else{
+
+            aggregationPipelineMobile.push(
+              {
+                $merge: {
+                  into: intermediateCollection, // specify the target collection name
+                  on: '_id', // assuming '_id' is your unique identifier
+                  whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
+                  whenNotMatched: 'insert', // inserts the document if no match is found
+                },
+              }
+            );
+
+          }
+            
+            //to do
+            this.debug(
+              'aggregate mobile query is/n\n',
+              this.customersFromEventStatement.name,
+              session,
+              account.id
+            );
+  
+            this.debug(
+              JSON.stringify(aggregationPipelineMobile, null, 2),
+              this.customersFromEventStatement.name,
+              session,
+              account.id
+            );
+  
+            //fetch users here
+            const mobileResult: any =
+              await this.eventsService.getCustomersbyEventsMongo(
+                aggregationPipelineMobile
+              );
+              
+          if (process.env.DOCUMENT_DB === 'true'){
+            // here we need to add the temp collection back into 
+            /*
+            const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
+            const finalCollection = `${finalCollectionPrepend}${collectionName}`;
+            await Promise.all(
+        
+            const cursor = this.connection.db.collection(newCollName).find();
+            let batch = [];
+            while (await cursor.hasNext()) {
+              const doc = await cursor.next();
+              batch.push({
+                insertOne: {
+                  document: doc,
+                },
+              });
+
+              if (batch.length >= BATCH_SIZE) {
+                await this.connection.db
+                  .collection(finalCollection)
+                  .bulkWrite(batch);
+                batch = []; // Reset the batch for the next group of documents
+              }
+            }
+
+              // Process any remaining documents in the last batch
+              if (batch.length > 0) {
+                await this.connection.db.collection(finalCollection).bulkWrite(batch);
+              }
+              */
+          }
+
+  
 
           // we do one more merge with mobile users for those who may include the event correlationValues in their other_ids field
           const aggregationPipelineMobileOtherIds: any[] = [
