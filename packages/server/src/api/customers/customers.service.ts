@@ -1614,7 +1614,7 @@ export class CustomersService {
       // TODO: need to namespace the user and system attributes
       // so there won't any collisions
       const upsertData = {
-        //_id: newId,
+        _id: newId,
         workspaceId,
         createdAt: new Date(),
         laudspeakerSystemSource: systemSource,
@@ -1641,7 +1641,6 @@ export class CustomersService {
 
       try {
         result.customer = await this.CustomerModel.create(upsertData);
-
         result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
 
       } catch (error: any) {
