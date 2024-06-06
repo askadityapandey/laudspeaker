@@ -2675,7 +2675,6 @@ export class CustomersService {
         },
       ])
       .toArray();
-      console.log('final colname is', thisCollectionName);
     }
     // Step 3 OR CASE: Aggregate in finalCollection to group by customerId and project it back as the _id
     else{
@@ -2698,8 +2697,6 @@ export class CustomersService {
         },
       ])
       .toArray();
-
-      console.log('final colname is', finalCollection);
     }
     
 
