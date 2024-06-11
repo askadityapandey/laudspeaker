@@ -30,29 +30,29 @@ services:
     networks:
       - laudspeaker_default
 
-  mongo:
-    image: "mongo:latest"
-    hostname: mongo
-    container_name: mongo
-    ports:
-      - "27017:27017"
-    command: "--bind_ip_all --replSet rs0"
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "mongosh",
-          "admin",
-          "--port",
-          "27017",
-          "--eval",
-          "db.adminCommand('ping').ok",
-        ]
-      interval: 5s
-      timeout: 2s
-      retries: 20
-    networks:
-      - laudspeaker_default
+  # mongo:
+  #   image: "mongo:latest"
+  #   hostname: mongo
+  #   container_name: mongo
+  #   ports:
+  #     - "27017:27017"
+  #   command: "--bind_ip_all --replSet rs0"
+  #   healthcheck:
+  #     test:
+  #       [
+  #         "CMD",
+  #         "mongosh",
+  #         "admin",
+  #         "--port",
+  #         "27017",
+  #         "--eval",
+  #         "db.adminCommand('ping').ok",
+  #       ]
+  #     interval: 5s
+  #     timeout: 2s
+  #     retries: 20
+  #   networks:
+  #     - laudspeaker_default
 
   clickhouse:
     hostname: clickhouse
@@ -142,8 +142,8 @@ services:
       dockerfile: Dockerfile.initenv
     container_name: init-environment
     depends_on:
-      mongo:
-        condition: service_healthy
+      # mongo:
+      #   condition: service_healthy
       kafka1:
         condition: service_started
       clickhouse:
@@ -214,11 +214,11 @@ services:
     image: ${LAUDSPEAKER_IMAGE:-laudspeaker/laudspeaker:latest}
     container_name: laudspeaker-queue
     command: "queue"
-    healthcheck:
-      test: '[ $(find /tmp/laudspeaker-healthcheck-queue -mmin -1 | wc -l) -eq 1 ] || false'
-      interval: 10s
-      timeout: 30s
-      retries: 10
+    # healthcheck:
+    #   test: '[ $(find /tmp/laudspeaker-healthcheck-queue -mmin -1 | wc -l) -eq 1 ] || false'
+    #   interval: 10s
+    #   timeout: 30s
+    #   retries: 10
     depends_on:
       laudspeaker-web:
         condition: service_healthy
@@ -233,11 +233,11 @@ services:
     image: ${LAUDSPEAKER_IMAGE:-laudspeaker/laudspeaker:latest}
     container_name: laudspeaker-cron
     command: "cron"
-    healthcheck:
-      test: '[ $(find /tmp/laudspeaker-healthcheck-cron -mmin -1 | wc -l) -eq 1 ] || false'
-      interval: 10s
-      timeout: 30s
-      retries: 10
+    # healthcheck:
+    #   test: '[ $(find /tmp/laudspeaker-healthcheck-cron -mmin -1 | wc -l) -eq 1 ] || false'
+    #   interval: 10s
+    #   timeout: 30s
+    #   retries: 10
     depends_on:
       laudspeaker-web:
         condition: service_healthy
