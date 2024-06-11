@@ -4719,14 +4719,7 @@ export class CustomersService {
           ];
           if (process.env.DOCUMENT_DB === 'true'){
             aggregationPipelineMobile.push(
-              {
-                $merge: {
-                  into: "events_test_col",//intermediateCollection, // specify the target collection name
-                  on: '_id', // assuming '_id' is your unique identifier
-                  whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
-                  whenNotMatched: 'insert', // inserts the document if no match is found
-                },
-              }
+              { $out: "events_test_col" },
             );
 
           }
