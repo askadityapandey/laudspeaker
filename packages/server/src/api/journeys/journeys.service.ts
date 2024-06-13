@@ -777,6 +777,21 @@ export class JourneysService {
       inclusionCriteria: {
       }
     };
+    // Prepare a deep copy of the account to modify without affecting the original account object
+  const modifiedAccount = {
+    ...account,
+    teams: account.teams.map(team => ({
+      ...team,
+      organization: {
+        ...team.organization,
+        workspaces: team.organization.workspaces.map(workspace => ({
+          ...workspace,
+          pushConnections: [] //, Clears the pushConnections array
+          //pushPlatforms: null // Clears the pushPlatforms info
+        }))
+      }
+    }))
+  };
     for (const customer of customers) {
       if (
         await this.rateLimitEntryByUniqueEnrolledCustomers(
@@ -796,7 +811,7 @@ export class JourneysService {
       const job = {
         name: 'start',
         data: {
-          owner: account,
+          owner: modifiedAccount,
           journey: modifiedJourney,
           step: step,
           location: locations.find((location: JourneyLocation) => {
