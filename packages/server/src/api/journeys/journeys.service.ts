@@ -251,9 +251,9 @@ export class JourneysService {
     @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
-    @InjectQueue('{transition}') private readonly transitionQueue: Queue,
     @Inject(RedisService) private redisService: RedisService,
-    @InjectQueue('{enrollment}') private readonly enrollmentQueue: Queue,
+    @InjectQueue('{segment_update}')
+    private readonly segmentUpdateQueue: Queue,
     @Inject(CacheService) private cacheService: CacheService
   ) {}
 
@@ -1838,7 +1838,7 @@ export class JourneysService {
 
       await this.trackChange(account, journeyID, queryRunner);
       await queryRunner.commitTransaction();
-      await this.enrollmentQueue.add('enroll', {
+      await this.segmentUpdateQueue.add('createSystem', {
         account,
         journey,
         session,

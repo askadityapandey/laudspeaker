@@ -213,6 +213,7 @@ export class MultisplitStepProcessor extends WorkerHost {
           branchIndex++
         ) {
           if (
+            //TODO: Replace this line with call to segmentcustomersservice.iscustomerinsegment
             await this.customersService.checkCustomerMatchesQuery(
               job.data.step.metadata.branches[branchIndex].conditions.query,
               job.data.owner,

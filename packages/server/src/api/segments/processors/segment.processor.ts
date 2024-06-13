@@ -12,17 +12,21 @@ import { DataSource, Repository } from 'typeorm';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
 import { Account } from '../../accounts/entities/accounts.entity';
-import { Segment } from '../entities/segment.entity';
+import { Segment, SegmentType } from '../entities/segment.entity';
 import { SegmentsService } from '../segments.service';
-import { CustomersService } from '@/api/customers/customers.service';
+import { CustomersService } from '../../customers/customers.service';
 import { CreateSegmentDTO } from '../dto/create-segment.dto';
 import { InjectConnection } from '@nestjs/mongoose';
 import mongoose from 'mongoose';
 import { SegmentCustomers } from '../entities/segment-customers.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UpdateSegmentDTO } from '../dto/update-segment.dto';
-import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
+import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import { SegmentCustomersService } from '../segment-customers.service';
+import { Journey } from '../../journeys/entities/journey.entity';
+import { Step } from '../../steps/entities/step.entity';
+import { StepsService } from '@/api/steps/steps.service';
+import { StepType } from '@/api/steps/types/step.interface';
 
 @Injectable()
 @Processor('{segment_update}', {
@@ -47,17 +51,21 @@ export class SegmentUpdateProcessor extends WorkerHost {
     updateDynamic: this.handleUpdateDynamic,
     updateManual: this.handleUpdateManual,
     createDynamic: this.handleCreateDynamic,
+    createSystem: this.handleCreateSystem,
   };
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
     @Inject(SegmentsService) private segmentsService: SegmentsService,
+    @Inject(StepsService) private stepsService: StepsService,
     @Inject(forwardRef(() => CustomersService))
     private customersService: CustomersService,
     @InjectConnection() private readonly connection: mongoose.Connection,
     @InjectQueue('{customer_change}')
     private readonly customerChangeQueue: Queue,
+    @InjectQueue('{enrollment}')
+    private readonly enrollmentQueue: Queue,
     @InjectQueue('{imports}') private readonly importsQueue: Queue,
     @Inject(SegmentCustomersService)
     private segmentCustomersService: SegmentCustomersService,
@@ -140,6 +148,143 @@ export class SegmentUpdateProcessor extends WorkerHost {
         await fn.call(that, job);
       }
     );
+  }
+
+  async handleCreateSystem(
+    job: Job<
+      {
+        account: Account;
+        session: string;
+        journey: Journey;
+      },
+      any,
+      string
+    >
+  ) {
+    while (true) {
+      const jobCounts = await this.customerChangeQueue.getJobCounts('active');
+      const activeJobs = jobCounts.active;
+
+      if (activeJobs === 0) {
+        break; // Exit the loop if the number of waiting jobs is below the threshold
+      }
+
+      this.warn(
+        `Waiting for the customer change queue to clear. Current active jobs: ${activeJobs}`,
+        this.process.name,
+        job.data.session
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
+    }
+    const queryRunner = await this.dataSource.createQueryRunner();
+    const client = await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const steps: Step[] =
+        await this.stepsService.transactionalfindAllByTypeInJourney(
+          job.data.account,
+          StepType.MULTISPLIT,
+          job.data.journey.id,
+          queryRunner,
+          job.data.session
+        );
+      if (steps.length) {
+        for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+          for (
+            let branchIndex = 0;
+            branchIndex < steps[stepIndex].metadata.branches.length;
+            branchIndex++
+          ) {
+            // extract the rules for each multisplit
+            const segment = await queryRunner.manager.save(Segment, {
+              type: SegmentType.SYSTEM,
+              inclusionCriteria: null,
+              workspace: {
+                id: job.data.account.teams?.[0]?.organization.workspaces?.[0]
+                  .id,
+              },
+              isUpdating: false,
+            });
+
+            const collectionPrefix =
+              this.segmentsService.generateRandomString();
+            const customersInSegment =
+              await this.customersService.getSegmentCustomersFromQuery(
+                segment.inclusionCriteria,
+                job.data.account,
+                job.data.session,
+                true,
+                0,
+                collectionPrefix
+              );
+            const CUSTOMERS_PER_BATCH = 50000;
+            let batch = 0;
+            const mongoCollection =
+              this.connection.db.collection(customersInSegment);
+            const totalDocuments = await mongoCollection.countDocuments();
+
+            while (batch * CUSTOMERS_PER_BATCH <= totalDocuments) {
+              const customers = await this.customersService.find(
+                job.data.account,
+                segment.inclusionCriteria,
+                job.data.session,
+                null,
+                batch * CUSTOMERS_PER_BATCH,
+                CUSTOMERS_PER_BATCH,
+                customersInSegment
+              );
+              this.log(
+                `Skip ${
+                  batch * CUSTOMERS_PER_BATCH
+                }, limit: ${CUSTOMERS_PER_BATCH}`,
+                this.handleCreateDynamic.name,
+                job.data.session
+              );
+              batch++;
+
+              await this.segmentCustomersService.addBulk(
+                segment.id,
+                customers.map((document) => {
+                  return document._id.toString();
+                }),
+                job.data.session,
+                job.data.account,
+                client
+              );
+            }
+            try {
+              await this.segmentsService.deleteCollectionsWithPrefix(
+                collectionPrefix
+              );
+            } catch (e) {
+              this.error(
+                e,
+                this.process.name,
+                job.data.session,
+                job.data.account.email
+              );
+            }
+          }
+        }
+      }
+      await queryRunner.commitTransaction();
+      await this.enrollmentQueue.add('enroll', {
+        account: job.data.account,
+        journey: job.data.journey,
+        session: job.data.session,
+      });
+    } catch (err) {
+      this.error(
+        err,
+        this.handleCreateSystem.name,
+        job.data.session,
+        job.data.account.email
+      );
+      await queryRunner.rollbackTransaction();
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async handleCreateDynamic(

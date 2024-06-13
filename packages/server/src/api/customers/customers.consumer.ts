@@ -133,3 +133,68 @@ export class CustomersConsumerService implements OnApplicationBootstrap {
     };
   }
 }
+
+
+/*
+const { Kafka } = require('kafkajs');
+
+const kafka = new Kafka({
+  clientId: 'my-app',
+  brokers: ['kafka1:9092', 'kafka2:9092']
+});
+
+const consumer = kafka.consumer({ groupId: 'my-group' });
+
+let isPaused = false;
+
+const consumeMessages = async () => {
+  await consumer.connect();
+  await consumer.subscribe({ topic: 'my-topic', fromBeginning: true });
+
+  await consumer.run({
+    eachMessage: async ({ topic, partition, message }) => {
+      console.log({
+        value: message.value.toString(),
+      });
+
+      if (shouldPauseConsumption()) {
+        await pauseConsumer(partition);
+        console.log('Consumer paused');
+      }
+
+      if (shouldResumeConsumption() && isPaused) {
+        await resumeConsumer(partition);
+        console.log('Consumer resumed');
+      }
+    },
+  });
+};
+
+const shouldPauseConsumption = () => {
+  // Add your condition to pause consumption here
+  // For example, based on some external signal or condition
+  return true; // Change this condition according to your logic
+};
+
+const shouldResumeConsumption = () => {
+  // Add your condition to resume consumption here
+  // For example, based on some external signal or condition
+  return false; // Change this condition according to your logic
+};
+
+const pauseConsumer = async (partition) => {
+  if (!isPaused) {
+    await consumer.pause([{ topic: 'my-topic', partitions: [partition] }]);
+    isPaused = true;
+  }
+};
+
+const resumeConsumer = async (partition) => {
+  if (isPaused) {
+    await consumer.resume([{ topic: 'my-topic', partitions: [partition] }]);
+    isPaused = false;
+  }
+};
+
+consumeMessages().catch(console.error);
+*/

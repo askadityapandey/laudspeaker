@@ -452,5 +452,25 @@ export class SegmentCustomersService {
     return count;
   }
 
-  async isCustomerInSegment() {}
+  async isCustomerInSegment(
+    account: Account,
+    segment: Segment,
+    customer: string,
+    runner: QueryRunner
+  ) {
+    const queryCriteria: FindManyOptions<SegmentCustomers> = {
+      where: {
+        workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
+        segment: segment.id,
+        customerId: customer,
+      },
+    };
+    let found: SegmentCustomers;
+    if (runner) {
+      found = await runner.manager.findOne(SegmentCustomers, queryCriteria);
+    } else {
+      found = await this.segmentCustomersRepository.findOne(queryCriteria);
+    }
+    return found ? true : false;
+  }
 }
