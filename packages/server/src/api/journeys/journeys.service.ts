@@ -765,6 +765,18 @@ export class JourneysService {
       session,
       queryRunner
     );
+
+    // Construct a new journey object with an empty visualLayout, inclusionCriteria
+    // to save space in job queue later
+    const modifiedJourney: Journey = {
+      ...journey,
+      visualLayout: {
+        edges: [],
+        nodes: []
+      },
+      inclusionCriteria: {
+      }
+    };
     for (const customer of customers) {
       if (
         await this.rateLimitEntryByUniqueEnrolledCustomers(
@@ -785,7 +797,7 @@ export class JourneysService {
         name: 'start',
         data: {
           owner: account,
-          journey: journey,
+          journey: modifiedJourney,
           step: step,
           location: locations.find((location: JourneyLocation) => {
             return (
