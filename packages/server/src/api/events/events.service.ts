@@ -1196,7 +1196,7 @@ export class EventsService {
       try {
         for (const thisEvent of MobileBatchDto.batch) {
           this.debug(
-            `MobileBatchDto: event name ${JSON.stringify(thisEvent.event, null, 2)}`,
+            `MobileBatchDto: event name ${JSON.stringify(thisEvent.event, null, 2)} and ${JSON.stringify(thisEvent.$fcm, null, 2)}`,
             this.batch.name,
             session,
             auth.account.id

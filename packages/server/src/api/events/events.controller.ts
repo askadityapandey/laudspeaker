@@ -329,7 +329,7 @@ export class EventsController {
       for (const thisEvent of body.batch) {
         if (thisEvent.event){
           this.debug(
-            `batch: event name ${JSON.stringify(thisEvent.event, null, 2)}`,
+            `batch: event name ${JSON.stringify(thisEvent.event, null, 2)} and ${JSON.stringify(thisEvent.$fcm, null, 2)}`,
             this.batchEndpoint.name,
             session,
             "System"
