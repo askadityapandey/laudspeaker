@@ -127,6 +127,7 @@ export class ExitStepProcessor extends WorkerHost {
         session: string;
         event?: string;
         branch?: number;
+        stepDepth: number;
       },
       any,
       string

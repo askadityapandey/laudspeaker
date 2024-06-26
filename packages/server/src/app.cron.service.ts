@@ -122,10 +122,6 @@ export class CronService {
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(JourneyLocationsService)
     private journeyLocationsService: JourneyLocationsService,
-    @InjectQueue('{wait.until.step}')
-    private readonly waitUntilStepQueue: Queue,
-    @InjectQueue('{time.delay.step}') private readonly timeDelayStep: Queue,
-    @InjectQueue('{time.window.step}') private readonly timeWindowStep: Queue,
     @InjectQueue('{transition}') private readonly transitionQueue: Queue,
     @InjectQueue('{start}') private readonly startQueue: Queue,
     @Inject(RedlockService)
@@ -529,21 +525,6 @@ export class CronService {
         await this.queueService.addBulk(StepType.WAIT_UNTIL_BRANCH, waitUntilJobsData);
         await this.queueService.addBulk(StepType.TIME_DELAY, timeDelayJobsData);
         await this.queueService.addBulk(StepType.TIME_WINDOW, timeWindowJobsData);
-        // await this.waitUntilStepQueue.addBulk(
-        //   timeBasedJobs.filter((job) => {
-        //     return job.name === String(StepType.WAIT_UNTIL_BRANCH);
-        //   })
-        // );
-        // await this.timeDelayStep.addBulk(
-        //   timeBasedJobs.filter((job) => {
-        //     return job.name === String(StepType.TIME_DELAY);
-        //   })
-        // );
-        // await this.timeWindowStep.addBulk(
-        //   timeBasedJobs.filter((job) => {
-        //     return job.name === String(StepType.TIME_WINDOW);
-        //   })
-        // );
       }
 
       // Handle expiry of recovery emails
@@ -1490,10 +1471,10 @@ export class CronService {
           //   await this.connection.dropCollection(collection);
           // }
           if (triggerStartTasks?.jobData)
-
-            await this.startQueue.add(
-              triggerStartTasks.job.name,
-              triggerStartTasks.job.data
+            await this.queueService.addToQueue(
+              this.startQueue,
+              'start',
+              triggerStartTasks.jobData
             );
         } catch (e) {
           this.error(e, this.handleEntryTiming.name, session);
