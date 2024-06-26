@@ -476,7 +476,10 @@ export class CronService {
                     .exec(),
                   location: locations[locationsIndex],
                   branch,
+                  // TODO: extrapolate stepDepth from journey
+                  stepDepth: 1,
                 },
+                // These opts will be ignored
                 opts: {
                   jobId: generateUniqueJobId({
                     step: step,
@@ -510,18 +513,22 @@ export class CronService {
         await queryRunner.release();
       }
       if (!timeBasedErr) {
-        const jobDataFilter = (type, jobs) => {
-          jobs.filter((job) => {
+        const jobDataFilter = (type, jobs): any[] => {
+          let filteredJobs = jobs.filter((job) => {
             return job.name === String(type);
-          }).map((jobs) => job.data);
+          });
+
+          filteredJobs = filteredJobs.map((job) => job.data);
+
+          return filteredJobs;
         }
-        const waitUntilJobsData =  (StepType.WAIT_UNTIL_BRANCH, jobs);
-        const timeDelayJobsData = jobDataFilter(StepType.StepType.TIME_DELAY, jobs);
-        const timeWindowJobsData = jobDataFilter(StepType.TIME_WINDOW, jobs);
+        const waitUntilJobsData = jobDataFilter(StepType.WAIT_UNTIL_BRANCH, timeBasedJobs);
+        const timeDelayJobsData = jobDataFilter(StepType.TIME_DELAY, timeBasedJobs);
+        const timeWindowJobsData = jobDataFilter(StepType.TIME_WINDOW, timeBasedJobs);
 
         await this.queueService.addBulk(StepType.WAIT_UNTIL_BRANCH, waitUntilJobsData);
-        await this.queueService.addBulk(StepType.WAIT_UNTIL_BRANCH, timeDelayJobsData);
-        await this.queueService.addBulk(StepType.WAIT_UNTIL_BRANCH, timeWindowJobsData);
+        await this.queueService.addBulk(StepType.TIME_DELAY, timeDelayJobsData);
+        await this.queueService.addBulk(StepType.TIME_WINDOW, timeWindowJobsData);
         // await this.waitUntilStepQueue.addBulk(
         //   timeBasedJobs.filter((job) => {
         //     return job.name === String(StepType.WAIT_UNTIL_BRANCH);

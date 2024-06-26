@@ -821,6 +821,7 @@ export class JourneysService {
         }),
         session: session,
         customer, //customer.id ?? customer._id.toString(),
+        stepDepth: 1,
       };
       jobsData.push(jobData);
     }

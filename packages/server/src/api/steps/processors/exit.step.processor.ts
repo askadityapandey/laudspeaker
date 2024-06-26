@@ -25,7 +25,6 @@ import { StepsService } from '../steps.service';
 import { Journey } from '@/api/journeys/entities/journey.entity';
 import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
 import { CacheService } from '@/common/services/cache.service';
-import { QueueService } from '@/common/services/queue.service';
 
 @Injectable()
 @Processor('{exit.step}', {

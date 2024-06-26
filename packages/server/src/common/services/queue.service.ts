@@ -1,10 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  InjectQueue,
-} from '@nestjs/bullmq';
-import { Job, Queue } from 'bullmq';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { StepType } from '../../api/steps/types/step.interface';
 
+// TODO: Create QueueType Enum to include all
+// queues including step queues
 @Injectable()
 export class QueueService {
   constructor(
@@ -56,30 +56,43 @@ export class QueueService {
     return queue;
   }
 
-  private getStepDepthFromBulkJob(jobs: any[]) {
-    let depths = new Set();
+  private getStepDepthFromBulkJob(jobs: any[]): number {
+    let allStepDepths = new Set();
+    let stepDepth: number;
 
     for (const job of jobs) {
-      if (job.stepDepth)
-        depth.add(+job.stepDepth);
+      // handle job and jobData
+      stepDepth = job.stepDepth;
+
+      if(!stepDepth)
+        stepDepth = job.data?.stepDepth;
+
+      if (stepDepth)
+        allStepDepths.add(+stepDepth);
     }
 
     // default to stepDepth of 1
-    if(depths.size == 0)
+    if(allStepDepths.size == 0)
       return 1;
 
     // get first value
-    let it = depths.values();
+    let it = allStepDepths.values();
     let first = it.next();
-    let stepDepth = first.value;
+    stepDepth = first.value;
 
     return stepDepth;
   }
 
-  private getStepDepthFromJob(job: any) {
+  private getStepDepthFromJob(job: any): number {
     const stepDepth = this.getStepDepthFromBulkJob([job]);
 
     return stepDepth;
+  }
+
+  getNextStepDepthFromJob(job: any): number {
+    const stepDepth = this.getStepDepthFromJob(job);
+
+    return stepDepth + 1;
   }
 
   /**
@@ -94,7 +107,8 @@ export class QueueService {
   ): number[] {
     const priorities: number[] = [];
 
-    // bullmq max priority
+    // bullmq min, max priority
+    const minJobPriority: number = 1;
     const maxJobPriority: number = 2000000;
 
     // max number of steps a journey can take
@@ -106,11 +120,16 @@ export class QueueService {
     // priorities will be [1, stepPriorityBlocks[, [stepPriorityBlocks, 2 * stepPriorityBlocks[, etc...
     const stepPriorityBlocks: number = Math.floor(maxJobPriority / maxJourneyDepth);
 
-    const nextStepPriorityStart: number = (stepDepth - 1) * stepPriorityBlocks + 1;
-    const nextStepPriorityEnd: number = nextStepPriorityStart + stepPriorityBlocks - 1;
+    let nextStepPriorityStart: number = (stepDepth - 1) * stepPriorityBlocks + 1;
+    let nextStepPriorityEnd: number = nextStepPriorityStart + stepPriorityBlocks - 1;
+
+    // ensure start and end are within bounds
+    nextStepPriorityStart = Math.max(nextStepPriorityStart, minJobPriority);
+    nextStepPriorityEnd = Math.min(nextStepPriorityEnd, maxJobPriority);
 
     let nextStepPriority;
 
+    // get a random number between nextStepPriorityStart and nextStepPriorityEnd inclusive
     for(let i = 0; i < batchSize; i++) {
       nextStepPriority = Math.floor(Math.random() * (nextStepPriorityEnd - nextStepPriorityStart + 1) + nextStepPriorityStart);
 
@@ -132,8 +151,8 @@ export class QueueService {
   }
 
   /**
-   * Adds bulk jobsData to specific queue, can be used for early queues if there
-   * is no stepType (enrollment, start)
+   * Creates jobs from jobsData and adds them in bulk to a specific queue,
+   * can be used for early queues if there is no stepType (enrollment, start)
    * @param queue
    * @param job
    * @param priority
@@ -142,12 +161,16 @@ export class QueueService {
   async addBulkToQueue(queue: Queue, name: string, jobsData: any[]) {
     const stepDepth = this.getStepDepthFromBulkJob(jobsData);
     const priorities = this.getBulkJobPriority(stepDepth, jobsData.length);
-    const jobs: Record<string, any>[];
+    const jobs: {
+      name: string,
+      data: any,
+      opts: any,
+    }[] = [];
 
     for(let i = 0; i < jobsData.length; i++) {
-      jobs.add({
+      jobs.push({
         name: name,
-        data: jobData,
+        data: jobsData[i],
         opts: {
           priority: priorities[i],
         }
@@ -158,7 +181,7 @@ export class QueueService {
   }
 
   /**
-   * Creates a job from jobData and adds a job to specific queue,
+   * Creates a job from jobData and adds it to a specific queue,
    * can be used for early queues if there is no stepType (enrollment, start)
    * @param queue
    * @param jobData
@@ -189,6 +212,6 @@ export class QueueService {
   async add(type: StepType, jobData: any) {
     const queue = this.getQueueForStepType(type);
 
-    await this.addToQueue(queue, type, job);
+    await this.addToQueue(queue, type, jobData);
   }
 }

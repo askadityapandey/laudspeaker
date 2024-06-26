@@ -131,6 +131,7 @@ export class StartStepProcessor extends WorkerHost {
         session: string;
         event?: string;
         branch?: number;
+        stepDepth: number;
       },
       any,
       string
@@ -140,9 +141,6 @@ export class StartStepProcessor extends WorkerHost {
       { name: 'StartStepProcessor.process' },
       async () => {
         let nextJob;
-
-        const nextStepDepth: number = 2;
-        const nextStepJobPriority = this.stepsService.getStepJobPriority(nextStepDepth);
 
         let nextStep: Step = await this.cacheService.getIgnoreError(
           Step,
@@ -155,6 +153,8 @@ export class StartStepProcessor extends WorkerHost {
         );
 
         if (nextStep) {
+          const nextStepDepth: number = this.queueService.getNextStepDepthFromJob(job);
+          
           if (
             nextStep.type !== StepType.TIME_DELAY &&
             nextStep.type !== StepType.TIME_WINDOW &&
@@ -187,7 +187,7 @@ export class StartStepProcessor extends WorkerHost {
           );
         }
         if (nextStep && nextJob)
-          await this.queueService.add(nextStep.type, nextJob, nextStepJobPriority);
+          await this.queueService.add(nextStep.type, nextJob);
       }
     );
   }

@@ -38,7 +38,8 @@ export class EnrollmentProcessor extends WorkerHost {
     @Inject(CustomersService)
     private readonly customersService: CustomersService,
     @Inject(JourneysService)
-    private journeyService: JourneysService
+    private journeyService: JourneysService,
+    @Inject(QueueService) private queueService: QueueService,
   ) {
     super();
   }
@@ -120,7 +121,7 @@ export class EnrollmentProcessor extends WorkerHost {
     let err: any;
     let triggerStartTasks: {
       collectionName: string;
-      job: { name: string; data: any };
+      jobData: any
     };
     let collectionName: string;
     let count: number;
@@ -174,12 +175,11 @@ export class EnrollmentProcessor extends WorkerHost {
 
       await queryRunner.commitTransaction();
 
-      const jobPriority = this.stepsService.getJobPriorityForStepDepth(1);
-
       if (triggerStartTasks) {
         await this.queueService.addToQueue(
           this.startQueue,
-          triggerStartTasks.job.data
+          'start',
+          triggerStartTasks.jobData
         );
       }
     } catch (e) {
