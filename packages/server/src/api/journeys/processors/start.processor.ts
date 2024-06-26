@@ -20,6 +20,8 @@ import { Journey } from '../entities/journey.entity';
 import { JourneyLocationsService } from '../journey-locations.service';
 import { JourneysService } from '../journeys.service';
 import { Step } from '../../steps/entities/step.entity';
+import { StepsService } from '../../steps/steps.service';
+import { QueueService } from '@/common/services/queue.service';
 
 const BATCH_SIZE = +process.env.START_BATCH_SIZE;
 
@@ -56,7 +58,9 @@ export class StartProcessor extends WorkerHost {
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @Inject(JourneysService)
-    private readonly journeysService: JourneysService
+    private readonly journeysService: JourneysService,
+    @Inject(StepsService) private stepsService: StepsService,
+    @Inject(QueueService) private queueService: QueueService,
   ) {
     super();
   }
@@ -203,34 +207,34 @@ export class StartProcessor extends WorkerHost {
     }
     //otherwise, split query in half and add both halves to the start queue
     else {
-      await this.startQueue.addBulk([
-        {
-          name: 'start',
-          data: {
-            owner: job.data.owner,
-            journey: job.data.journey,
-            step: job.data.step,
-            session: job.data.session,
-            query: job.data.query,
-            skip: job.data.skip,
-            limit: Math.floor(job.data.limit / 2),
-            collectionName: job.data.collectionName,
-          },
+      const jobPriorities = this.stepsService.getStepJobBatchPriorities(1, 2);
+
+      const jobsData = [{
+          owner: job.data.owner,
+          journey: job.data.journey,
+          step: job.data.step,
+          session: job.data.session,
+          query: job.data.query,
+          skip: job.data.skip,
+          limit: Math.floor(job.data.limit / 2),
+          collectionName: job.data.collectionName,
+        }, {
+          owner: job.data.owner,
+          journey: job.data.journey,
+          step: job.data.step,
+          session: job.data.session,
+          query: job.data.query,
+          skip: job.data.skip + Math.floor(job.data.limit / 2),
+          limit: Math.ceil(job.data.limit / 2),
+          collectionName: job.data.collectionName,
         },
-        {
-          name: 'start',
-          data: {
-            owner: job.data.owner,
-            journey: job.data.journey,
-            step: job.data.step,
-            session: job.data.session,
-            query: job.data.query,
-            skip: job.data.skip + Math.floor(job.data.limit / 2),
-            limit: Math.ceil(job.data.limit / 2),
-            collectionName: job.data.collectionName,
-          },
-        },
-      ]);
+      ];
+
+      await this.queueService.addBulkToQueue(
+        this.startQueue,
+        'start',
+        jobsData
+      );
     }
   }
 

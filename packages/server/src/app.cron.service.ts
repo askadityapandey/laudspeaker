@@ -68,6 +68,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { Account } from './api/accounts/entities/accounts.entity';
 import * as os from 'os';
 import * as Sentry from '@sentry/node';
+import { QueueService } from '@/common/services/queue.service';
 
 const BATCH_SIZE = 500;
 
@@ -129,7 +130,8 @@ export class CronService {
     @InjectQueue('{start}') private readonly startQueue: Queue,
     @Inject(RedlockService)
     private readonly redlockService: RedlockService,
-    @InjectConnection() private readonly connection: mongoose.Connection
+    @InjectConnection() private readonly connection: mongoose.Connection,
+    @Inject(QueueService) private queueService: QueueService,
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -508,21 +510,33 @@ export class CronService {
         await queryRunner.release();
       }
       if (!timeBasedErr) {
-        await this.waitUntilStepQueue.addBulk(
-          timeBasedJobs.filter((job) => {
-            return job.name === String(StepType.WAIT_UNTIL_BRANCH);
-          })
-        );
-        await this.timeDelayStep.addBulk(
-          timeBasedJobs.filter((job) => {
-            return job.name === String(StepType.TIME_DELAY);
-          })
-        );
-        await this.timeWindowStep.addBulk(
-          timeBasedJobs.filter((job) => {
-            return job.name === String(StepType.TIME_WINDOW);
-          })
-        );
+        const jobDataFilter = (type, jobs) => {
+          jobs.filter((job) => {
+            return job.name === String(type);
+          }).map((jobs) => job.data);
+        }
+        const waitUntilJobsData =  (StepType.WAIT_UNTIL_BRANCH, jobs);
+        const timeDelayJobsData = jobDataFilter(StepType.StepType.TIME_DELAY, jobs);
+        const timeWindowJobsData = jobDataFilter(StepType.TIME_WINDOW, jobs);
+
+        await this.queueService.addBulk(StepType.WAIT_UNTIL_BRANCH, waitUntilJobsData);
+        await this.queueService.addBulk(StepType.WAIT_UNTIL_BRANCH, timeDelayJobsData);
+        await this.queueService.addBulk(StepType.WAIT_UNTIL_BRANCH, timeWindowJobsData);
+        // await this.waitUntilStepQueue.addBulk(
+        //   timeBasedJobs.filter((job) => {
+        //     return job.name === String(StepType.WAIT_UNTIL_BRANCH);
+        //   })
+        // );
+        // await this.timeDelayStep.addBulk(
+        //   timeBasedJobs.filter((job) => {
+        //     return job.name === String(StepType.TIME_DELAY);
+        //   })
+        // );
+        // await this.timeWindowStep.addBulk(
+        //   timeBasedJobs.filter((job) => {
+        //     return job.name === String(StepType.TIME_WINDOW);
+        //   })
+        // );
       }
 
       // Handle expiry of recovery emails
@@ -1468,7 +1482,8 @@ export class CronService {
           // for (const collection of collectionNames) {
           //   await this.connection.dropCollection(collection);
           // }
-          if (triggerStartTasks?.job)
+          if (triggerStartTasks?.jobData)
+
             await this.startQueue.add(
               triggerStartTasks.job.name,
               triggerStartTasks.job.data

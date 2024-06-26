@@ -18,6 +18,7 @@ import { Step } from '../../steps/entities/step.entity';
 import { StepsService } from '@/api/steps/steps.service';
 import { CustomersService } from '@/api/customers/customers.service';
 import { JourneysService } from '@/api/journeys/journeys.service';
+import { QueueService } from '@/common/services/queue.service';
 
 @Injectable()
 @Processor('{enrollment}', {
@@ -172,9 +173,12 @@ export class EnrollmentProcessor extends WorkerHost {
       });
 
       await queryRunner.commitTransaction();
+
+      const jobPriority = this.stepsService.getJobPriorityForStepDepth(1);
+
       if (triggerStartTasks) {
-        await this.startQueue.add(
-          triggerStartTasks.job.name,
+        await this.queueService.addToQueue(
+          this.startQueue,
           triggerStartTasks.job.data
         );
       }
