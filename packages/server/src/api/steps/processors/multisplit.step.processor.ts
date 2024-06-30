@@ -33,7 +33,7 @@ import { CustomersService } from '@/api/customers/customers.service';
     ? +process.env.MULTISPLIT_STEP_PROCESSOR_STALLED_INTERVAL
     : 600000,
   removeOnComplete: {
-    age: 0,
+    age: 100,
     count: process.env.MULTISPLIT_STEP_PROCESSOR_REMOVE_ON_COMPLETE
       ? +process.env.MULTISPLIT_STEP_PROCESSOR_REMOVE_ON_COMPLETE
       : 0,
