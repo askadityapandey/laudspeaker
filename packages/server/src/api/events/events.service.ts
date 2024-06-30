@@ -1191,8 +1191,16 @@ export class EventsService {
     return Sentry.startSpan({ name: 'EventsService.batch' }, async () => {
       let err: any;
 
+      //console.log("oi", JSON.stringify(MobileBatchDto, null, 2));
+
       try {
         for (const thisEvent of MobileBatchDto.batch) {
+          this.debug(
+            `MobileBatchDto: event name ${JSON.stringify(thisEvent.event, null, 2)} and ${JSON.stringify(thisEvent.$fcm, null, 2)}`,
+            this.batch.name,
+            session,
+            auth.account.id
+          );
           if (
             thisEvent.source === 'message' &&
             thisEvent.event === '$delivered'
@@ -1200,11 +1208,11 @@ export class EventsService {
             continue;
           if (thisEvent.source === 'message' && thisEvent.event === '$opened') {
             const clickHouseRecord: ClickHouseMessage = {
-              workspaceId: thisEvent.payload.workspaceID,
-              stepId: thisEvent.payload.stepID,
-              customerId: thisEvent.payload.customerID,
-              templateId: String(thisEvent.payload.templateID),
-              messageId: thisEvent.payload.messageID,
+              workspaceId: thisEvent.payload.workspaceID || thisEvent.payload.workspaceId,
+              stepId: thisEvent.payload.stepID || thisEvent.payload.stepId,
+              customerId: thisEvent.payload.customerID || thisEvent.payload.customerId,
+              templateId: String(thisEvent.payload.templateID) ||  String(thisEvent.payload.templateId),
+              messageId: thisEvent.payload.messageID || thisEvent.payload.messageId,
               event: 'opened',
               eventProvider: ClickHouseEventProvider.PUSH,
               processed: false,
@@ -1332,11 +1340,26 @@ export class EventsService {
     return customer._id;
   }
 
-  async deduplication(customer, correlationValue) {
+  async deduplication(
+    customer: CustomerDocument,
+    correlationValue: string | string[],
+    session: string,
+    account: Account) {
+
+    this.debug(
+      `customer: ${JSON.stringify(customer)},
+      correlationValue: ${JSON.stringify(correlationValue)}`,
+      this.deduplication.name,
+      session,
+      account.id
+    );
+
+    let updateResult;
+
     // Step 1: Check if the customer's _id is not equal to the given correlation value
     if (customer._id.toString() !== correlationValue) {
       // Step 2: Update the customer's other_ids array with the correlation value if it doesn't already have it
-      const updateResult = await this.customersService.CustomerModel.updateOne(
+      updateResult = await this.customersService.CustomerModel.updateOne(
         {
           _id: customer._id,
           other_ids: { $ne: correlationValue }, // Ensures we don't add duplicates
@@ -1354,6 +1377,16 @@ export class EventsService {
       {
         _id: correlationValue,
       }
+    );
+
+    this.debug(
+      `customer: ${JSON.stringify(customer)},
+      correlationValue: ${JSON.stringify(correlationValue)},
+      updateResult: ${JSON.stringify(updateResult)},
+      duplicateCustomer: ${JSON.stringify(duplicateCustomer)}`,
+      this.deduplication.name,
+      session,
+      account.id
     );
 
     // Determine which deviceTokenSetAt fields to compare
@@ -1377,6 +1410,17 @@ export class EventsService {
       }
     }
 
+    this.debug(
+      `customer: ${JSON.stringify(customer)},
+      correlationValue: ${JSON.stringify(correlationValue)},
+      updateResult: ${JSON.stringify(updateResult)},
+      duplicateCustomer: ${JSON.stringify(duplicateCustomer)},
+      updateFields: ${JSON.stringify(updateFields)}`,
+      this.deduplication.name,
+      session,
+      account.id
+    );
+
     // If there are fields to update (i.e., a more recent token was found), perform the update
     if (Object.keys(updateFields).length > 0) {
       await this.customersService.CustomerModel.updateOne(
@@ -1393,6 +1437,18 @@ export class EventsService {
     const deleteResult = await this.customersService.CustomerModel.deleteMany({
       _id: correlationValue,
     });
+
+    this.debug(
+      `customer: ${JSON.stringify(customer)},
+      correlationValue: ${JSON.stringify(correlationValue)},
+      updateResult: ${JSON.stringify(updateResult)},
+      duplicateCustomer: ${JSON.stringify(duplicateCustomer)},
+      updateFields: ${JSON.stringify(updateFields)},
+      deleteResult: ${JSON.stringify(deleteResult)}`,
+      this.deduplication.name,
+      session,
+      account.id
+    );
   }
 
   async findOrCreateCustomer(
@@ -1410,6 +1466,7 @@ export class EventsService {
         },
         session,
         {},
+        "event",
         event
       );
 
@@ -1498,7 +1555,12 @@ export class EventsService {
     }
 
     if (customer._id !== event.correlationValue) {
-      await this.deduplication(customer, event.correlationValue);
+      await this.deduplication(
+        customer,
+        event.correlationValue,
+        session,
+        auth.account
+      );
     }
 
     // Filter and validate the event payload against CustomerKeys, with special handling for distinct_id and $anon_distinct_id

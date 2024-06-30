@@ -48,7 +48,9 @@ export enum ProviderType {
     ? +process.env.EVENTS_PRE_PROCESSOR_STALLED_INTERVAL
     : 30000,
   removeOnComplete: {
-    age: 0,
+    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      : 0,
     count: process.env.EVENTS_PRE_PROCESSOR_REMOVE_ON_COMPLETE
       ? +process.env.EVENTS_PRE_PROCESSOR_REMOVE_ON_COMPLETE
       : 0,
@@ -163,6 +165,20 @@ export class EventsPreProcessor extends WorkerHost {
     );
   }
 
+   removeDollarSignsFromKeys(obj: any) {
+    const newObj = {};
+    // Iterate through each property in the object
+    for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+            const newKey = key.startsWith('$') ? key.substring(1) : key;
+
+            // Recursively call the function if the property is an object
+            newObj[newKey] = typeof obj[key] === 'object' && obj[key] !== null ? this.removeDollarSignsFromKeys(obj[key]) : obj[key];
+        }
+    }
+    return newObj;  
+  }
+
   async handleCustom(
     job: Job<
       {
@@ -217,7 +233,7 @@ export class EventsPreProcessor extends WorkerHost {
         //console.time(`handleCustom - create event ${job.data.session}`)
         await this.eventModel.create([
           {
-            ...job.data.event,
+            ...this.removeDollarSignsFromKeys(job.data.event),
             workspaceId: job.data.workspace.id,
             createdAt: new Date().toISOString(),
           },
@@ -227,12 +243,21 @@ export class EventsPreProcessor extends WorkerHost {
 
       // Always add jobs after committing transactions, otherwise there could be race conditions
       let eventJobs = journeys.map((journey) => ({
+        //to do add here modified
         name: EventType.EVENT,
         data: {
           account: job.data.owner,
-          workspace: job.data.workspace,
+          //workspace: job.data.workspace,
           event: job.data.event,
-          journey: journey,
+          journey: {
+            ...journey,
+            visualLayout: {
+              edges: [],
+              nodes: []
+            },
+            inclusionCriteria: {
+            }
+          },
           customer: customer,
           session: job.data.session,
         },

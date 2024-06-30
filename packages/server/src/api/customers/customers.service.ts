@@ -202,6 +202,13 @@ export const systemAttributes: SystemAttribute[] = [
     isArray: false,
     isSystem: true,
   },
+  {
+    id: uuid(),
+    key: 'laudspeakerSystemSource',
+    type: StatementValueType.STRING,
+    isArray: false,
+    isSystem: true,
+  },
 ];
 
 export interface QueryOptions {
@@ -274,41 +281,65 @@ export class CustomersService {
     (async () => {
       try {
         const collection = this.connection.db.collection('customers');
-        await collection.dropIndexes();
-        await createIndexIfNotExists(collection, 'workspaceId');
+        async function getExistingIndexes(collection) {
+          const indexes = await collection.listIndexes().toArray();
+          return indexes.map((index) => index.key);
+        }
+
+        async function removeObsoleteIndexes(collection, requiredIndexes) {
+          const existingIndexes = await getExistingIndexes(collection);
+          for (const existingIndex of existingIndexes) {
+            const indexKey = JSON.stringify(existingIndex);
+            if (
+              !requiredIndexes.includes(indexKey) &&
+              indexKey !== JSON.stringify({ _id: 1 })
+            ) {
+              await collection.dropIndex(existingIndex);
+            }
+          }
+        }
+
+        const requiredIndexes = [];
+
+        requiredIndexes.push(JSON.stringify({ workspaceId: 1 }));
+        await createIndexIfNotExists(collection, { workspaceId: 1 });
+
+        requiredIndexes.push(JSON.stringify({ other_ids: 1, workspaceId: 1 }));
         await createIndexIfNotExists(collection, {
           other_ids: 1,
           workspaceId: 1,
         });
+
+        requiredIndexes.push(JSON.stringify({ other_ids: 1 }));
+        await createIndexIfNotExists(collection, { other_ids: 1 });
+
+        requiredIndexes.push(JSON.stringify({ _id: 1, workspaceId: 1 }));
+        await createIndexIfNotExists(collection, { _id: 1, workspaceId: 1 });
+
         for (const [channel, channelRules] of Object.entries(rulesRaw)) {
           for (const rule of channelRules) {
-            await createIndexIfNotExists(
-              collection,
-              { [rule]: 1, workspaceId: 1 },
-              {
-                unique: true,
-                partialFilterExpression: { [rule]: { $exists: true } },
-              }
-            );
+            const indexSpec = { [rule]: 1, workspaceId: 1 };
+            requiredIndexes.push(JSON.stringify(indexSpec));
+            await createIndexIfNotExists(collection, indexSpec, {
+              unique: true,
+              partialFilterExpression: { [rule]: { $exists: true } },
+            });
           }
         }
 
         const keyCollection = this.connection.db.collection('customerkeys');
-        await keyCollection.dropIndexes();
         const primaryKeyDocs = keyCollection.find({ isPrimary: true });
         for await (const primaryKey of primaryKeyDocs) {
-          await createIndexIfNotExists(
-            collection,
-            { [primaryKey.key]: 1, workspaceId: 1 },
-            {
-              unique: true,
-              partialFilterExpression: { [primaryKey.key]: { $exists: true } },
-            }
-          );
+          const indexSpec = { [primaryKey.key]: 1, workspaceId: 1 };
+          requiredIndexes.push(JSON.stringify(indexSpec));
+          await createIndexIfNotExists(collection, indexSpec, {
+            unique: true,
+            partialFilterExpression: { [primaryKey.key]: { $exists: true } },
+          });
         }
-      } catch (e) {
-        this.error(e, CustomersService.name, session);
-      }
+
+        await removeObsoleteIndexes(collection, requiredIndexes);
+      } catch (err) {}
     })();
   }
 
@@ -384,7 +415,7 @@ export class CustomersService {
       },
     });
 
-    if (organization.plan.customerLimit != -1) {
+    if (process.env.NODE_ENV !== "development" && organization.plan.customerLimit != -1) {
       if (
         customersInOrganization + customersToAdd >
         organization.plan.customerLimit
@@ -1259,63 +1290,6 @@ export class CustomersService {
     return Promise.resolve(customer);
   }
 
-  // async findOrCreateByCorrelationKVPair(
-  //   workspace: Workspaces,
-  //   dto: EventDto,
-  //   transactionSession: ClientSession
-  // ): Promise<Correlation> {
-  //   let customer: CustomerDocument; // Found customer
-  //   const queryParam = {
-  //     workspaceId: workspace.id,
-  //     $or: [
-  //       { [dto.correlationKey]: dto.correlationValue },
-  //       { other_ids: dto.correlationValue },
-  //     ],
-  //   };
-  //   try {
-  //     customer = await this.CustomerModel.findOne(queryParam)
-  //       .session(transactionSession)
-  //       .exec();
-  //   } catch (err) {
-  //     return Promise.reject(err);
-  //   }
-  //   if (!customer) {
-  //     // When no customer is found with the given correlation, create a new one
-  //     // If the correlationKey is '_id', use it to set the _id of the new customer
-  //     const newCustomerData: any = {
-  //       workspaceId: workspace.id,
-  //       createdAt: new Date(),
-  //     };
-  //     if (dto.correlationKey === '_id') {
-  //       newCustomerData._id = dto.correlationValue;
-  //     } else {
-  //       // If correlationKey is not '_id',
-  //       newCustomerData._id = randomUUID();
-  //     }
-  //     const createdCustomer = new this.CustomerModel(newCustomerData);
-  //     return {
-  //       cust: await createdCustomer.save({ session: transactionSession }),
-  //       found: false,
-  //     };
-  //   } else {
-  //     return { cust: customer, found: true };
-  //   }
-  //   /*
-  //   if (!customer) {
-
-  //     if (!queryParam._id) {
-  //       queryParam._id = randomUUID();
-  //     }
-
-  //     const createdCustomer = new this.CustomerModel(queryParam);
-  //     return {
-  //       cust: await createdCustomer.save({ session: transactionSession }),
-  //       found: false,
-  //     };
-  //   } else return { cust: customer, found: true };
-  //   */
-  // }
-
   // get keys that weren't marked as primary but may be used
   // as channels for sending messages (e.g. email, email_address,
   // phone, phone_number, etc..)
@@ -1440,11 +1414,26 @@ export class CustomersService {
   ): Promise<CustomerSearchOptionResult[]> {
     let result: CustomerSearchOptionResult[] = [];
 
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object:  ${JSON.stringify(object)}`,
+      this.findCustomersBySearchOptions.name,
+      session
+    );
+
     const searchOptions = await this.extractSearchOptionsFromObject(
       workspaceId,
       searchOptionsInitial,
       session,
       object
+    );
+
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)}`,
+      this.findCustomersBySearchOptions.name,
+      session
     );
 
     const findConditions: Array<Object> = [];
@@ -1480,6 +1469,16 @@ export class CustomersService {
     let customers = await this.CustomerModel.find({
       $or: findConditions,
     });
+
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)},
+       findConditions: ${JSON.stringify(findConditions)},
+       customers: ${JSON.stringify(customers)}`,
+      this.findCustomersBySearchOptions.name,
+      session
+    );
 
     for (const findType of Object.values(FindType)) {
       for (let i = 0; i < customers.length; i++) {
@@ -1529,6 +1528,17 @@ export class CustomersService {
         }
       }
     }
+
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)},
+       findConditions: ${JSON.stringify(findConditions)},
+       customers: ${JSON.stringify(customers)},
+       result: ${JSON.stringify(result)}`,
+      this.findCustomersBySearchOptions.name,
+      session
+    );
 
     // our conditions were not inclusive, something's wrong
     if (customers.length > 0 && result.length == 0) {
@@ -1582,6 +1592,7 @@ export class CustomersService {
    * @param workspaceId
    * @param searchOptionsInitial
    * @param session
+   * @param systemSource (i.e. event, upsert)
    * @param customerUpsertData
    * @param object (e.g. event)
    * @returns customer
@@ -1591,6 +1602,7 @@ export class CustomersService {
     searchOptionsInitial: CustomerSearchOptions,
     session: string,
     customerUpsertData: Record<string, any>,
+    systemSource: string,
     object?: Record<string, any>
   ): Promise<CustomerSearchOptionResult> {
     const searchOptions = await this.extractSearchOptionsFromObject(
@@ -1607,14 +1619,29 @@ export class CustomersService {
       object
     );
 
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       customerUpsertData: ${JSON.stringify(customerUpsertData)},
+       systemSource: ${JSON.stringify(systemSource)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)},
+       result: ${JSON.stringify(result)}`,
+      this.findOrCreateCustomerBySearchOptions.name,
+      session
+    );
+
     // If customer still not found, create a new one
     if (!result.customer) {
       const newId = searchOptions.correlationValue || randomUUID();
 
+      // add source information
+      // TODO: need to namespace the user and system attributes
+      // so there won't any collisions
       const upsertData = {
         _id: newId,
         workspaceId,
         createdAt: new Date(),
+        laudspeakerSystemSource: systemSource,
       };
 
       if (searchOptions.primaryKey.value && searchOptions.primaryKey.name) {
@@ -1625,13 +1652,21 @@ export class CustomersService {
 
       _.merge(upsertData, customerUpsertData);
 
+      this.debug(
+        `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+         customerUpsertData: ${JSON.stringify(customerUpsertData)},
+         systemSource: ${JSON.stringify(systemSource)},
+         object: ${JSON.stringify(object)},
+         searchOptions: ${JSON.stringify(searchOptions)},
+         upsertData: ${JSON.stringify(upsertData)}`,
+        this.findOrCreateCustomerBySearchOptions.name,
+        session
+      );
+
       try {
-        result.customer = await this.CustomerModel.findOneAndUpdate(
-          { _id: newId, workspaceId },
-          { $setOnInsert: { ...upsertData } },
-          { upsert: true, new: true }
-        );
+        result.customer = await this.CustomerModel.create(upsertData);
         result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
+
       } catch (error: any) {
         // Check if the error is a duplicate key error
         if (error.code === 11000) {
@@ -1646,6 +1681,8 @@ export class CustomersService {
             this.findOrCreateCustomerBySearchOptions.name,
             session
           );
+
+          throw error;
         }
       }
     }
@@ -1659,7 +1696,8 @@ export class CustomersService {
       const deviceTokenSetAtField = iosDeviceToken
         ? 'iosDeviceTokenSetAt'
         : 'androidDeviceTokenSetAt';
-      if (result.customer[deviceTokenField] !== deviceTokenValue)
+      if (result.customer && result.customer[deviceTokenField] !== deviceTokenValue)
+
         result.customer = await this.CustomerModel.findOneAndUpdate(
           { _id: result.customer._id, workspaceId },
           {
@@ -1712,6 +1750,7 @@ export class CustomersService {
           },
           session,
           { ...upsertCustomerDto.properties },
+          "upsert",
           // send the upsert proprties once for upsert data and another for
           // trying to find customers via message channels
           { ...upsertCustomerDto.properties }
@@ -2563,12 +2602,15 @@ export class CustomersService {
    * Specifically we can't use unionWith and merge
    *
    */
+  
   async documentDBanySegmentCase(
     account: Account,
     session: string,
     sets: any[],
     collectionName: string,
-    thisCollectionName: string
+    thisCollectionName: string,
+    finalCollectionPrepend: string,
+    andOr?: string
   ) {
     this.debug(
       `document db replacing unionWith`,
@@ -2607,7 +2649,7 @@ export class CustomersService {
     //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
     // Step 2: Bulk insert documents from each new collection into a final collection, in batches
     const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
-    const finalCollection = `final_or_cfc_${collectionName}`;
+    const finalCollection = `${finalCollectionPrepend}${collectionName}`;
     await Promise.all(
       newCollectionNames.map(async (newCollName) => {
         const cursor = this.connection.db.collection(newCollName).find();
@@ -2635,8 +2677,34 @@ export class CustomersService {
       })
     );
 
-    // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
-    await this.connection.db
+    // Step 3 AND CASE: Aggregate in finalCollection to group by customerId and project it back as the _id
+    if(andOr === 'and'){
+      // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
+      await this.connection.db
+      .collection(finalCollection)
+      .aggregate([
+        {
+          $group: {
+            _id: '$customerId', // Group by customerId
+            count: { $sum: 1 },
+            customerId: { $first: '$customerId' },
+          },
+        },
+        { $match: { count: sets.length } },
+        {
+          $project: {
+            _id: '$customerId',
+          },
+        },
+        {
+          $out: thisCollectionName, // Output the final aggregated documents into the same collection
+        },
+      ])
+      .toArray();
+    }
+    // Step 3 OR CASE: Aggregate in finalCollection to group by customerId and project it back as the _id
+    else{
+      await this.connection.db
       .collection(finalCollection)
       .aggregate([
         {
@@ -2655,8 +2723,8 @@ export class CustomersService {
         },
       ])
       .toArray();
-
-    console.log('final colname is', finalCollection);
+    }
+    
 
     //drop all intermediate collections
     try {
@@ -2792,149 +2860,17 @@ export class CustomersService {
       let collectionHandle = this.connection.db.collection(thisCollectionName);
       //if (sets.length > 1) {
       // Add each additional collection to the pipeline for union
-      if (process.env.DOCUMENT_DB == 'true') {
-        this.debug(
-          `document db replacing unionWith`,
-          this.getCustomersFromQuery.name,
+      if (process.env.DOCUMENT_DB === 'true') {
+        
+        await this.documentDBanySegmentCase(
+          account,
           session,
-          account.id
+          sets,
+          collectionName,
+          thisCollectionName,
+          "final_and_cfc_",
+          "and"
         );
-
-        const newCollectionNames = await Promise.all(
-          sets.map(async (collName, index) => {
-            const newCollName = `new_${collName}`;
-            this.debug(
-              `document db new col name ${collName}`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-            const collectionHandle = this.connection.db.collection(collName);
-            await collectionHandle
-              .aggregate([
-                {
-                  $addFields: { customerId: '$_id' },
-                },
-                {
-                  $project: { _id: 0 },
-                },
-                {
-                  $out: newCollName,
-                },
-              ])
-              .toArray(); // Execute the aggregation pipeline and create new collections
-            return newCollName;
-          })
-        );
-
-        //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
-
-        // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-        const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
-        const finalCollection = `final_and_cfc_${collectionName}`;
-        await Promise.all(
-          newCollectionNames.map(async (newCollName) => {
-            const cursor = this.connection.db.collection(newCollName).find();
-            let batch = [];
-            while (await cursor.hasNext()) {
-              const doc = await cursor.next();
-              batch.push({
-                insertOne: {
-                  document: doc,
-                },
-              });
-
-              if (batch.length >= BATCH_SIZE) {
-                await this.connection.db
-                  .collection(finalCollection)
-                  .bulkWrite(batch);
-                batch = []; // Reset the batch for the next group of documents
-              }
-            }
-
-            // Process any remaining documents in the last batch
-            if (batch.length > 0) {
-              await this.connection.db
-                .collection(finalCollection)
-                .bulkWrite(batch);
-            }
-          })
-        );
-
-        // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
-        await this.connection.db
-          .collection(finalCollection)
-          .aggregate([
-            {
-              $group: {
-                _id: '$customerId', // Group by customerId
-                count: { $sum: 1 },
-                customerId: { $first: '$customerId' },
-              },
-            },
-            { $match: { count: sets.length } },
-            {
-              $project: {
-                _id: '$customerId',
-              },
-            },
-            {
-              $out: thisCollectionName, // Output the final aggregated documents into the same collection
-            },
-          ])
-          .toArray();
-        console.log('final colname is', thisCollectionName);
-
-        //drop all intermediate collections
-        try {
-          this.debug(
-            `trying to release finalcollection`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-          //toggle for testing segments
-          await this.connection.db.collection(finalCollection).drop();
-          this.debug(
-            `dropped successfully`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-        } catch (e) {
-          this.debug(
-            `error dropping collection: ${e}`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-        }
-
-        newCollectionNames.map(async (collection) => {
-          try {
-            this.debug(
-              `trying to release collection`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-            //toggle for testing segments
-            await this.connection.db.collection(collection).drop();
-            this.debug(
-              `dropped successfully`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-          } catch (e) {
-            this.debug(
-              `error dropping collection: ${e}`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-          }
-        });
       } else {
         sets.forEach((collName) => {
           //console.log("the set is", collName);
@@ -3065,147 +3001,15 @@ export class CustomersService {
         account.id
       );
 
-      if (process.env.DOCUMENT_DB == 'true') {
-        this.debug(
-          `document db replacing unionWith`,
-          this.getCustomersFromQuery.name,
+      if (process.env.DOCUMENT_DB === 'true') {
+        await this.documentDBanySegmentCase(
+          account,
           session,
-          account.id
-        );
-        // Add lookups for each additional collection to the pipeline
-        // Step 1: Create new collections from each set with a new _id and rename _id to customerId
-        const newCollectionNames = await Promise.all(
-          sets.map(async (collName, index) => {
-            const newCollName = `new_${collName}`;
-            this.debug(
-              `document db new col name ${collName}`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-            const collectionHandle = this.connection.db.collection(collName);
-            await collectionHandle
-              .aggregate([
-                {
-                  $addFields: { customerId: '$_id' },
-                },
-                {
-                  $project: { _id: 0 },
-                },
-                {
-                  $out: newCollName,
-                },
-              ])
-              .toArray(); // Execute the aggregation pipeline and create new collections
-            return newCollName;
-          })
-        );
-        //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
-        // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-        const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
-        const finalCollection = `final_or_cfc_${collectionName}`;
-        await Promise.all(
-          newCollectionNames.map(async (newCollName) => {
-            const cursor = this.connection.db.collection(newCollName).find();
-            let batch = [];
-            while (await cursor.hasNext()) {
-              const doc = await cursor.next();
-              batch.push({
-                insertOne: {
-                  document: doc,
-                },
-              });
-
-              if (batch.length >= BATCH_SIZE) {
-                await this.connection.db
-                  .collection(finalCollection)
-                  .bulkWrite(batch);
-                batch = []; // Reset the batch for the next group of documents
-              }
-            }
-
-            // Process any remaining documents in the last batch
-            if (batch.length > 0) {
-              await this.connection.db
-                .collection(finalCollection)
-                .bulkWrite(batch);
-            }
-          })
-        );
-
-        // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
-        await this.connection.db
-          .collection(finalCollection)
-          .aggregate([
-            {
-              $group: {
-                _id: '$customerId', // Group by customerId
-                customerId: { $first: '$customerId' },
-              },
-            },
-            {
-              $project: {
-                _id: '$customerId',
-              },
-            },
-            {
-              $out: thisCollectionName, // Output the final aggregated documents into the same collection
-            },
-          ])
-          .toArray();
-
-        console.log('final colname is', finalCollection);
-
-        //drop all intermediate collections
-        try {
-          this.debug(
-            `trying to release finalcollection`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-          //toggle for testing segments
-          await this.connection.db.collection(finalCollection).drop();
-          this.debug(
-            `dropped successfully`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-        } catch (e) {
-          this.debug(
-            `error dropping collection: ${e}`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-        }
-
-        newCollectionNames.map(async (collection) => {
-          try {
-            this.debug(
-              `trying to release collection`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-            //toggle for testing segments
-            await this.connection.db.collection(collection).drop();
-            this.debug(
-              `dropped successfully`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-          } catch (e) {
-            this.debug(
-              `error dropping collection: ${e}`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-          }
-        });
+          sets,
+          collectionName,
+          thisCollectionName,
+          "final_or_cfq_"
+        )
       } else {
         // Add each additional collection to the pipeline
         if (sets.length > 1) {
@@ -3374,157 +3178,16 @@ export class CustomersService {
               const collectionHandle =
                 this.connection.db.collection(thisCollectionName);
 
-              if (process.env.DOCUMENT_DB == 'true') {
-                this.debug(
-                  `document db replacing unionWith`,
-                  this.getCustomersFromQuery.name,
+              if (process.env.DOCUMENT_DB === 'true') {
+                await this.documentDBanySegmentCase(
+                  account,
                   session,
-                  account.id
-                );
-
-                const newCollectionNames = await Promise.all(
-                  sets.map(async (collName, index) => {
-                    const newCollName = `new_${collName}`;
-                    this.debug(
-                      `document db new col name ${collName}`,
-                      this.getCustomersFromQuery.name,
-                      session,
-                      account.id
-                    );
-                    const collectionHandle =
-                      this.connection.db.collection(collName);
-                    await collectionHandle
-                      .aggregate([
-                        {
-                          $addFields: { customerId: '$_id' },
-                        },
-                        {
-                          $project: { _id: 0 },
-                        },
-                        {
-                          $out: newCollName,
-                        },
-                      ])
-                      .toArray(); // Execute the aggregation pipeline and create new collections
-                    return newCollName;
-                  })
-                );
-
-                //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
-
-                // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-                const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
-                const finalCollection = `final_and_scfq_${collectionName}`;
-                await Promise.all(
-                  newCollectionNames.map(async (newCollName) => {
-                    const cursor = this.connection.db
-                      .collection(newCollName)
-                      .find();
-                    let batch = [];
-                    while (await cursor.hasNext()) {
-                      const doc = await cursor.next();
-                      batch.push({
-                        insertOne: {
-                          document: doc,
-                        },
-                      });
-
-                      if (batch.length >= BATCH_SIZE) {
-                        await this.connection.db
-                          .collection(finalCollection)
-                          .bulkWrite(batch);
-                        batch = []; // Reset the batch for the next group of documents
-                      }
-                    }
-
-                    // Process any remaining documents in the last batch
-                    if (batch.length > 0) {
-                      await this.connection.db
-                        .collection(finalCollection)
-                        .bulkWrite(batch);
-                    }
-                  })
-                );
-
-                // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
-                await this.connection.db
-                  .collection(finalCollection)
-                  .aggregate([
-                    {
-                      $group: {
-                        _id: '$customerId', // Group by customerId
-                        count: { $sum: 1 },
-                        customerId: { $first: '$customerId' },
-                      },
-                    },
-                    { $match: { count: sets.length } },
-                    {
-                      $project: {
-                        _id: '$customerId',
-                      },
-                    },
-                    {
-                      $out: thisCollectionName, // Output the final aggregated documents into the same collection
-                    },
-                  ])
-                  .toArray();
-                this.debug(
-                  `document db final col name ${finalCollection}`,
-                  this.getCustomersFromQuery.name,
-                  session,
-                  account.id
-                );
-
-                //drop all intermediate collections
-                try {
-                  this.debug(
-                    `trying to release finalcollection`,
-                    this.getCustomersFromQuery.name,
-                    session,
-                    account.id
-                  );
-                  //toggle for testing segments
-                  await this.connection.db.collection(finalCollection).drop();
-                  this.debug(
-                    `dropped successfully`,
-                    this.getCustomersFromQuery.name,
-                    session,
-                    account.id
-                  );
-                } catch (e) {
-                  this.debug(
-                    `error dropping collection: ${e}`,
-                    this.getCustomersFromQuery.name,
-                    session,
-                    account.id
-                  );
-                }
-
-                newCollectionNames.map(async (collection) => {
-                  try {
-                    this.debug(
-                      `trying to release collection`,
-                      this.getCustomersFromQuery.name,
-                      session,
-                      account.id
-                    );
-                    //toggle for testing segments
-                    await this.connection.db.collection(collection).drop();
-                    this.debug(
-                      `dropped successfully`,
-                      this.getCustomersFromQuery.name,
-                      session,
-                      account.id
-                    );
-                  } catch (e) {
-                    this.debug(
-                      `error dropping collection: ${e}`,
-                      this.getCustomersFromQuery.name,
-                      session,
-                      account.id
-                    );
-                  }
-                });
+                  sets,
+                  collectionName,
+                  thisCollectionName,
+                  "final_and_scfq_",
+                  "and"
+                )
               } else {
                 //if (sets.length > 1) {
                 // Add each additional collection to the pipeline for union
@@ -3605,163 +3268,17 @@ export class CustomersService {
 
           const unionAggregation: any[] = [];
 
-          if (process.env.DOCUMENT_DB == 'true') {
-            this.debug(
-              `document db replacing unionWith`,
-              this.getCustomersFromQuery.name,
+          if (process.env.DOCUMENT_DB === 'true') {
+            await this.documentDBanySegmentCase(
+              account,
               session,
-              account.id
-            );
-            // Add lookups for each additional collection to the pipeline
-            // Step 1: Create new collections from each set with a new _id and rename _id to customerId
-            const newCollectionNames = await Promise.all(
-              sets.map(async (collName, index) => {
-                const newCollName = `new_${collName}`;
-                this.debug(
-                  `document db new col name ${collName}`,
-                  this.getCustomersFromQuery.name,
-                  session,
-                  account.id
-                );
-                const collectionHandle =
-                  this.connection.db.collection(collName);
-                await collectionHandle
-                  .aggregate([
-                    {
-                      $addFields: { customerId: '$_id' },
-                    },
-                    {
-                      $project: { _id: 0 },
-                    },
-                    {
-                      $out: newCollName,
-                    },
-                  ])
-                  .toArray(); // Execute the aggregation pipeline and create new collections
-                return newCollName;
-              })
-            );
-
-            //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
-
-            // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-            const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
-            const finalCollection = `final_${collectionName}`;
-            await Promise.all(
-              newCollectionNames.map(async (newCollName) => {
-                const cursor = this.connection.db
-                  .collection(newCollName)
-                  .find();
-                let batch = [];
-                while (await cursor.hasNext()) {
-                  const doc = await cursor.next();
-                  batch.push({
-                    insertOne: {
-                      document: doc,
-                    },
-                  });
-
-                  if (batch.length >= BATCH_SIZE) {
-                    await this.connection.db
-                      .collection(finalCollection)
-                      .bulkWrite(batch);
-                    batch = []; // Reset the batch for the next group of documents
-                  }
-                }
-
-                // Process any remaining documents in the last batch
-                if (batch.length > 0) {
-                  await this.connection.db
-                    .collection(finalCollection)
-                    .bulkWrite(batch);
-                }
-              })
-            );
-
-            // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
-            await this.connection.db
-              .collection(finalCollection)
-              .aggregate([
-                {
-                  $group: {
-                    _id: '$customerId', // Group by customerId
-                    customerId: { $first: '$customerId' },
-                  },
-                },
-                {
-                  $project: {
-                    _id: '$customerId',
-                  },
-                },
-                {
-                  $out: thisCollectionName, // Output the final aggregated documents into the same collection
-                },
-              ])
-              .toArray();
-
-            this.debug(
-              `document db final col name ${finalCollection}`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-
-            //drop all intermediate collections
-            try {
-              this.debug(
-                `trying to release finalcollection`,
-                this.getCustomersFromQuery.name,
-                session,
-                account.id
-              );
-              //toggle for testing segments
-              await this.connection.db.collection(finalCollection).drop();
-              this.debug(
-                `dropped successfully`,
-                this.getCustomersFromQuery.name,
-                session,
-                account.id
-              );
-            } catch (e) {
-              this.debug(
-                `error dropping collection: ${e}`,
-                this.getCustomersFromQuery.name,
-                session,
-                account.id
-              );
-            }
-
-            newCollectionNames.map(async (collection) => {
-              try {
-                this.debug(
-                  `trying to release collection`,
-                  this.getCustomersFromQuery.name,
-                  session,
-                  account.id
-                );
-                //toggle for testing segments
-                await this.connection.db.collection(collection).drop();
-                this.debug(
-                  `dropped successfully`,
-                  this.getCustomersFromQuery.name,
-                  session,
-                  account.id
-                );
-              } catch (e) {
-                this.debug(
-                  `error dropping collection: ${e}`,
-                  this.getCustomersFromQuery.name,
-                  session,
-                  account.id
-                );
-              }
-            });
+              sets,
+              collectionName,
+              thisCollectionName,
+              "final_or_gscfq_"
+            )
           } else {
-            /*
-          [
-            { $group: { _id: "$customerId" } }
-          ];
-          */
+          
             // Add each additional collection to the pipeline
             if (sets.length > 1) {
               sets.forEach((collName) => {
@@ -4259,19 +3776,27 @@ export class CustomersService {
 
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
-        await queryRunner.startTransaction();
 
         const stepIds = [];
-        for (const journeyId of journeyIds) {
-          const steps =
-            await this.stepsService.transactionalfindAllByTypeInJourney(
-              account,
-              StepType.MESSAGE,
-              journeyId,
-              queryRunner,
-              session
-            );
-          stepIds.push(...steps.map((step) => step.id));
+
+        try {
+          for (const journeyId of journeyIds) {
+            const steps =
+              await this.stepsService.transactionalfindAllByTypeInJourney(
+                account,
+                StepType.MESSAGE,
+                journeyId,
+                queryRunner,
+                session
+              );
+            stepIds.push(...steps.map((step) => step.id));
+          }
+        }
+        catch(error) {
+          this.error(error, this.customersFromMessageStatement.name, session);
+          throw error;
+        } finally {
+          await queryRunner.release();
         }
 
         console.log('step ids are,', JSON.stringify(stepIds, null, 2));
@@ -5169,7 +4694,7 @@ export class CustomersService {
           mongoQuery.source = 'mobile';
           //console.log("mongoquery in eventssegment is ", JSON.stringify(mongoQuery, null, 2) );
 
-          const aggregationPipelineMobile: any[] = [
+          let aggregationPipelineMobile: any[] = [
             { $match: mongoQuery },
             {
               $addFields: {
@@ -5201,36 +4726,89 @@ export class CustomersService {
             },
           },
           */
-            {
-              $merge: {
-                into: intermediateCollection, // specify the target collection name
-                on: '_id', // assuming '_id' is your unique identifier
-                whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
-                whenNotMatched: 'insert', // inserts the document if no match is found
-              },
-            },
-            //to do
           ];
-
-          this.debug(
-            'aggregate mobile query is/n\n',
-            this.customersFromEventStatement.name,
-            session,
-            account.id
-          );
-
-          this.debug(
-            JSON.stringify(aggregationPipelineMobile, null, 2),
-            this.customersFromEventStatement.name,
-            session,
-            account.id
-          );
-
-          //fetch users here
-          const mobileResult: any =
-            await this.eventsService.getCustomersbyEventsMongo(
-              aggregationPipelineMobile
+          if (process.env.DOCUMENT_DB === 'true'){
+            aggregationPipelineMobile.push(
+              {
+                $merge: {
+                  into: "events_test_col",//intermediateCollection, // specify the target collection name
+                  on: '_id', // assuming '_id' is your unique identifier
+                  whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
+                  whenNotMatched: 'insert', // inserts the document if no match is found
+                },
+              }
             );
+
+          }
+          else{
+
+            aggregationPipelineMobile.push(
+              {
+                $merge: {
+                  into: intermediateCollection, // specify the target collection name
+                  on: '_id', // assuming '_id' is your unique identifier
+                  whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
+                  whenNotMatched: 'insert', // inserts the document if no match is found
+                },
+              }
+            );
+
+          }
+            
+            //to do
+            this.debug(
+              'aggregate mobile query is/n\n',
+              this.customersFromEventStatement.name,
+              session,
+              account.id
+            );
+  
+            this.debug(
+              JSON.stringify(aggregationPipelineMobile, null, 2),
+              this.customersFromEventStatement.name,
+              session,
+              account.id
+            );
+  
+            //fetch users here
+            const mobileResult: any =
+              await this.eventsService.getCustomersbyEventsMongo(
+                aggregationPipelineMobile
+              );
+              
+          if (process.env.DOCUMENT_DB === 'true'){
+            // here we need to add the temp collection back into 
+            /*
+            const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
+            const finalCollection = `${finalCollectionPrepend}${collectionName}`;
+            await Promise.all(
+        
+            const cursor = this.connection.db.collection(newCollName).find();
+            let batch = [];
+            while (await cursor.hasNext()) {
+              const doc = await cursor.next();
+              batch.push({
+                insertOne: {
+                  document: doc,
+                },
+              });
+
+              if (batch.length >= BATCH_SIZE) {
+                await this.connection.db
+                  .collection(finalCollection)
+                  .bulkWrite(batch);
+                batch = []; // Reset the batch for the next group of documents
+              }
+            }
+
+              // Process any remaining documents in the last batch
+              if (batch.length > 0) {
+                await this.connection.db.collection(finalCollection).bulkWrite(batch);
+              }
+              */
+          }
+
+  
 
           // we do one more merge with mobile users for those who may include the event correlationValues in their other_ids field
           const aggregationPipelineMobileOtherIds: any[] = [
@@ -6748,34 +6326,6 @@ export class CustomersService {
         );
       }
 
-      const docs = await this.CustomerModel.aggregate([
-        {
-          $match: {
-            workspaceId: workspace.id,
-            isAnonymous: false,
-          },
-        },
-        {
-          $group: {
-            _id: `$${passedPK.asAttribute.key}`,
-            count: { $sum: 1 },
-            docs: { $push: '$$ROOT' },
-          },
-        },
-        {
-          $match: {
-            count: { $gt: 1 },
-          },
-        },
-      ]).option({ allowDiskUse: true });
-
-      if (docs?.length) {
-        throw new HttpException(
-          "Selected primary key can't be used cause it's value has duplicates among already existing users.",
-          HttpStatus.BAD_REQUEST
-        );
-      }
-
       const folderPath = 'import-errors';
       const errorFileName = `errors-${fileData.fileKey}.csv`;
       const fullPath = path.join(folderPath, errorFileName);
@@ -6795,20 +6345,25 @@ export class CustomersService {
       const promisesList = [];
 
       const readPromise = new Promise<{
+        total: number;
         created: number;
         updated: number;
         skipped: number;
+        final: number;
       }>(async (resolve, reject) => {
         const s3CSVStream = await this.s3Service.getImportedCSVReadStream(
           fileData.fileKey
         );
+        let total = 0;
         let created = 0;
         let updated = 0;
         let skipped = 0;
+        let final = 0;
 
         const csvStream = fastcsv
           .parse({ headers: true })
           .on('data', async (data) => {
+            total++;
             let skippedReason = '';
             let convertedPKValue;
 
@@ -6840,54 +6395,56 @@ export class CustomersService {
               );
               return;
             } else {
-              currentBatch.push(convertedPKValue);
+              // currentBatch.push(convertedPKValue);
 
-              if (currentBatch.length >= 10000) {
-                promisesList.push(
-                  (async () => {
-                    const { createdCount, updatedCount } =
-                      await this.countCreateUpdateWithBatch(
-                        passedPK.asAttribute.key,
-                        Array.from(currentBatch)
-                      );
-                    created += createdCount;
-                    updated += updatedCount;
-                  })()
-                );
-                currentBatch = [];
-              }
+              // if (currentBatch.length >= 10000) {
+              //   promisesList.push(
+              //     (async () => {
+              //       const { createdCount, updatedCount } =
+              //         await this.countCreateUpdateWithBatch(
+              //           passedPK.asAttribute.key,
+              //           Array.from(currentBatch)
+              //         );
+              //       created += createdCount;
+              //       updated += updatedCount;
+              //     })()
+              //   );
+              //   currentBatch = [];
+              // }
             }
           })
           .on('end', async () => {
-            if (currentBatch.length > 0) {
-              promisesList.push(
-                (async () => {
-                  const { createdCount, updatedCount } =
-                    await this.countCreateUpdateWithBatch(
-                      passedPK.asAttribute.key,
-                      Array.from(currentBatch)
-                    );
-                  created += createdCount;
-                  updated += updatedCount;
-                })()
-              );
-              currentBatch = [];
-            }
+            // if (currentBatch.length > 0) {
+            //   promisesList.push(
+            //     (async () => {
+            //       const { createdCount, updatedCount } =
+            //         await this.countCreateUpdateWithBatch(
+            //           passedPK.asAttribute.key,
+            //           Array.from(currentBatch)
+            //         );
+            //       created += createdCount;
+            //       updated += updatedCount;
+            //     })()
+            //   );
+            //   currentBatch = [];
+            // }
 
-            await Promise.all(promisesList);
+            // await Promise.all(promisesList);
 
             writeErrorsStream.end();
             await new Promise((resolve2) =>
               writeErrorsStream.on('finish', resolve2)
             );
 
-            resolve({ created, updated, skipped });
+            resolve({ total, created, updated, skipped, final });
           });
 
         s3CSVStream.pipe(csvStream);
       });
 
       const countResults = await readPromise;
+
+      countResults.final = countResults.total - countResults.skipped;
 
       let uploadResult = '';
       if (countResults.skipped > 0) {
@@ -6974,34 +6531,6 @@ export class CustomersService {
       ) {
         throw new HttpException(
           'Field selected as primary not corresponding to saved primary Key',
-          HttpStatus.BAD_REQUEST
-        );
-      }
-
-      const docs = await this.CustomerModel.aggregate([
-        {
-          $match: {
-            workspaceId: workspace.id,
-            isAnonymous: false,
-          },
-        },
-        {
-          $group: {
-            _id: `$${passedPK.asAttribute.key}`,
-            count: { $sum: 1 },
-            docs: { $push: '$$ROOT' },
-          },
-        },
-        {
-          $match: {
-            count: { $gt: 1 },
-          },
-        },
-      ]).option({ allowDiskUse: true });
-
-      if (docs?.length) {
-        throw new HttpException(
-          "Selected primary key can't be used cause it's value has duplicates among already existing users.",
           HttpStatus.BAD_REQUEST
         );
       }
