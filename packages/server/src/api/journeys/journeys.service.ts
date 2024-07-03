@@ -772,25 +772,24 @@ export class JourneysService {
       ...journey,
       visualLayout: {
         edges: [],
-        nodes: []
+        nodes: [],
       },
-      inclusionCriteria: {
-      }
+      inclusionCriteria: {},
     };
     // Prepare a deep copy of the account to modify without affecting the original account object
     const modifiedAccount = {
       ...account,
-      teams: account.teams.map(team => ({
+      teams: account.teams.map((team) => ({
         ...team,
         organization: {
           ...team.organization,
-          workspaces: team.organization.workspaces.map(workspace => ({
+          workspaces: team.organization.workspaces.map((workspace) => ({
             ...workspace,
-            pushConnections: [] //, Clears the pushConnections array
+            pushConnections: [], //, Clears the pushConnections array
             //pushPlatforms: null // Clears the pushPlatforms info
-          }))
-        }
-      }))
+          })),
+        },
+      })),
     };
 
     for (const customer of customers) {

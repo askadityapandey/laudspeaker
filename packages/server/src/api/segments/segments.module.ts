@@ -36,7 +36,7 @@ function getProvidersList() {
 }
 
 function getExportList() {
-  let exportList: Array<any> = [SegmentsService];
+  let exportList: Array<any> = [SegmentsService, SegmentCustomersService];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
     exportList = [

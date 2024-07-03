@@ -19,7 +19,9 @@ export class CustomersConsumerService implements OnApplicationBootstrap {
     private readonly logger: Logger,
     private readonly consumerService: KafkaConsumerService,
     @InjectQueue('{customer_change}')
-    private readonly customerChangeQueue: Queue
+    private readonly customerChangeQueue: Queue,
+    @InjectQueue('{segment_update}')
+    private readonly segmentUpdateQueue: Queue
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -108,21 +110,23 @@ export class CustomersConsumerService implements OnApplicationBootstrap {
         //   ? +process.env.CUSTOMER_CHANGE_QUEUE_THRESHOLD
         //   : 10; // Set the threshold for maximum waiting jobs
 
-        // while (true) {
-        //   const jobCounts = await this.customerChangeQueue.getJobCounts('wait');
-        //   const waitingJobs = jobCounts.wait;
+        while (true) {
+          const jobCounts = await this.segmentUpdateQueue.getJobCounts(
+            'active'
+          );
+          const waitingJobs = jobCounts.active;
 
-        //   if (waitingJobs < threshold) {
-        //     break; // Exit the loop if the number of waiting jobs is below the threshold
-        //   }
+          if (waitingJobs === 0) {
+            break; // Exit the loop if the number of waiting jobs is below the threshold
+          }
 
-        //   this.warn(
-        //     `Waiting for the queue to process. Current waiting jobs: ${waitingJobs}`,
-        //     this.handleCustomerChangeStream.name,
-        //     session
-        //   );
-        //   await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
-        // }
+          this.warn(
+            `Waiting for the segment queue to finish processing. Current waiting jobs: ${waitingJobs}`,
+            this.handleCustomerChangeStream.name,
+            session
+          );
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
+        }
         await this.customerChangeQueue.add('change', {
           session,
           changeMessage,
@@ -133,68 +137,3 @@ export class CustomersConsumerService implements OnApplicationBootstrap {
     };
   }
 }
-
-
-/*
-const { Kafka } = require('kafkajs');
-
-const kafka = new Kafka({
-  clientId: 'my-app',
-  brokers: ['kafka1:9092', 'kafka2:9092']
-});
-
-const consumer = kafka.consumer({ groupId: 'my-group' });
-
-let isPaused = false;
-
-const consumeMessages = async () => {
-  await consumer.connect();
-  await consumer.subscribe({ topic: 'my-topic', fromBeginning: true });
-
-  await consumer.run({
-    eachMessage: async ({ topic, partition, message }) => {
-      console.log({
-        value: message.value.toString(),
-      });
-
-      if (shouldPauseConsumption()) {
-        await pauseConsumer(partition);
-        console.log('Consumer paused');
-      }
-
-      if (shouldResumeConsumption() && isPaused) {
-        await resumeConsumer(partition);
-        console.log('Consumer resumed');
-      }
-    },
-  });
-};
-
-const shouldPauseConsumption = () => {
-  // Add your condition to pause consumption here
-  // For example, based on some external signal or condition
-  return true; // Change this condition according to your logic
-};
-
-const shouldResumeConsumption = () => {
-  // Add your condition to resume consumption here
-  // For example, based on some external signal or condition
-  return false; // Change this condition according to your logic
-};
-
-const pauseConsumer = async (partition) => {
-  if (!isPaused) {
-    await consumer.pause([{ topic: 'my-topic', partitions: [partition] }]);
-    isPaused = true;
-  }
-};
-
-const resumeConsumer = async (partition) => {
-  if (isPaused) {
-    await consumer.resume([{ topic: 'my-topic', partitions: [partition] }]);
-    isPaused = false;
-  }
-};
-
-consumeMessages().catch(console.error);
-*/

@@ -152,6 +152,11 @@ export class SegmentUpdateProcessor extends WorkerHost {
     );
   }
 
+  /*
+   * Creates system segments when a journey is started. For every multisplit branch, it creates a segment that
+   * has the multisplit branch defintiont as the segment defintoin. All of the matching customers are then
+   * added to that segment for future multisplit assessments.
+   */
   async handleCreateSystem(
     job: Job<
       {
@@ -201,13 +206,20 @@ export class SegmentUpdateProcessor extends WorkerHost {
             // extract the rules for each multisplit
             const segment = await queryRunner.manager.save(Segment, {
               type: SegmentType.SYSTEM,
-              inclusionCriteria: null,
+              name: '__SYSTEM__',
+              inclusionCriteria:
+                steps[stepIndex].metadata.branches[branchIndex].conditions,
               workspace: {
                 id: job.data.account.teams?.[0]?.organization.workspaces?.[0]
                   .id,
               },
               isUpdating: false,
             });
+
+            steps[stepIndex].metadata.branches[branchIndex].systemSegment =
+              segment.id;
+
+            await queryRunner.manager.save(Step, steps[stepIndex]);
 
             const collectionPrefix =
               this.segmentsService.generateRandomString();
@@ -220,6 +232,8 @@ export class SegmentUpdateProcessor extends WorkerHost {
                 0,
                 collectionPrefix
               );
+
+            if (!customersInSegment) continue; // The segment definition doesnt have any customers in it...
             const CUSTOMERS_PER_BATCH = 50000;
             let batch = 0;
             const mongoCollection =
@@ -458,7 +472,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
         job.data.session
       );
       const forDelete = await this.segmentCustomersRepository.findBy({
-        segment: segment.id,
+        segment: { id: segment.id },
       });
 
       for (const { customerId } of forDelete) {
@@ -507,7 +521,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
       }
 
       const records = await this.segmentCustomersRepository.findBy({
-        segment: segment.id, //{ id: segment.id },
+        segment: { id: segment.id },
       });
 
       for (const { customerId } of records) {
