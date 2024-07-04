@@ -10,7 +10,7 @@ import {
 import { BadRequestException, HttpException } from '@nestjs/common/exceptions';
 import { InjectRepository } from '@nestjs/typeorm';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { DataSource, In, Like, QueryRunner, Repository } from 'typeorm';
+import { DataSource, In, Like, Not, QueryRunner, Repository } from 'typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { AudiencesHelper } from '../audiences/audiences.helper';
 import { CustomersService } from '../customers/customers.service';
@@ -159,6 +159,7 @@ export class SegmentsService {
         workspace: {
           id: workspace.id,
         },
+        type: Not(SegmentType.SYSTEM),
       },
       take: take < 100 ? take : 100,
       skip,
@@ -725,19 +726,26 @@ export class SegmentsService {
     return { added: addedToSegments, removed: removedFromSegments };
   }
 
-  private containsString(obj, searchString) {
-    if (typeof obj === 'string') {
-      return obj.includes(searchString);
+  private containsEventNameWithValue(obj, key, value) {
+    if (typeof obj !== 'object' || obj === null) {
+      return false;
     }
 
     if (Array.isArray(obj)) {
-      return obj.some((item) => this.containsString(item, searchString));
+      return obj.some((item) =>
+        this.containsEventNameWithValue(item, key, value)
+      );
     }
 
-    if (typeof obj === 'object' && obj !== null) {
-      return Object.values(obj).some((value) =>
-        this.containsString(value, searchString)
-      );
+    for (const k in obj) {
+      if (k === key && obj[k] === value) {
+        return true;
+      }
+      if (typeof obj[k] === 'object') {
+        if (this.containsEventNameWithValue(obj[k], key, value)) {
+          return true;
+        }
+      }
     }
 
     return false;
@@ -765,7 +773,13 @@ export class SegmentsService {
       ) {
         continue;
       }
-      if (!this.containsString(segment.inclusionCriteria, event.event)) {
+      if (
+        !this.containsEventNameWithValue(
+          segment.inclusionCriteria,
+          'eventName',
+          event.event
+        )
+      ) {
         continue;
       }
 

@@ -275,6 +275,7 @@ export class EventsPreProcessor extends WorkerHost {
       await this.eventsQueue.addBulk(eventJobs);
       await this.eventsPostQueue.add(job.data.event.event, {
         ...job.data,
+        workspace: undefined,
         customer,
       });
     } catch (e) {
