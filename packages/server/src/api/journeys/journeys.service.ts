@@ -1905,7 +1905,18 @@ export class JourneysService {
 
       await this.trackChange(account, journeyID, queryRunner);
       await queryRunner.commitTransaction();
-      if (jobs.length) await this.segmentUpdateQueue.addBulk(jobs);
+      if (jobs.length)
+        await this.segmentUpdateQueue.addBulk(
+          jobs.map((job) => {
+            return {
+              name: 'createSystem',
+              data: {
+                ...job.data,
+                journey,
+              },
+            };
+          })
+        );
       else
         await this.enrollmentQueue.add('enroll', {
           account,
