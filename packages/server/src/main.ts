@@ -48,41 +48,46 @@ if (cluster.isPrimary) {
     cluster.fork(); // Fork a new worker to replace the one that died
   });
 } else {
-  const expressApp = express();
 
-  Sentry.init({
-    dsn: process.env.SENTRY_DSN_URL_BACKEND,
-    environment:
-      process.env.SENTRY_ENVIRONMENT ||
-      process.env.NODE_ENV ||
-      process.env.ENVIRONMENT,
-    release: process.env.SENTRY_RELEASE,
-    integrations: [
-      new Sentry.Integrations.Express({
-        app: expressApp,
-      }),
-      new Sentry.Integrations.Mongo({ useMongoose: true }),
-      new Sentry.Integrations.Postgres({ usePgNative: true }),
-      new Sentry.Integrations.Http({ tracing: true }),
-      new ProfilingIntegration(),
-      ...Sentry.autoDiscoverNodePerformanceMonitoringIntegrations(),
-    ],
-    debug: false,
-    // Performance Monitoring
-    tracesSampleRate: process.env.NODE_ENV == 'production' ? 0.25 : 1.0,
-    // Set sampling rate for profiling - this is relative to tracesSampleRate
-    profilesSampleRate: 1.0, // Capture 100% of the transactions, reduce in production!
-    maxBreadcrumbs: Number.MAX_SAFE_INTEGER,
-  });
+  function initializeSentry(expressApp) {
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN_URL_BACKEND,
+      environment:
+        process.env.SENTRY_ENVIRONMENT ||
+        process.env.NODE_ENV ||
+        process.env.ENVIRONMENT,
+      release: process.env.SENTRY_RELEASE,
+      integrations: [
+        new Sentry.Integrations.Express({
+          app: expressApp,
+        }),
+        new Sentry.Integrations.Mongo({ useMongoose: true }),
+        new Sentry.Integrations.Postgres({ usePgNative: true }),
+        new Sentry.Integrations.Http({ tracing: true }),
+        new ProfilingIntegration(),
+        ...Sentry.autoDiscoverNodePerformanceMonitoringIntegrations(),
+      ],
+      debug: false,
+      // Performance Monitoring
+      tracesSampleRate: process.env.NODE_ENV == 'production' ? 0.25 : 1.0,
+      // Set sampling rate for profiling - this is relative to tracesSampleRate
+      profilesSampleRate: 1.0, // Capture 100% of the transactions, reduce in production!
+      maxBreadcrumbs: Number.MAX_SAFE_INTEGER,
+    });
 
-  if (process.env.SENTRY_ENVIRONMENT_TAG) {
-    Sentry.setTag(
-      'laudspeaker_environment',
-      process.env.SENTRY_ENVIRONMENT_TAG
-    );
+    if (process.env.SENTRY_ENVIRONMENT_TAG) {
+      Sentry.setTag(
+        'laudspeaker_environment',
+        process.env.SENTRY_ENVIRONMENT_TAG
+      );
+    }
+
+    expressApp.use(Sentry.Handlers.requestHandler());
+    expressApp.use(Sentry.Handlers.tracingHandler());
+    expressApp.use(Sentry.Handlers.errorHandler());
   }
 
-  async function initializeApp() {
+  async function initializeApp(expressApp) {
     let app;
 
     if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'WEB') {
@@ -148,11 +153,11 @@ if (cluster.isPrimary) {
   }
 
   async function bootstrap() {
-    expressApp.use(Sentry.Handlers.requestHandler());
-    expressApp.use(Sentry.Handlers.tracingHandler());
-    expressApp.use(Sentry.Handlers.errorHandler());
+    const expressApp = express();
 
-    const app: NestExpressApplication = await initializeApp();
+    initializeSentry(expressApp);
+
+    const app: NestExpressApplication = await initializeApp(expressApp);
     const port: number = parseInt(process.env.PORT);
 
     if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'WEB') {

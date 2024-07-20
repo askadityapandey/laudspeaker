@@ -62,7 +62,7 @@ import { OrganizationInvites } from './api/organizations/entities/organization-i
 import { redisStore } from 'cache-manager-redis-yet';
 import { CacheModule } from '@nestjs/cache-manager';
 import { HealthCheckService } from './app.healthcheck.service';
-import { QueueService } from '@/common/services/queue.service';
+import { QueueModule } from '@/common/services/queue/queue.module';
 
 const sensitiveKeys = [
   /cookie/i,
@@ -103,7 +103,6 @@ function getProvidersList() {
     RedlockService,
     JourneyLocationsService,
     HealthCheckService,
-    QueueService,
   ];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'CRON') {
@@ -191,6 +190,11 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
           }:${parseInt(process.env.REDIS_PORT)}`,
         }),
       }),
+    }),
+    QueueModule.forRoot({
+      connection: {
+        uri: process.env.RMQ_CONNECTION_URI ?? 'amqp://localhost',
+      },
     }),
     BullModule.forRoot({
       connection: {

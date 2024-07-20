@@ -20,7 +20,6 @@ import { TemplatesModule } from '../templates/templates.module';
 import { Account } from '../accounts/entities/accounts.entity';
 import { AccountsModule } from '../accounts/accounts.module';
 import { EventsModule } from '../events/events.module';
-import { TransitionProcessor } from './processors/transition.processor';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 import { ModalsModule } from '../modals/modals.module';
 import { WebsocketsModule } from '@/websockets/websockets.module';
@@ -45,7 +44,6 @@ import { StartStepProcessor } from './processors/start.step.processor';
 import { TimeDelayStepProcessor } from './processors/time.delay.step.processor';
 import { TimeWindowStepProcessor } from './processors/time.window.step.processor';
 import { WaitUntilStepProcessor } from './processors/wait.until.step.processor';
-import { QueueService } from '@/common/services/queue.service';
 import { SegmentsModule } from '../segments/segments.module';
 
 function getProvidersList() {
@@ -55,13 +53,11 @@ function getProvidersList() {
     RedlockService,
     JourneyLocationsService,
     CacheService,
-    QueueService,
   ];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
     providerList = [
       ...providerList,
-      TransitionProcessor,
       StartProcessor,
       EnrollmentProcessor,
       ExitStepProcessor,

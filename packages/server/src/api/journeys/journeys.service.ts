@@ -79,7 +79,6 @@ import {
   JourneyEnrollmentType,
 } from './types/additional-journey-settings.interface';
 import { JourneyLocationsService } from './journey-locations.service';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { RedisService } from '@liaoliaots/nestjs-redis';
 import { JourneyChange } from './entities/journey-change.entity';
@@ -89,6 +88,8 @@ import { format, eachDayOfInterval, eachWeekOfInterval } from 'date-fns';
 import { CacheService } from '@/common/services/cache.service';
 import { EntityComputedFieldsHelper } from '@/common/helper/entityComputedFields.helper';
 import { EntityWithComputedFields } from '@/common/entities/entityWithComputedFields.entity';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 export enum JourneyStatus {
   ACTIVE = 'Active',
@@ -252,8 +253,6 @@ export class JourneysService {
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @Inject(RedisService) private redisService: RedisService,
-    @InjectQueue('{segment_update}')
-    private readonly segmentUpdateQueue: Queue,
     @Inject(CacheService) private cacheService: CacheService
   ) {}
 
@@ -1863,11 +1862,11 @@ export class JourneysService {
 
       await this.trackChange(account, journeyID, queryRunner);
       await queryRunner.commitTransaction();
-      await this.segmentUpdateQueue.add('createSystem', {
+      await Producer.add(QueueType.SEGMENT_UPDATE, {
         account,
         journey,
         session,
-      });
+      }, 'createSystem');
     } catch (e) {
       err = e;
       this.error(e, this.start.name, session, account.email);
