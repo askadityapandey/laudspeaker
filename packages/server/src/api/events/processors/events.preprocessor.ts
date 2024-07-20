@@ -252,7 +252,7 @@ export class EventsPreProcessor extends ProcessorBase {
         ...job.data,
         workspace: undefined,
         customer,
-      });
+      }, job.data.event.event);
     } catch (e) {
       this.error(
         e,
