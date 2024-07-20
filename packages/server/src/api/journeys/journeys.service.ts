@@ -1854,16 +1854,18 @@ export class JourneysService {
               type: SegmentType.SYSTEM,
               name: '__SYSTEM__',
               inclusionCriteria:
-                steps[stepIndex].metadata.branches[branchIndex].conditions,
+                multiSplitSteps[stepIndex].metadata.branches[branchIndex]
+                  .conditions,
               workspace: {
                 id: account.teams?.[0]?.organization.workspaces?.[0].id,
               },
               isUpdating: false,
             });
-            steps[stepIndex].metadata.branches[branchIndex].systemSegment =
-              segment.id;
+            multiSplitSteps[stepIndex].metadata.branches[
+              branchIndex
+            ].systemSegment = segment.id;
 
-            await queryRunner.manager.save(Step, steps[stepIndex]);
+            await queryRunner.manager.save(Step, multiSplitSteps[stepIndex]);
 
             jobs.push({
               name: 'createSystem',
