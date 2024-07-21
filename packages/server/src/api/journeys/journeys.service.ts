@@ -1903,7 +1903,7 @@ export class JourneysService {
       await this.trackChange(account, journeyID, queryRunner);
       await queryRunner.commitTransaction();
       if (jobs.length)
-        await Producer.add(QueueType.SEGMENT_UPDATE,
+        await Producer.addBulk(QueueType.SEGMENT_UPDATE,
           jobs.map((job) => {
             return {
               ...job.data,
