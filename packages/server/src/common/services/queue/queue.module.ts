@@ -13,20 +13,6 @@ export class QueueModule {
       module: QueueModule,
       imports: [DiscoveryModule],
       providers: [QueueExplorer],
-      // exports: queueProviders,
     };
-
-    // return {
-    //   module: QueueModule,
-    //   providers: [
-    //     {
-    //       provide: 'QUEUE_CONFIG',
-    //       useValue: connection,
-    //     },
-    //     QueueConsumerService,
-    //     QueueProducerService
-    //   ],
-    //   exports: [QueueConsumerService, QueueProducerService],
-    // };
   }
 }
