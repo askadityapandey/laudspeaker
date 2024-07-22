@@ -4,7 +4,10 @@ import { QueueType } from '../types/queue';
 export class QueueManager {
   private static connectionMgr: RMQConnectionManager;
   private static queueOptions = {
-    durable: true
+    durable: true,
+    arguments: {
+      maxPriority: 255
+    }
   }
 
   static async init() {

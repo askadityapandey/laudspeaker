@@ -66,12 +66,12 @@ export class Producer {
   private static getBulkJobPriority(stepDepth: number, batchSize: number): number[] {
     const priorities: number[] = [];
 
-    // bullmq min, max priority
+    // RMQ min, max priority
     const minJobPriority: number = 1;
-    const maxJobPriority: number = 2000000;
+    const maxJobPriority: number = 255;
 
     // max number of steps a journey can take
-    const maxJourneyDepth: number = 1000;
+    const maxJourneyDepth: number = 50;
 
     // upperbound to maxJourneyDepth
     stepDepth = Math.min(stepDepth, maxJourneyDepth);

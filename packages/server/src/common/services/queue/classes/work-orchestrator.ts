@@ -23,7 +23,10 @@ export class WorkOrchestrator {
     const channel = this.connectionMgr.channelObj;
 
     await channel.assertQueue(queue, {
-      durable: true
+      durable: true,
+      arguments: {
+        maxPriority: 255
+      }
     });
 
     await channel.prefetch( parseInt(process.env.RMQ_QUEUE_PREFETCH_COUNT ?? '1') );
