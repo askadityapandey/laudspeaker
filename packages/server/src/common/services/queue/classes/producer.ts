@@ -14,11 +14,17 @@ export class Producer {
 
   private static async publish(queue: QueueType, jobs: any[]) {
     let contents;
+    let jobOptions;
 
     for(const job of jobs) {
       contents = Buffer.from(JSON.stringify(job));
 
-      await this.connectionMgr.channelObj.sendToQueue(queue, contents, this.publishOptions);
+      jobOptions = {
+        ...this.publishOptions,
+        priority: job.opts.priority
+      }
+
+      await this.connectionMgr.channelObj.sendToQueue(queue, contents, jobOptions);
     }
   }
 
