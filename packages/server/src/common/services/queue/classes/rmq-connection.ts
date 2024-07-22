@@ -15,7 +15,7 @@ export class RMQConnection {
     const connectionName = this.getConnectionName();
 
     this.connection = await amqplib.connect(
-      process.env.RMQ_CONNECTION_URI, {
+      process.env.RMQ_CONNECTION_URI ?? 'amqp://localhost', {
         clientProperties: {
           connection_name: connectionName
         }
