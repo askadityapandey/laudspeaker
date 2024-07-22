@@ -19,7 +19,6 @@ import { QueueManager } from './classes/queue-manager';
 
 @Injectable()
 export class QueueExplorer implements OnModuleInit {
-  private readonly logger = new Logger('BullModule');
   private readonly injector = new Injector();
 
   constructor(

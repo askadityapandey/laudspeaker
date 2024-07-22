@@ -2,7 +2,6 @@ import { Module, forwardRef } from '@nestjs/common';
 import { StepsService } from './steps.service';
 import { StepsController } from './steps.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BullModule } from '@nestjs/bullmq';
 import { Step } from './entities/step.entity';
 import { JobsService } from '../jobs/jobs.service';
 import { Template } from '../templates/entities/template.entity';
@@ -93,42 +92,6 @@ function getProvidersList() {
     MongooseModule.forFeature([
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
-    BullModule.registerQueue({
-      name: '{transition}',
-    }),
-    BullModule.registerQueue({
-      name: '{webhooks}',
-    }),
-    BullModule.registerQueue({
-      name: '{start}',
-    }),
-    BullModule.registerQueue({
-      name: '{start.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{wait.until.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{time.window.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{exit.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{jump.to.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{message.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{time.delay.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{multisplit.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{experiment.step}',
-    }),
     forwardRef(() => CustomersModule),
     forwardRef(() => WebhooksModule),
     forwardRef(() => TemplatesModule),
