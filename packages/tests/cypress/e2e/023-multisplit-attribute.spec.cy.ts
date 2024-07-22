@@ -158,7 +158,7 @@ describe("multisplit attribute", () => {
 
             cy.contains("Journey has been started").should("exist");
 
-            cy.wait(1000);
+            cy.wait(5000);
 
             // TODO: send array of events to new endpoint /events/batch
             cy.request({
@@ -318,7 +318,7 @@ describe("multisplit attribute", () => {
 
             cy.contains("Journey has been started").should("exist");
 
-            cy.wait(1000);
+            cy.wait(5000);
 
             cy.request({
               method: "POST",
