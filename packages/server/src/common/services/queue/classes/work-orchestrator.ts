@@ -133,8 +133,7 @@ export class WorkOrchestrator {
   }
 
   private getJobDeliveryCount(job): number {
-    return
-      job.metadata.deliveryCount
+    return job.metadata.deliveryCount
       ? parseInt(job.metadata.deliveryCount)
       : 0;
   }
@@ -143,7 +142,7 @@ export class WorkOrchestrator {
     job.metadata.deliveryCount = this.getJobDeliveryCount(job) + 1;
     job.metadata.error = {
       message: error.message,
-      stacktrace: error.stacktrace
+      stacktrace: error.stack
     }
 
     return job;
