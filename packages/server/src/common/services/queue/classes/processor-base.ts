@@ -31,8 +31,6 @@ export abstract class ProcessorBase<T extends WorkOrchestrator = WorkOrchestrato
   }
 
   async onModuleDestroy() {
-    console.log("RMQ: ProcessorBase Shutdown");
-
     return this._worker?.close();
   }
 }

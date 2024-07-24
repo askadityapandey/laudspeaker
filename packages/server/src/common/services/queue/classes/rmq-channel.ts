@@ -1,23 +1,25 @@
 import { RMQConnection } from './rmq-connection';
-const amqplib = require('amqplib');
+import { Inject, Logger } from '@nestjs/common';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 
 export class RMQChannel {
-
   public connection;
   public channel;
+  @Inject(WINSTON_MODULE_NEST_PROVIDER)
+  private logger: Logger;
 
   constructor(connection: RMQConnection) {
     this.connection = connection;
   }
 
   async init() {
-    console.log("RMQ: Opening Channel");
+    // this.logger.verbose("RMQ: Opening Channel");
 
     this.channel = await this.connection.connection.createChannel();
   }
 
   async close() {
-    console.log("RMQ: Closing Channel");
+    // this.logger.verbose("RMQ: Closing Channel");
 
     return this.channel.close();
   }

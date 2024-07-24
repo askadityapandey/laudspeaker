@@ -3,6 +3,8 @@ import { QueueType } from '../types/queue-type';
 import { QueueDestination } from '../types/queue-destination';
 import { QueueManager } from './queue-manager';
 import { Producer } from './producer';
+import { Inject, Logger } from '@nestjs/common';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 
 export class WorkOrchestrator {
 
@@ -18,6 +20,9 @@ export class WorkOrchestrator {
   private running;
   private closing: Promise<void> = null;
   private closed;
+
+  @Inject(WINSTON_MODULE_NEST_PROVIDER)
+  private readonly logger: Logger;
 
   constructor(queue: QueueType, processor, connectionMgr: RMQConnectionManager) {
     this.queue = queue;
@@ -62,7 +67,8 @@ export class WorkOrchestrator {
   }
 
   close(): Promise<void> {
-    console.log("RMQ: WorkOrchestrator Closing");
+    // this.logger.verbose("RMQ: WorkOrchestrator Closing");
+    
     if (this.closing) {
       return this.closing;
     }

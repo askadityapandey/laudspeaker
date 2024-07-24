@@ -11,7 +11,6 @@ import {
   ModuleRef,
   Reflector,
 } from '@nestjs/core';
-import { Injector } from '@nestjs/core/injector/injector';
 import { InstanceWrapper } from '@nestjs/core/injector/instance-wrapper';
 import { Module } from '@nestjs/core/injector/module';
 import { PROCESSOR_METADATA } from './queue.constants';
@@ -25,7 +24,6 @@ import { QueueManager } from './classes/queue-manager';
 @Injectable()
 export class QueueExplorer implements 
   OnModuleInit, OnModuleDestroy {
-  private readonly injector = new Injector();
 
   constructor(
     private readonly discoveryService: DiscoveryService,
@@ -34,6 +32,7 @@ export class QueueExplorer implements
 
   async onModuleInit(): Promise<void> {
     // create all queues
+    // Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10000);
     await QueueManager.init();
 
     await this.initProducer();
@@ -48,10 +47,6 @@ export class QueueExplorer implements
       QueueManager.close(),
       Producer.close()
     ]);
-
-    if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
-      // await this.initWorkers();
-    }
   }
 
   private async initWorkers() {
