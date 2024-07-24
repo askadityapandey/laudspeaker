@@ -45,8 +45,9 @@ export class QueueManager {
       ...this.queueOptions
     };
 
-    if (destination == QueueDestination.COMPLETED) {
-      options.maxLength = 100;
+    if (destination == QueueDestination.COMPLETED
+      || destination == QueueDestination.FAILED) {
+      options.maxLength = 500;
     }
 
     return options;

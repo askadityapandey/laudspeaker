@@ -139,8 +139,12 @@ export class WorkOrchestrator {
       : 0;
   }
 
-  private getNewJobForRetry(job) {
+  private getNewJobAfterError(job, error) {
     job.metadata.deliveryCount = this.getJobDeliveryCount(job) + 1;
+    job.metadata.error = {
+      message: error.message,
+      stacktrace: error.stacktrace
+    }
 
     return job;
   }
@@ -160,7 +164,7 @@ export class WorkOrchestrator {
       await new Promise((resolve) => setTimeout(resolve, delayMS));
     }
 
-    job = this.getNewJobForRetry(job);
+    job = this.getNewJobAfterError(job, error);
 
     await Producer.requeueJob(queue, job);
 
@@ -169,6 +173,8 @@ export class WorkOrchestrator {
 
   private async failJob(channel, msg, job, queue, processor, error) {
     await processor.onFail(job);
+
+    job = this.getNewJobAfterError(job, error);
 
     await Producer.addToFailed(queue, job);
 
