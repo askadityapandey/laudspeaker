@@ -12,6 +12,8 @@ export class RMQConnection {
     // TODO: stop primary process from connecting
     // since it doesn't do any actual work
     
+    console.log("RMQ: Opening Connection");
+
     const connectionName = this.getConnectionName();
 
     this.connection = await amqplib.connect(
@@ -27,6 +29,7 @@ export class RMQConnection {
   }
   
   async close() {
+    console.log("RMQ: Closing Connection");
     return this.connection.close();
   }
 }

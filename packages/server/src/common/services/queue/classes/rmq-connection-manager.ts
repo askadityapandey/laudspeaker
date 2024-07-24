@@ -38,6 +38,7 @@ export class RMQConnectionManager {
   }
 
 	async close(): Promise<void> {
+    console.log("Closing RMQConnectionManager")
     const closePromise = Promise.resolve()
       .finally( () => this.channel.close() )
       .finally( () => this.connection.close() );

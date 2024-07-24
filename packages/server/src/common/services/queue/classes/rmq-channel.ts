@@ -11,10 +11,14 @@ export class RMQChannel {
   }
 
   async init() {
+    console.log("RMQ: Opening Channel");
+
     this.channel = await this.connection.connection.createChannel();
   }
 
   async close() {
+    console.log("RMQ: Closing Channel");
+
     return this.channel.close();
   }
 }

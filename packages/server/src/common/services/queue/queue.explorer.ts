@@ -1,5 +1,10 @@
 import { getQueueToken, NO_QUEUE_FOUND } from '@nestjs/bull-shared';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy
+} from '@nestjs/common';
 import {
   createContextId,
   DiscoveryService,
@@ -18,7 +23,8 @@ import { Producer } from './classes/producer';
 import { QueueManager } from './classes/queue-manager';
 
 @Injectable()
-export class QueueExplorer implements OnModuleInit {
+export class QueueExplorer implements 
+  OnModuleInit, OnModuleDestroy {
   private readonly injector = new Injector();
 
   constructor(
@@ -34,6 +40,17 @@ export class QueueExplorer implements OnModuleInit {
 
     if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
       await this.initWorkers();
+    }
+  }
+
+  async onModuleDestroy() {
+    Promise.all([
+      QueueManager.close(),
+      Producer.close()
+    ]);
+
+    if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
+      // await this.initWorkers();
     }
   }
 
