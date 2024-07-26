@@ -240,7 +240,7 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
       OrganizationInvites,
     ]),
     ClickHouseModule.register({
-      host: process.env.CLICKHOUSE_HOST
+      url: process.env.CLICKHOUSE_HOST
         ? process.env.CLICKHOUSE_HOST.includes('http')
           ? process.env.CLICKHOUSE_HOST
           : `http://${process.env.CLICKHOUSE_HOST}`
@@ -248,6 +248,8 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
       username: process.env.CLICKHOUSE_USER ?? 'default',
       password: process.env.CLICKHOUSE_PASSWORD ?? '',
       database: process.env.CLICKHOUSE_DB ?? 'default',
+      max_open_connections: process.env.CLICKHOUSE_MAX_OPEN_CONNECTIONS ?? 10,
+      keep_alive_enabled: true
     }),
     IntegrationsModule,
     CustomersModule,

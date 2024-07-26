@@ -648,7 +648,7 @@ export class CustomersService {
     });
 
     const totalCount =
-      (await countResponse.json<{ data: { totalCount: number }[] }>()).data[0]
+      (await countResponse.json<{ totalCount: number }>()).data[0]
         ?.totalCount || 0;
     const totalPage = Math.ceil(totalCount / pageSize);
 
@@ -665,7 +665,9 @@ export class CustomersService {
 
     const data = (
       await response.json<{
-        data: { audienceId: string; event: string; createdAt: string }[];
+        audienceId: string;
+        event: string;
+        createdAt: string;
       }>()
     )?.data;
 
@@ -839,7 +841,7 @@ export class CustomersService {
         query_params: { audienceId, event: eventsMap[event] },
       });
       const customersCountResponseData = (
-        await customersCountResponse.json<{ data: { 'count()': string }[] }>()
+        await customersCountResponse.json<{ 'count()': string }>()
       )?.data;
       const customersCount = +customersCountResponseData?.[0]?.['count()'] || 1;
 
@@ -849,7 +851,7 @@ export class CustomersService {
         query: `SELECT DISTINCT(customerId) FROM message_status WHERE audienceId = {audienceId:UUID} AND event = {event:String} ORDER BY createdAt LIMIT {take:Int32} OFFSET {skip:Int32}`,
         query_params: { audienceId, event: eventsMap[event], take, skip },
       });
-      const data = (await response.json<{ data: { customerId: string }[] }>())
+      const data = (await response.json<{ customerId: string }>())
         ?.data;
       const customerIds = data?.map((item) => item.customerId) || [];
 
@@ -2292,7 +2294,7 @@ export class CustomersService {
         query_params: { stepId, event: eventsMap[event] },
       });
       const customersCountResponseData = (
-        await customersCountResponse.json<{ data: { 'count()': string }[] }>()
+        await customersCountResponse.json<{ 'count()': string }>()
       )?.data;
       const customersCount = +customersCountResponseData?.[0]?.['count()'] || 1;
 
@@ -2302,7 +2304,7 @@ export class CustomersService {
         query: `SELECT DISTINCT(customerId) FROM message_status WHERE stepId = {stepId:UUID} AND event = {event:String} ORDER BY createdAt LIMIT {take:Int32} OFFSET {skip:Int32}`,
         query_params: { stepId, event: eventsMap[event], take, skip },
       });
-      const data = (await response.json<{ data: { customerId: string }[] }>())
+      const data = (await response.json<{ customerId: string }>())
         ?.data;
       const customerIds = data?.map((item) => item.customerId) || [];
 

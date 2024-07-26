@@ -29,7 +29,7 @@
     "sentry:sourcemaps": "sentry-cli sourcemaps inject --release $(sentry-cli releases propose-version) ./dist && sentry-cli sourcemaps upload --release $(sentry-cli releases propose-version) ./dist"
   },
   "dependencies": {
-    "@clickhouse/client": "^0.0.9",
+    "@clickhouse/client": "^1.4.0",
     "@dagrejs/graphlib": "^2.1.13",
     "@databricks/sql": "1.0.0",
     "@golevelup/ts-jest": "^0.3.7",
