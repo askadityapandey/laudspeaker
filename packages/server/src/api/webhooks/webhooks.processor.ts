@@ -5,10 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Liquid } from 'liquidjs';
 import { format, parseISO } from 'date-fns';
-import {
-  ClickHouseEventProvider,
-  WebhooksService,
-} from '../webhooks/webhooks.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { fetch } from 'undici';
 import wait from '../../utils/wait';
 import {
@@ -23,6 +20,8 @@ import { Account } from '../accounts/entities/accounts.entity';
 import { Repository } from 'typeorm';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+
 
 @Processor('webhooks')
 @Injectable()
@@ -251,7 +250,7 @@ export class WebhooksProcessor extends ProcessorBase {
             {
               event: 'error',
               createdAt: new Date(),
-              eventProvider: ClickHouseEventProvider.WEBHOOKS,
+              eventProvider: ClickhouseEventProvider.WEBHOOKS,
               messageId: '',
               stepId: job.data.stepId,
               customerId: job.data.customerId,
@@ -274,7 +273,7 @@ export class WebhooksProcessor extends ProcessorBase {
             {
               event: 'sent',
               createdAt: new Date(),
-              eventProvider: ClickHouseEventProvider.WEBHOOKS,
+              eventProvider: ClickhouseEventProvider.WEBHOOKS,
               messageId: '',
               stepId: job.data.stepId,
               customerId: job.data.customerId,

@@ -31,15 +31,13 @@ import { cleanTagsForSending } from '../../../shared/utils/helpers';
 import { MessageSender } from '../types/messagesender.class';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  ClickHouseEventProvider,
-  WebhooksService,
-} from '@/api/webhooks/webhooks.service';
+import { WebhooksService } from '@/api/webhooks/webhooks.service';
 import { OrganizationService } from '@/api/organizations/organizations.service';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 @Injectable()
 @Processor('message.step')
@@ -598,7 +596,7 @@ export class MessageStepProcessor extends ProcessorBase {
                 createdAt: new Date(),
                 customerId: job.data.customer._id,
                 event: 'aborted',
-                eventProvider: ClickHouseEventProvider.TRACKER,
+                eventProvider: ClickhouseEventProvider.TRACKER,
                 messageId: job.data.step.metadata.humanReadableName,
                 templateId: job.data.step.metadata.template,
                 workspaceId: workspace.id,
@@ -634,7 +632,7 @@ export class MessageStepProcessor extends ProcessorBase {
                 createdAt: new Date(),
                 customerId: job.data.customer._id,
                 event: 'sent',
-                eventProvider: ClickHouseEventProvider.TRACKER,
+                eventProvider: ClickhouseEventProvider.TRACKER,
                 messageId: job.data.step.metadata.humanReadableName,
                 templateId: job.data.step.metadata.template,
                 workspaceId: workspace.id,

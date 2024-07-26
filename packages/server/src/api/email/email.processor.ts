@@ -8,10 +8,7 @@ import Mailgun from 'mailgun.js';
 import formData from 'form-data';
 import { Liquid } from 'liquidjs';
 import { MailService } from '@sendgrid/mail';
-import {
-  ClickHouseEventProvider,
-  WebhooksService,
-} from '../webhooks/webhooks.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import twilio from 'twilio';
 import { PostHog } from 'posthog-node';
 import * as admin from 'firebase-admin';
@@ -22,6 +19,7 @@ import { Repository } from 'typeorm';
 import { workspacesUrl } from 'twilio/lib/jwt/taskrouter/util';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 export enum MessageType {
   SMS = 'sms',
@@ -240,7 +238,7 @@ export class MessageProcessor extends ProcessorBase {
                 createdAt: new Date(),
                 customerId: job.data.customerId,
                 event: 'sent',
-                eventProvider: ClickHouseEventProvider.SENDGRID,
+                eventProvider: ClickhouseEventProvider.SENDGRID,
                 messageId: sendgridMessage[0].headers['x-message-id'],
                 templateId: String(job.data.templateId),
                 workspaceId: workspace?.id,
@@ -297,7 +295,7 @@ export class MessageProcessor extends ProcessorBase {
                 createdAt: new Date(),
                 customerId: job.data.customerId,
                 event: 'sent',
-                eventProvider: ClickHouseEventProvider.MAILGUN,
+                eventProvider: ClickhouseEventProvider.MAILGUN,
                 messageId: mailgunMessage.id
                   ? mailgunMessage.id.substring(1, mailgunMessage.id.length - 1)
                   : '',
@@ -374,7 +372,7 @@ export class MessageProcessor extends ProcessorBase {
             createdAt: new Date(),
             customerId: job.data.customerId,
             event: 'error',
-            eventProvider: ClickHouseEventProvider.TWILIO,
+            eventProvider: ClickhouseEventProvider.TWILIO,
             messageId: null,
             templateId: String(job.data.templateId),
             workspaceId: workspace?.id,
@@ -400,7 +398,7 @@ export class MessageProcessor extends ProcessorBase {
             createdAt: new Date(),
             customerId: job.data.customerId,
             event: 'sent',
-            eventProvider: ClickHouseEventProvider.TWILIO,
+            eventProvider: ClickhouseEventProvider.TWILIO,
             messageId: message.sid,
             templateId: String(job.data.templateId),
             workspaceId: workspace?.id,
@@ -475,7 +473,7 @@ export class MessageProcessor extends ProcessorBase {
             workspaceId: workspace?.id,
             event: 'error',
             createdAt: new Date(),
-            eventProvider: ClickHouseEventProvider.PUSH,
+            eventProvider: ClickhouseEventProvider.PUSH,
             messageId: null,
             stepId: job.data.args.stepId,
             customerId: job.data.args.customerId,
@@ -534,7 +532,7 @@ export class MessageProcessor extends ProcessorBase {
             customerId: job.data.customerId,
             createdAt: new Date(),
             event: 'sent',
-            eventProvider: ClickHouseEventProvider.PUSH,
+            eventProvider: ClickhouseEventProvider.PUSH,
             messageId: messageId,
             templateId: String(job.data.templateId),
             workspaceId: workspace?.id,

@@ -3,10 +3,6 @@ import Mailgun from 'mailgun.js';
 import formData from 'form-data';
 import { Liquid } from 'liquidjs';
 import { MailService } from '@sendgrid/mail';
-import {
-  ClickHouseEventProvider,
-  ClickHouseMessage,
-} from '../../webhooks/webhooks.service';
 import twilio from 'twilio';
 import { PostHog } from 'posthog-node';
 import * as admin from 'firebase-admin';
@@ -18,6 +14,8 @@ import { MIMEType } from '@/api/templates/entities/template.entity';
 import { randomUUID } from 'crypto';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Inject, Logger } from '@nestjs/common';
+import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickhouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
 
 export enum MessageType {
   SMS = 'sms',
@@ -40,7 +38,7 @@ export class MessageSender {
   });
   private messagesMap: Record<
     MessageType,
-    (job: any) => Promise<ClickHouseMessage[] | void>
+    (job: any) => Promise<ClickhouseMessage[] | void>
   > = {
     [MessageType.EMAIL]: async (job) => {
       return await this.handleEmail(
@@ -126,7 +124,7 @@ export class MessageSender {
     },
     [MessageType.PUSH]: function (
       job: any
-    ): Promise<void | ClickHouseMessage[]> {
+    ): Promise<void | ClickhouseMessage[]> {
       throw new Error('Function not implemented.');
     },
   };
@@ -229,7 +227,7 @@ export class MessageSender {
     );
   }
 
-  async process(job: any): Promise<ClickHouseMessage[]> {
+  async process(job: any): Promise<ClickhouseMessage[]> {
     return await this.messagesMap[job.name](job);
   }
 
@@ -257,7 +255,7 @@ export class MessageSender {
     to: string,
     text: string,
     tags: any,
-    eventProvider: ClickHouseEventProvider,
+    eventProvider: ClickhouseEventProvider,
     key: string,
     from: string,
     stepID: string,
@@ -269,12 +267,12 @@ export class MessageSender {
     trackingEmail?: string,
     cc?: string[],
     session?: string
-  ): Promise<ClickHouseMessage[]> {
+  ): Promise<ClickhouseMessage[]> {
     if (!to) {
       return;
     }
     let textWithInsertedTags, subjectWithInsertedTags: string | undefined;
-    let ret: ClickHouseMessage[];
+    let ret: ClickhouseMessage[];
 
     const account = await this.accountRepository.findOne({
       where: { id: accountID },
@@ -352,7 +350,7 @@ export class MessageSender {
             createdAt: new Date(),
             customerId: customerID,
             event: 'sent',
-            eventProvider: ClickHouseEventProvider.SENDGRID,
+            eventProvider: ClickhouseEventProvider.SENDGRID,
             messageId: sendgridMessage[0].headers['x-message-id'],
             templateId: String(templateID),
             workspaceId: workspace.id,
@@ -405,7 +403,7 @@ export class MessageSender {
             createdAt: new Date(),
             customerId: customerID,
             event: 'sent',
-            eventProvider: ClickHouseEventProvider.RESEND,
+            eventProvider: ClickhouseEventProvider.RESEND,
             messageId: resendMessage.data ? resendMessage.data.id : '',
             templateId: String(templateID),
             workspaceId: workspace.id,
@@ -446,7 +444,7 @@ export class MessageSender {
             createdAt: new Date(),
             customerId: customerID,
             event: 'sent',
-            eventProvider: ClickHouseEventProvider.MAILGUN,
+            eventProvider: ClickhouseEventProvider.MAILGUN,
             messageId: mailgunMessage.id
               ? mailgunMessage.id.substring(1, mailgunMessage.id.length - 1)
               : '',
@@ -504,7 +502,7 @@ export class MessageSender {
     accountID: string,
     trackingEmail: string,
     session: string
-  ): Promise<ClickHouseMessage[]> {
+  ): Promise<ClickhouseMessage[]> {
     if (!to) {
       return;
     }
@@ -514,7 +512,7 @@ export class MessageSender {
       relations: ['teams.organization.workspaces'],
     });
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
-    let ret: ClickHouseMessage[];
+    let ret: ClickhouseMessage[];
     try {
       if (text) {
         textWithInsertedTags = await this.tagEngine.parseAndRender(
@@ -530,7 +528,7 @@ export class MessageSender {
           createdAt: new Date(),
           customerId: customerID,
           event: 'error',
-          eventProvider: ClickHouseEventProvider.TWILIO,
+          eventProvider: ClickhouseEventProvider.TWILIO,
           messageId: null,
           templateId: String(templateID),
           workspaceId: workspace.id,
@@ -563,7 +561,7 @@ export class MessageSender {
         createdAt: new Date(),
         customerId: customerID,
         event: 'sent',
-        eventProvider: ClickHouseEventProvider.TWILIO,
+        eventProvider: ClickhouseEventProvider.TWILIO,
         messageId: message.sid,
         templateId: String(templateID),
         workspaceId: workspace.id,
@@ -615,7 +613,7 @@ export class MessageSender {
     quietHours: any,
     kvPairs: { key: string; value: string }[],
     session: string
-  ): Promise<ClickHouseMessage[]> {
+  ): Promise<ClickhouseMessage[]> {
     const account = await this.accountRepository.findOne({
       where: { id: accountID },
       relations: ['teams.organization.workspaces'],
@@ -627,7 +625,7 @@ export class MessageSender {
           workspaceId: workspace.id,
           event: 'error',
           createdAt: new Date(),
-          eventProvider: ClickHouseEventProvider.PUSH,
+          eventProvider: ClickhouseEventProvider.PUSH,
           messageId: 'ERR_NO_DEVICE_TOKEN',
           stepId: stepID,
           customerId: customerID,
@@ -637,7 +635,7 @@ export class MessageSender {
       ];
     }
     let textWithInsertedTags, titleWithInsertedTags: string | undefined;
-    let ret: ClickHouseMessage[] = [];
+    let ret: ClickhouseMessage[] = [];
 
     try {
       textWithInsertedTags = await this.tagEngine.parseAndRender(
@@ -657,7 +655,7 @@ export class MessageSender {
           workspaceId: workspace.id,
           event: 'error',
           createdAt: new Date(),
-          eventProvider: ClickHouseEventProvider.PUSH,
+          eventProvider: ClickhouseEventProvider.PUSH,
           messageId: err.toString(),
           stepId: stepID,
           customerId: customerID,
@@ -683,7 +681,7 @@ export class MessageSender {
             workspaceId: workspace.id,
             event: 'error',
             createdAt: new Date(),
-            eventProvider: ClickHouseEventProvider.PUSH,
+            eventProvider: ClickhouseEventProvider.PUSH,
             messageId: e.toString(),
             stepId: stepID,
             customerId: customerID,
@@ -746,7 +744,7 @@ export class MessageSender {
         customerId: customerID,
         createdAt: new Date(),
         event: 'delivered',
-        eventProvider: ClickHouseEventProvider.PUSH,
+        eventProvider: ClickhouseEventProvider.PUSH,
         messageId: messageId,
         templateId: String(templateID),
         workspaceId: workspace.id,
@@ -784,7 +782,7 @@ export class MessageSender {
         customerId: customerID,
         createdAt: new Date(),
         event: 'error',
-        eventProvider: ClickHouseEventProvider.PUSH,
+        eventProvider: ClickhouseEventProvider.PUSH,
         messageId: err.toString(),
         templateId: String(templateID),
         workspaceId: workspace.id,
@@ -796,7 +794,7 @@ export class MessageSender {
         customerId: customerID,
         createdAt: new Date(),
         event: 'sent',
-        eventProvider: ClickHouseEventProvider.PUSH,
+        eventProvider: ClickhouseEventProvider.PUSH,
         messageId: messageId,
         templateId: String(templateID),
         workspaceId: workspace.id,
@@ -834,7 +832,7 @@ export class MessageSender {
     quietHours: any,
     kvPairs: { key: string; value: string }[],
     session: string
-  ): Promise<ClickHouseMessage[]> {
+  ): Promise<ClickhouseMessage[]> {
     const account = await this.accountRepository.findOne({
       where: { id: accountID },
       relations: ['teams.organization.workspaces'],
@@ -846,7 +844,7 @@ export class MessageSender {
           workspaceId: workspace.id,
           event: 'error',
           createdAt: new Date(),
-          eventProvider: ClickHouseEventProvider.PUSH,
+          eventProvider: ClickhouseEventProvider.PUSH,
           messageId: 'ERR_NO_DEVICE_TOKEN',
           stepId: stepID,
           customerId: customerID,
@@ -856,7 +854,7 @@ export class MessageSender {
       ];
     }
     let textWithInsertedTags, titleWithInsertedTags: string | undefined;
-    let ret: ClickHouseMessage[] = [];
+    let ret: ClickhouseMessage[] = [];
 
     try {
       textWithInsertedTags = await this.tagEngine.parseAndRender(
@@ -876,7 +874,7 @@ export class MessageSender {
           workspaceId: workspace.id,
           event: 'error',
           createdAt: new Date(),
-          eventProvider: ClickHouseEventProvider.PUSH,
+          eventProvider: ClickhouseEventProvider.PUSH,
           messageId: err.toString(),
           stepId: stepID,
           customerId: customerID,
@@ -902,7 +900,7 @@ export class MessageSender {
             workspaceId: workspace.id,
             event: 'error',
             createdAt: new Date(),
-            eventProvider: ClickHouseEventProvider.PUSH,
+            eventProvider: ClickhouseEventProvider.PUSH,
             messageId: e.toString(),
             stepId: stepID,
             customerId: customerID,
@@ -967,7 +965,7 @@ export class MessageSender {
         customerId: customerID,
         createdAt: new Date(),
         event: 'delivered',
-        eventProvider: ClickHouseEventProvider.PUSH,
+        eventProvider: ClickhouseEventProvider.PUSH,
         messageId: messageId,
         templateId: String(templateID),
         workspaceId: workspace.id,
@@ -1005,7 +1003,7 @@ export class MessageSender {
         customerId: customerID,
         createdAt: new Date(),
         event: 'error',
-        eventProvider: ClickHouseEventProvider.PUSH,
+        eventProvider: ClickhouseEventProvider.PUSH,
         messageId: err.toString(),
         templateId: String(templateID),
         workspaceId: workspace.id,
@@ -1017,7 +1015,7 @@ export class MessageSender {
         customerId: customerID,
         createdAt: new Date(),
         event: 'sent',
-        eventProvider: ClickHouseEventProvider.PUSH,
+        eventProvider: ClickhouseEventProvider.PUSH,
         messageId: messageId,
         templateId: String(templateID),
         workspaceId: workspace.id,
@@ -1047,7 +1045,7 @@ export class MessageSender {
     tags: any,
     customerID: string,
     trackingEmail: string
-  ): Promise<ClickHouseMessage[]> {
+  ): Promise<ClickhouseMessage[]> {
     const account = await this.accountRepository.findOne({
       where: { id: accountID },
       relations: ['teams.organization.workspaces'],
@@ -1067,7 +1065,7 @@ export class MessageSender {
           workspaceId: workspace.id,
           event: 'sent',
           createdAt: new Date(),
-          eventProvider: ClickHouseEventProvider.SLACK,
+          eventProvider: ClickhouseEventProvider.SLACK,
           messageId: String(message.ts),
           stepId: stepID,
           customerId: customerID,
@@ -1081,7 +1079,7 @@ export class MessageSender {
           workspaceId: workspace.id,
           event: 'error',
           createdAt: new Date(),
-          eventProvider: ClickHouseEventProvider.SLACK,
+          eventProvider: ClickhouseEventProvider.SLACK,
           messageId: '',
           stepId: stepID,
           customerId: customerID,
@@ -1101,7 +1099,7 @@ export class MessageSender {
   // async handleWebhook(
   //   webhookData: any,
   //   filteredTags: any
-  // ): Promise<ClickHouseMessage[]> {
+  // ): Promise<ClickhouseMessage[]> {
   //   const { method, retries, fallBackAction } = webhookData;
 
   //   let { body, headers, url, mimeType } = webhookData;
@@ -1180,7 +1178,7 @@ export class MessageSender {
   //         {
   //           event: 'error',
   //           createdAt: new Date(),
-  //           eventProvider: ClickHouseEventProvider.WEBHOOKS,
+  //           eventProvider: ClickhouseEventProvider.WEBHOOKS,
   //           messageId: '',
   //           audienceId: job.data.audienceId,
   //           customerId: job.data.customerId,
@@ -1198,7 +1196,7 @@ export class MessageSender {
   //         {
   //           event: 'sent',
   //           createdAt: new Date(),
-  //           eventProvider: ClickHouseEventProvider.WEBHOOKS,
+  //           eventProvider: ClickhouseEventProvider.WEBHOOKS,
   //           messageId: '',
   //           audienceId: job.data.audienceId,
   //           customerId: job.data.customerId,

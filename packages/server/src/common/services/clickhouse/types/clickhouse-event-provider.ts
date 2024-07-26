@@ -1,4 +1,4 @@
-export enum ClickHouseEventProvider {
+export enum ClickhouseEventProvider {
   MAILGUN = 'mailgun',
   SENDGRID = 'sendgrid',
   TWILIO = 'twilio',

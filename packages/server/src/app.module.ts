@@ -62,7 +62,7 @@ import { redisStore } from 'cache-manager-redis-yet';
 import { CacheModule } from '@nestjs/cache-manager';
 import { HealthCheckService } from './app.healthcheck.service';
 import { QueueModule } from '@/common/services/queue/queue.module';
-
+import { ClickhouseModule } from '@/common/services/clickhouse/clickhouse.module';
 const sensitiveKeys = [
   /cookie/i,
   /passw(or)?d/i,
@@ -238,6 +238,7 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
       JourneyLocation,
       OrganizationInvites,
     ]),
+    ClickhouseModule,
     IntegrationsModule,
     CustomersModule,
     TemplatesModule,

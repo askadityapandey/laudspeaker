@@ -34,10 +34,6 @@ import { AccountsService } from './api/accounts/accounts.service';
 import Mailgun from 'mailgun.js';
 import formData from 'form-data';
 import { createClient } from '@clickhouse/client';
-import {
-  ClickHouseEventProvider,
-  ClickHouseMessage,
-} from './api/webhooks/webhooks.service';
 import twilio from 'twilio';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import client from '@sendgrid/client';
@@ -69,6 +65,8 @@ import * as os from 'os';
 import * as Sentry from '@sentry/node';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickhouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
 
 const BATCH_SIZE = 500;
 
@@ -1007,7 +1005,7 @@ export class CronService {
   //                   templateId: messageRow[0]?.templateId,
   //                   messageId: events.items[k].message.headers['message-id'],
   //                   event: events.items[k].event,
-  //                   eventProvider: ClickHouseEventProvider.MAILGUN,
+  //                   eventProvider: ClickhouseEventProvider.MAILGUN,
   //                   createdAt: new Date(
   //                     events.items[k].timestamp * 1000
   //                   ).toISOString(),
@@ -1112,7 +1110,7 @@ export class CronService {
   //                     templateId: rowObject.templateId,
   //                     messageId: rowObject.messageId,
   //                     event: message.status,
-  //                     eventProvider: ClickHouseEventProvider.TWILIO,
+  //                     eventProvider: ClickhouseEventProvider.TWILIO,
   //                     createdAt: new Date().toISOString(),
   //                     workspaceId:
   //                       accounts[j].teams?.[0]?.organization?.workspaces?.[0]
@@ -1225,7 +1223,7 @@ export class CronService {
   //                     templateId: rowObject.templateId,
   //                     messageId: rowObject.messageId,
   //                     event: message.status,
-  //                     eventProvider: ClickHouseEventProvider.TWILIO,
+  //                     eventProvider: ClickhouseEventProvider.TWILIO,
   //                     createdAt: new Date().toISOString(),
   //                     workspaceId:
   //                       accounts[j].teams?.[0]?.organization?.workspaces?.[0]
@@ -2500,7 +2498,7 @@ export class CronService {
 //   //                   templateId: messageRow[0]?.templateId,
 //   //                   messageId: events.items[k].message.headers['message-id'],
 //   //                   event: events.items[k].event,
-//   //                   eventProvider: ClickHouseEventProvider.MAILGUN,
+//   //                   eventProvider: ClickhouseEventProvider.MAILGUN,
 //   //                   createdAt: new Date(
 //   //                     events.items[k].timestamp * 1000
 //   //                   ).toISOString(),
@@ -2605,7 +2603,7 @@ export class CronService {
 //   //                     templateId: rowObject.templateId,
 //   //                     messageId: rowObject.messageId,
 //   //                     event: message.status,
-//   //                     eventProvider: ClickHouseEventProvider.TWILIO,
+//   //                     eventProvider: ClickhouseEventProvider.TWILIO,
 //   //                     createdAt: new Date().toISOString(),
 //   //                     workspaceId:
 //   //                       accounts[j].teams?.[0]?.organization?.workspaces?.[0]
@@ -2718,7 +2716,7 @@ export class CronService {
 //   //                     templateId: rowObject.templateId,
 //   //                     messageId: rowObject.messageId,
 //   //                     event: message.status,
-//   //                     eventProvider: ClickHouseEventProvider.TWILIO,
+//   //                     eventProvider: ClickhouseEventProvider.TWILIO,
 //   //                     createdAt: new Date().toISOString(),
 //   //                     workspaceId:
 //   //                       accounts[j].teams?.[0]?.organization?.workspaces?.[0]
