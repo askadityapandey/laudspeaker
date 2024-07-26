@@ -31,8 +31,12 @@ import * as Sentry from '@sentry/node';
 import Stripe from 'stripe';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
-import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
-import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
+import {
+  ClickHouseTable,
+  ClickHouseEventProvider,
+  ClickHouseMessage,
+  ClickHouseClient
+} from '@/common/services/clickhouse';
 
 @Injectable()
 export class WebhooksService {
@@ -52,16 +56,6 @@ export class WebhooksService {
   };
 
   private stripeClient = new Stripe.Stripe(process.env.STRIPE_SECRET_KEY);
-  private clickhouseClient = createClient({
-    host: process.env.CLICKHOUSE_HOST
-      ? process.env.CLICKHOUSE_HOST.includes('http')
-        ? process.env.CLICKHOUSE_HOST
-        : `http://${process.env.CLICKHOUSE_HOST}`
-      : 'http://localhost:8123',
-    username: process.env.CLICKHOUSE_USER ?? 'default',
-    password: process.env.CLICKHOUSE_PASSWORD ?? '',
-    database: process.env.CLICKHOUSE_DB ?? 'default',
-  });
 
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -74,6 +68,8 @@ export class WebhooksService {
     private organizationRepository: Repository<Organization>,
     @InjectRepository(OrganizationPlan)
     private organizationPlanRepository: Repository<OrganizationPlan>,
+    @Inject(ClickHouseClient)
+    private clickhouseClient: ClickHouseClient,
   ) {
     const session = randomUUID();
     (async () => {
@@ -457,22 +453,10 @@ export class WebhooksService {
           //   ProviderType.MESSAGE
           // );
 
-          await this.clickhouseClient.insert({
-            table: 'message_status',
+          await this.clickhouseClient.insertAsync({
+            table: ClickHouseTable.MESSAGE_STATUS,
             values: clickhouseMessages,
             format: 'JSONEachRow',
-            clickhouse_settings: {
-              date_time_input_format: 'best_effort',
-              async_insert: 1,
-              wait_for_async_insert: 1,
-              async_insert_max_data_size:
-                process.env.CLICKHOUSE_MESSAGE_STATUS_ASYNC_MAX_SIZE ||
-                '1000000',
-              async_insert_busy_timeout_ms: process.env
-                .CLICKHOUSE_MESSAGE_STATUS_ASYNC_TIMEOUT_MS
-                ? +process.env.CLICKHOUSE_MESSAGE_STATUS_ASYNC_TIMEOUT_MS
-                : 1000,
-            },
           });
         }
       }

@@ -11,6 +11,7 @@ export class ClickHouseModule {
     };
 
     return {
+      global: true,
       module: ClickHouseModule,
       providers: [provider],
       exports: [provider]
