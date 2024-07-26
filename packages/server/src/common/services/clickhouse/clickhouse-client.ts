@@ -24,15 +24,15 @@ export class ClickHouseClient implements OnModuleDestroy {
     this.client = createClient(options);
   }
 
-  async query(queryDetails) {
+  async query(queryDetails): Promise<any> {
     return this.client.query(queryDetails);
   }
 
-  async insert(insertDetails) {
+  async insert(insertDetails): Promise<any> {
     return this.client.insert(insertDetails);
   }
 
-  async insertAsync(insertAsyncDetails) {
+  async insertAsync(insertAsyncDetails): Promise<any> {
     const insertOptions = {
       ...insertAsyncDetails,
       clickhouse_settings: {
