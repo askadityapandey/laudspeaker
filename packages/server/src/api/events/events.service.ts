@@ -69,8 +69,8 @@ import * as Sentry from '@sentry/node';
 import { FindType } from '../customers/enums/FindType.enum';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
-import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
-import { ClickhouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
 
 @Injectable()
 export class EventsService {
@@ -1185,7 +1185,7 @@ export class EventsService {
           )
             continue;
           if (thisEvent.source === 'message' && thisEvent.event === '$opened') {
-            const clickHouseRecord: ClickhouseMessage = {
+            const clickHouseRecord: ClickHouseMessage = {
               workspaceId:
                 thisEvent.payload.workspaceID || thisEvent.payload.workspaceId,
               stepId: thisEvent.payload.stepID || thisEvent.payload.stepId,
@@ -1197,7 +1197,7 @@ export class EventsService {
               messageId:
                 thisEvent.payload.messageID || thisEvent.payload.messageId,
               event: 'opened',
-              eventProvider: ClickhouseEventProvider.PUSH,
+              eventProvider: ClickHouseEventProvider.PUSH,
               processed: false,
               createdAt: new Date(),
             };

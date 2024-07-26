@@ -65,8 +65,8 @@ import * as os from 'os';
 import * as Sentry from '@sentry/node';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
-import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
-import { ClickhouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
 
 const BATCH_SIZE = 500;
 
@@ -1005,7 +1005,7 @@ export class CronService {
   //                   templateId: messageRow[0]?.templateId,
   //                   messageId: events.items[k].message.headers['message-id'],
   //                   event: events.items[k].event,
-  //                   eventProvider: ClickhouseEventProvider.MAILGUN,
+  //                   eventProvider: ClickHouseEventProvider.MAILGUN,
   //                   createdAt: new Date(
   //                     events.items[k].timestamp * 1000
   //                   ).toISOString(),
@@ -1110,7 +1110,7 @@ export class CronService {
   //                     templateId: rowObject.templateId,
   //                     messageId: rowObject.messageId,
   //                     event: message.status,
-  //                     eventProvider: ClickhouseEventProvider.TWILIO,
+  //                     eventProvider: ClickHouseEventProvider.TWILIO,
   //                     createdAt: new Date().toISOString(),
   //                     workspaceId:
   //                       accounts[j].teams?.[0]?.organization?.workspaces?.[0]
@@ -1223,7 +1223,7 @@ export class CronService {
   //                     templateId: rowObject.templateId,
   //                     messageId: rowObject.messageId,
   //                     event: message.status,
-  //                     eventProvider: ClickhouseEventProvider.TWILIO,
+  //                     eventProvider: ClickHouseEventProvider.TWILIO,
   //                     createdAt: new Date().toISOString(),
   //                     workspaceId:
   //                       accounts[j].teams?.[0]?.organization?.workspaces?.[0]
@@ -2498,7 +2498,7 @@ export class CronService {
 //   //                   templateId: messageRow[0]?.templateId,
 //   //                   messageId: events.items[k].message.headers['message-id'],
 //   //                   event: events.items[k].event,
-//   //                   eventProvider: ClickhouseEventProvider.MAILGUN,
+//   //                   eventProvider: ClickHouseEventProvider.MAILGUN,
 //   //                   createdAt: new Date(
 //   //                     events.items[k].timestamp * 1000
 //   //                   ).toISOString(),
@@ -2603,7 +2603,7 @@ export class CronService {
 //   //                     templateId: rowObject.templateId,
 //   //                     messageId: rowObject.messageId,
 //   //                     event: message.status,
-//   //                     eventProvider: ClickhouseEventProvider.TWILIO,
+//   //                     eventProvider: ClickHouseEventProvider.TWILIO,
 //   //                     createdAt: new Date().toISOString(),
 //   //                     workspaceId:
 //   //                       accounts[j].teams?.[0]?.organization?.workspaces?.[0]
@@ -2716,7 +2716,7 @@ export class CronService {
 //   //                     templateId: rowObject.templateId,
 //   //                     messageId: rowObject.messageId,
 //   //                     event: message.status,
-//   //                     eventProvider: ClickhouseEventProvider.TWILIO,
+//   //                     eventProvider: ClickHouseEventProvider.TWILIO,
 //   //                     createdAt: new Date().toISOString(),
 //   //                     workspaceId:
 //   //                       accounts[j].teams?.[0]?.organization?.workspaces?.[0]

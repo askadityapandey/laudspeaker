@@ -1,32 +1,24 @@
+import { OnModuleDestroy } from '@nestjs/common';
 import { createClient } from '@clickhouse/client';
 import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
-export class ClickhouseClient {
-	private client = createClient({
-	  host: process.env.CLICKHOUSE_HOST
-	    ? process.env.CLICKHOUSE_HOST.includes('http')
-	      ? process.env.CLICKHOUSE_HOST
-	      : `http://${process.env.CLICKHOUSE_HOST}`
-	    : 'http://localhost:8123',
-	  username: process.env.CLICKHOUSE_USER ?? 'default',
-	  password: process.env.CLICKHOUSE_PASSWORD ?? '',
-	  database: process.env.CLICKHOUSE_DB ?? 'default',
-	});
+export class ClickHouseClient implements OnModuleDestroy {
+  private client;
 
-	constructor() {
+  constructor(options: Record <string, any>) {
+    this.client = createClient(options);
+  }
 
-	}
+  async query(queryDetails) {
+    return this.client.query(queryDetails);
+  }
 
-	async init() {
+  async insert(insertDetails) {
+    return this.client.insert(insertDetails);
+  }
 
-	}
-
-	async query(queryDetails) {
-		return this.client.query(queryDetails);
-	}
-
-	async insert(insertDetails) {
-		return this.client.insert(insertDetails);
-	}
+  async onModuleDestroy() {
+    return this.client?.close();
+  }
 }

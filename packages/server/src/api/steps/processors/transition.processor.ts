@@ -28,7 +28,7 @@
 // import { createHash, randomUUID } from 'crypto';
 // import { MessageSender } from '../types/messagesender.class';
 // import {
-//   ClickhouseEventProvider,
+//   ClickHouseEventProvider,
 //   WebhooksService,
 // } from '@/api/webhooks/webhooks.service';
 // import { TemplatesService } from '@/api/templates/templates.service';
@@ -483,7 +483,7 @@
 //           createdAt: new Date(),
 //           customerId: customerID,
 //           event: 'sent',
-//           eventProvider: ClickhouseEventProvider.TRACKER,
+//           eventProvider: ClickHouseEventProvider.TRACKER,
 //           messageId: humanReadableName,
 //           templateId: String(templateID),
 //           workspaceId: workspace.id,
@@ -512,7 +512,7 @@
 //             createdAt: new Date(),
 //             customerId: customerID,
 //             event: 'delivered',
-//             eventProvider: ClickhouseEventProvider.TRACKER,
+//             eventProvider: ClickHouseEventProvider.TRACKER,
 //             messageId: humanReadableName,
 //             templateId: String(templateID),
 //             workspaceId: workspace.id,
@@ -545,7 +545,7 @@
 //         step: stepID,
 //         customer: customerID,
 //         template: templateID,
-//         provider: ClickhouseEventProvider.TRACKER,
+//         provider: ClickHouseEventProvider.TRACKER,
 //       },
 //     });
 
@@ -1088,7 +1088,7 @@
 //             createdAt: new Date(),
 //             customerId: customer._id,
 //             event: 'aborted',
-//             eventProvider: ClickhouseEventProvider.TRACKER,
+//             eventProvider: ClickHouseEventProvider.TRACKER,
 //             messageId: step.metadata.humanReadableName,
 //             templateId: step.metadata.template,
 //             workspaceId: workspace.id,
@@ -1130,7 +1130,7 @@
 //             createdAt: new Date(),
 //             customerId: customer._id,
 //             event: 'sent',
-//             eventProvider: ClickhouseEventProvider.TRACKER,
+//             eventProvider: ClickHouseEventProvider.TRACKER,
 //             messageId: step.metadata.humanReadableName,
 //             templateId: step.metadata.template,
 //             workspaceId: workspace.id,

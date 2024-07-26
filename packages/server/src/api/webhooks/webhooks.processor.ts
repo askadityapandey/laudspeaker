@@ -20,7 +20,7 @@ import { Account } from '../accounts/entities/accounts.entity';
 import { Repository } from 'typeorm';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 
 @Processor('webhooks')
@@ -250,7 +250,7 @@ export class WebhooksProcessor extends ProcessorBase {
             {
               event: 'error',
               createdAt: new Date(),
-              eventProvider: ClickhouseEventProvider.WEBHOOKS,
+              eventProvider: ClickHouseEventProvider.WEBHOOKS,
               messageId: '',
               stepId: job.data.stepId,
               customerId: job.data.customerId,
@@ -273,7 +273,7 @@ export class WebhooksProcessor extends ProcessorBase {
             {
               event: 'sent',
               createdAt: new Date(),
-              eventProvider: ClickhouseEventProvider.WEBHOOKS,
+              eventProvider: ClickHouseEventProvider.WEBHOOKS,
               messageId: '',
               stepId: job.data.stepId,
               customerId: job.data.customerId,

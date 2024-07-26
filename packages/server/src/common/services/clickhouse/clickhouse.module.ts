@@ -1,8 +1,19 @@
-import { Module } from '@nestjs/common';
-import { ClickhouseClient } from './clickhouse-client';
+import { DynamicModule, Module, Provider } from '@nestjs/common';
+import { ClickHouseClient } from './clickhouse-client';
 
-@Module({
-  providers: [ClickhouseClient],
-  exports: [],
-})
-export class ClickhouseModule {}
+@Module({})
+export class ClickHouseModule {
+  static register(options: Record <string, any>): DynamicModule {
+
+    const provider: Provider = {
+      provide: ClickHouseClient,
+      useValue: new ClickHouseClient(options)
+    };
+
+    return {
+      module: ClickHouseModule,
+      providers: [provider],
+      exports: [provider]
+    }
+  }
+}

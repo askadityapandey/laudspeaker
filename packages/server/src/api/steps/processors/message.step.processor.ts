@@ -37,7 +37,7 @@ import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
-import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 @Injectable()
 @Processor('message.step')
@@ -596,7 +596,7 @@ export class MessageStepProcessor extends ProcessorBase {
                 createdAt: new Date(),
                 customerId: job.data.customer._id,
                 event: 'aborted',
-                eventProvider: ClickhouseEventProvider.TRACKER,
+                eventProvider: ClickHouseEventProvider.TRACKER,
                 messageId: job.data.step.metadata.humanReadableName,
                 templateId: job.data.step.metadata.template,
                 workspaceId: workspace.id,
@@ -632,7 +632,7 @@ export class MessageStepProcessor extends ProcessorBase {
                 createdAt: new Date(),
                 customerId: job.data.customer._id,
                 event: 'sent',
-                eventProvider: ClickhouseEventProvider.TRACKER,
+                eventProvider: ClickHouseEventProvider.TRACKER,
                 messageId: job.data.step.metadata.humanReadableName,
                 templateId: job.data.step.metadata.template,
                 workspaceId: workspace.id,

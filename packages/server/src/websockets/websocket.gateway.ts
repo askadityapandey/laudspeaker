@@ -41,7 +41,7 @@ import {
   CustomerKeysDocument,
 } from '@/api/customers/schemas/customer-keys.schema';
 import { EventDto } from '@/api/events/dto/event.dto';
-import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 interface SocketData {
   account: Account & { apiKey: string };
   customerId: string;
@@ -414,7 +414,7 @@ export class WebsocketGateway implements OnGatewayConnection {
               createdAt: new Date(),
               customerId: customer.id,
               event: 'delivered',
-              eventProvider: ClickhouseEventProvider.TRACKER,
+              eventProvider: ClickHouseEventProvider.TRACKER,
               messageId: key,
               templateId: customer.customComponents[key].template,
               workspaceId: workspace.id,

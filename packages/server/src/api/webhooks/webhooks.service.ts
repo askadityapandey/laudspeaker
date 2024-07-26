@@ -31,8 +31,8 @@ import * as Sentry from '@sentry/node';
 import Stripe from 'stripe';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
-import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
-import { ClickhouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
 
 @Injectable()
 export class WebhooksService {
@@ -193,7 +193,7 @@ export class WebhooksService {
 
     if (!validSignature) throw new ForbiddenException('Invalid signature');
 
-    const messagesToInsert: ClickhouseMessage[] = [];
+    const messagesToInsert: ClickHouseMessage[] = [];
 
     for (const item of data) {
       const {
@@ -214,14 +214,14 @@ export class WebhooksService {
       )
         continue;
 
-      const clickHouseRecord: ClickhouseMessage = {
+      const clickHouseRecord: ClickHouseMessage = {
         workspaceId: step.workspace.id,
         stepId,
         customerId,
         templateId: String(templateId),
         messageId: sg_message_id.split('.')[0],
         event: this.sendgridEventsMap[event] || event,
-        eventProvider: ClickhouseEventProvider.SENDGRID,
+        eventProvider: ClickHouseEventProvider.SENDGRID,
         processed: false,
         createdAt: new Date(),
       };
@@ -253,14 +253,14 @@ export class WebhooksService {
       },
       relations: ['workspace'],
     });
-    const clickHouseRecord: ClickhouseMessage = {
+    const clickHouseRecord: ClickHouseMessage = {
       workspaceId: step.workspace.id,
       stepId,
       customerId,
       templateId: String(templateId),
       messageId: MessageSid,
       event: SmsStatus,
-      eventProvider: ClickhouseEventProvider.TWILIO,
+      eventProvider: ClickHouseEventProvider.TWILIO,
       processed: false,
       createdAt: new Date(),
     };
@@ -282,14 +282,14 @@ export class WebhooksService {
 
     try {
       const event: any = webhook.verify(payload, headers);
-      const clickHouseRecord: ClickhouseMessage = {
+      const clickHouseRecord: ClickHouseMessage = {
         workspaceId: step.workspace.id,
         stepId: event.data.tags.stepId,
         customerId: event.data.tags.customerId,
         templateId: String(event.data.tags.templateId),
         messageId: event.data.email_id,
         event: event.type.replace('email.', ''),
-        eventProvider: ClickhouseEventProvider.RESEND,
+        eventProvider: ClickHouseEventProvider.RESEND,
         processed: false,
         createdAt: new Date(),
       };
@@ -358,20 +358,20 @@ export class WebhooksService {
     if (!stepId || !customerId || !templateId || !id) return;
 
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
-    const clickHouseRecord: ClickhouseMessage = {
+    const clickHouseRecord: ClickHouseMessage = {
       workspaceId: workspace.id,
       stepId,
       customerId,
       templateId: String(templateId),
       messageId: id,
       event: event,
-      eventProvider: ClickhouseEventProvider.MAILGUN,
+      eventProvider: ClickHouseEventProvider.MAILGUN,
       processed: false,
       createdAt: new Date(),
     };
 
     this.debug(
-      `${JSON.stringify({ ClickhouseMessage: clickHouseRecord })}`,
+      `${JSON.stringify({ ClickHouseMessage: clickHouseRecord })}`,
       this.processMailgunData.name,
       session
     );
@@ -435,7 +435,7 @@ export class WebhooksService {
   }
 
   public async insertMessageStatusToClickhouse(
-    clickhouseMessages: ClickhouseMessage[],
+    clickhouseMessages: ClickHouseMessage[],
     session: string
   ) {
     return Sentry.startSpan(

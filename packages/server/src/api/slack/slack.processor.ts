@@ -9,7 +9,7 @@ import { Repository } from 'typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { ClickhouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 @Injectable()
 @Processor('slack')
@@ -54,7 +54,7 @@ export class SlackProcessor extends ProcessorBase {
               workspaceId: workspace?.id,
               event: 'error',
               createdAt: new Date(),
-              eventProvider: ClickhouseEventProvider.SLACK,
+              eventProvider: ClickHouseEventProvider.SLACK,
               messageId: '',
               stepId: job.data.args.stepId,
               customerId: job.data.args.customerId,

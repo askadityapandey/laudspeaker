@@ -1,12 +1,12 @@
-import { ClickhouseEventProvider } from '../types/clickhouse-event-provider';
+import { ClickHouseEventProvider } from '../types/clickhouse-event-provider';
 
-export interface ClickhouseMessage {
+export interface ClickHouseMessage {
   audienceId?: string;
   stepId?: string;
   createdAt: Date;
   customerId: string;
   event: string;
-  eventProvider: ClickhouseEventProvider;
+  eventProvider: ClickHouseEventProvider;
   messageId: string;
   templateId: string;
   workspaceId: string;
