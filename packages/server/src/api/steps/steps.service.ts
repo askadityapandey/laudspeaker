@@ -19,8 +19,6 @@ import mongoose, { ClientSession } from 'mongoose';
 import * as Sentry from '@sentry/node';
 import {
   ClickHouseTable,
-  ClickHouseEventProvider,
-  ClickHouseMessage,
   ClickHouseClient
 } from '@/common/services/clickhouse';
 

@@ -9,7 +9,6 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common/exceptions';
-import { createClient } from '@clickhouse/client';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import Mailgun from 'mailgun.js';
 import formData from 'form-data';

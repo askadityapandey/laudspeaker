@@ -32,7 +32,6 @@ import {
 } from './schemas/customer-keys.schema';
 import { Queue } from 'bullmq';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { createClient, Row } from '@clickhouse/client';
 import { attributeConditions } from '../../fixtures/attributeConditions';
 import { getType } from 'tst-reflect';
 import { isDateString, isEmail } from 'class-validator';
@@ -93,6 +92,10 @@ import { CustomerSearchOptionResult } from './interfaces/CustomerSearchOptionRes
 import { FindType } from './enums/FindType.enum';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  ClickHouseTable,
+  ClickHouseClient
+} from '@/common/services/clickhouse';
 
 export type Correlation = {
   cust: CustomerDocument;
@@ -237,17 +240,6 @@ const createIndexIfNotExists = async (collection, indexSpec, options = {}) => {
 
 @Injectable()
 export class CustomersService {
-  private clickhouseClient = createClient({
-    host: process.env.CLICKHOUSE_HOST
-      ? process.env.CLICKHOUSE_HOST.includes('http')
-        ? process.env.CLICKHOUSE_HOST
-        : `http://${process.env.CLICKHOUSE_HOST}`
-      : 'http://localhost:8123',
-    username: process.env.CLICKHOUSE_USER ?? 'default',
-    password: process.env.CLICKHOUSE_PASSWORD ?? '',
-    database: process.env.CLICKHOUSE_DB ?? 'default',
-  });
-
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
@@ -273,7 +265,9 @@ export class CustomersService {
     private readonly s3Service: S3Service,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
-    @Inject(CacheService) private cacheService: CacheService
+    @Inject(CacheService) private cacheService: CacheService,
+    @Inject(ClickHouseClient)
+    private clickhouseClient: ClickHouseClient,
   ) {
     const session = randomUUID();
 
@@ -643,7 +637,7 @@ export class CustomersService {
     const offset = (page - 1) * pageSize;
 
     const countResponse = await this.clickhouseClient.query({
-      query: `SELECT count() as totalCount FROM message_status WHERE customerId = {customerId:String}`,
+      query: `SELECT count() as totalCount FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE customerId = {customerId:String}`,
       query_params: { customerId },
     });
 
@@ -655,7 +649,7 @@ export class CustomersService {
     const response = await this.clickhouseClient.query({
       query: `
         SELECT stepId, event, createdAt, eventProvider, templateId 
-        FROM message_status 
+        FROM ${ClickHouseTable.MESSAGE_STATUS} 
         WHERE customerId = {customerId:String} 
         ORDER BY createdAt DESC
         LIMIT ${pageSize} OFFSET ${offset}
@@ -837,7 +831,7 @@ export class CustomersService {
 
     if (eventsMap[event] && audienceId) {
       const customersCountResponse = await this.clickhouseClient.query({
-        query: `SELECT COUNT(DISTINCT(customerId)) FROM message_status WHERE audienceId = {audienceId:UUID} AND event = {event:String}`,
+        query: `SELECT COUNT(DISTINCT(customerId)) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE audienceId = {audienceId:UUID} AND event = {event:String}`,
         query_params: { audienceId, event: eventsMap[event] },
       });
       const customersCountResponseData = (
@@ -848,7 +842,7 @@ export class CustomersService {
       const totalPages = Math.ceil(customersCount / take);
 
       const response = await this.clickhouseClient.query({
-        query: `SELECT DISTINCT(customerId) FROM message_status WHERE audienceId = {audienceId:UUID} AND event = {event:String} ORDER BY createdAt LIMIT {take:Int32} OFFSET {skip:Int32}`,
+        query: `SELECT DISTINCT(customerId) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE audienceId = {audienceId:UUID} AND event = {event:String} ORDER BY createdAt LIMIT {take:Int32} OFFSET {skip:Int32}`,
         query_params: { audienceId, event: eventsMap[event], take, skip },
       });
       const data = (await response.json<{ customerId: string }>())
@@ -2290,7 +2284,7 @@ export class CustomersService {
 
     if (eventsMap[event] && stepId) {
       const customersCountResponse = await this.clickhouseClient.query({
-        query: `SELECT COUNT(DISTINCT(customerId)) FROM message_status WHERE stepId = {stepId:UUID} AND event = {event:String}`,
+        query: `SELECT COUNT(DISTINCT(customerId)) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE stepId = {stepId:UUID} AND event = {event:String}`,
         query_params: { stepId, event: eventsMap[event] },
       });
       const customersCountResponseData = (
@@ -2301,7 +2295,7 @@ export class CustomersService {
       const totalPages = Math.ceil(customersCount / take);
 
       const response = await this.clickhouseClient.query({
-        query: `SELECT DISTINCT(customerId) FROM message_status WHERE stepId = {stepId:UUID} AND event = {event:String} ORDER BY createdAt LIMIT {take:Int32} OFFSET {skip:Int32}`,
+        query: `SELECT DISTINCT(customerId) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE stepId = {stepId:UUID} AND event = {event:String} ORDER BY createdAt LIMIT {take:Int32} OFFSET {skip:Int32}`,
         query_params: { stepId, event: eventsMap[event], take, skip },
       });
       const data = (await response.json<{ customerId: string }>())
@@ -3803,7 +3797,7 @@ export class CustomersService {
         console.log('step ids are,', JSON.stringify(stepIds, null, 2));
 
         const userIdCondition = `userId = '${userId}'`;
-        let sqlQuery = `SELECT customerId FROM message_status WHERE `;
+        let sqlQuery = `SELECT customerId FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE `;
 
         if (
           type === 'Email' ||
@@ -5486,8 +5480,8 @@ export class CustomersService {
     const workspaceIdCondition = `workspaceId = '${workspace.id}'`;
     //to do change clickhouse?
     //const workspaceIdCondition = `userId = '${workspace.id}'`;
-    let sqlQuery = `SELECT COUNT(*) FROM message_status WHERE `;
-    //let sqlQuery = `SELECT * FROM message_status WHERE `;
+    let sqlQuery = `SELECT COUNT(*) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE `;
+    //let sqlQuery = `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE `;
 
     if (
       type === 'Email' ||
@@ -5560,7 +5554,7 @@ export class CustomersService {
         account.id
       );
 
-      //const testQuery = "SELECT COUNT(*) FROM message_status" ;
+      //const testQuery = "SELECT COUNT(*) FROM ${ClickHouseTable.MESSAGE_STATUS}" ;
       const countEvents = await this.clickhouseClient.query({
         query: sqlQuery,
         format: 'CSV',
