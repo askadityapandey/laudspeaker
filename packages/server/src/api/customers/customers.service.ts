@@ -94,7 +94,8 @@ import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 import {
   ClickHouseTable,
-  ClickHouseClient
+  ClickHouseClient,
+  ClickHouseRow
 } from '@/common/services/clickhouse';
 
 export type Correlation = {
@@ -3922,7 +3923,7 @@ export class CustomersService {
 
           // to do this needs to be tested on a very large set of customers to check streaming logic is sound
 
-          stream.on('data', async (rows: Row[]) => {
+          stream.on('data', async (rows: ClickHouseRow[]) => {
             stream.pause();
 
             for (const row of rows) {
@@ -3943,7 +3944,7 @@ export class CustomersService {
             //stream.resume();
 
             /*
-          rows.forEach((row: Row) => {
+          rows.forEach((row: ClickHouseRow) => {
             const cleanedText = row.text.replace(/^"(.*)"$/, '$1'); // Removes surrounding quotes
             console.log("cleaned text is", cleanedText);
             const objectId = new Types.ObjectId(cleanedText);
@@ -5563,8 +5564,8 @@ export class CustomersService {
 
       let countOfEvents = '0';
       const stream = countEvents.stream();
-      stream.on('data', (rows: Row[]) => {
-        rows.forEach((row: Row) => {
+      stream.on('data', (rows: ClickHouseRow[]) => {
+        rows.forEach((row: ClickHouseRow) => {
           //console.log('this is the data', row.text);
           countOfEvents = row.text;
         });
