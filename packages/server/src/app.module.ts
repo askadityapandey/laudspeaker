@@ -249,7 +249,7 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
       password: process.env.CLICKHOUSE_PASSWORD ?? '',
       database: process.env.CLICKHOUSE_DB ?? 'default',
       max_open_connections: process.env.CLICKHOUSE_MAX_OPEN_CONNECTIONS ?? 10,
-      keep_alive_enabled: true
+      keep_alive: { enabled: true }
     }),
     IntegrationsModule,
     CustomersModule,
