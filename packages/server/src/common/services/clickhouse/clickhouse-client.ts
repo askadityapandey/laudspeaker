@@ -10,10 +10,10 @@ import {
   InsertParams,
   InsertResult,
   ClickHouseSettings,
+  ClickHouseClientConfigOptions,
   ResultSet,
   type DataFormat
 } from '@clickhouse/client';
-
 import {
   QueryParamsWithFormat
 } from '@clickhouse/client-common'
@@ -35,7 +35,7 @@ export class ClickHouseClient implements OnModuleDestroy {
       1000,
   };
 
-  constructor(options: any) {
+  constructor(options: ClickHouseClientConfigOptions) {
     this.client = createClient(options);
   }
 
@@ -45,19 +45,23 @@ export class ClickHouseClient implements OnModuleDestroy {
     return this.client.query(params) as Promise<ResultSet<Format>>
   }
 
-  async insert(params: InsertParams): Promise<InsertResult> {
+  insert(
+    params: InsertParams
+  ): Promise<InsertResult> {
     return this.client.insert(params);
   }
 
-  async insertAsync(params: InsertParams): Promise<InsertResult> {
-    const insertOptions: InsertParams = {
+  insertAsync(
+    params: InsertParams
+  ): Promise<InsertResult> {
+    const insertParams: InsertParams = {
       ...params,
       clickhouse_settings: {
         ...this.insertAsyncSettings
       },
     };
 
-    return this.insert(insertOptions);
+    return this.insert(insertParams);
   }
 
   async onModuleDestroy() {
