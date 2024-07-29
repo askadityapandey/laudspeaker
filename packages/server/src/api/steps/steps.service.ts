@@ -21,6 +21,7 @@ import {
   ClickHouseTable,
   ClickHouseClient
 } from '@/common/services/clickhouse';
+import { CacheService } from '@/common/services/cache.service';
 
 @Injectable()
 export class StepsService {
@@ -44,6 +45,7 @@ export class StepsService {
     private readonly customersService: CustomersService,
     @Inject(ClickHouseClient)
     private clickhouseClient: ClickHouseClient,
+    @Inject(CacheService) private cacheService: CacheService,
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -153,13 +155,19 @@ export class StepsService {
     return Sentry.startSpan({ name: 'StepsService.triggerStart' }, async () => {
       const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-      const startStep = await queryRunner.manager.find(Step, {
-        where: {
-          workspace: { id: workspace.id },
-          journey: { id: journey.id },
-          type: StepType.START,
-        },
-      });
+      const startStep = await this.cacheService.getIgnoreError(
+        'JourneyStartStep',
+        journey.id,
+        async () => {
+          return await queryRunner.manager.find(Step, {
+            where: {
+              workspace: { id: workspace.id },
+              journey: { id: journey.id },
+              type: StepType.START,
+            },
+          });
+        }
+      );
 
       if (startStep.length !== 1)
         throw new Error('Can only have one start step per journey.');

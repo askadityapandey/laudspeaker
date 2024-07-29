@@ -623,7 +623,7 @@ export class JourneyLocationsService {
     if (!queryRunner) {
       queryRunner = await this.dataSource.createQueryRunner();
       await queryRunner.connect();
-      await queryRunner.startTransaction();
+
       try {
         res = await queryRunner.manager.update(
           JourneyLocation,
@@ -637,11 +637,10 @@ export class JourneyLocationsService {
             messageSent: location.messageSent,
           }
         );
-        await queryRunner.commitTransaction();
+
       } catch (e) {
         this.error(e, this.unlock.name, randomUUID());
         err = e;
-        await queryRunner.rollbackTransaction();
       } finally {
         await queryRunner.release();
         if (err) throw err;
