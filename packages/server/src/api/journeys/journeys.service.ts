@@ -1031,10 +1031,6 @@ export class JourneysService {
         .take(take < 100 ? take : 100)
         .skip(skip)
         .leftJoin('journey.latestChanger', 'account')
-        .loadRelationCountAndMap(
-          'journey.totalEnrolled',
-          'journey.journeyLocations'
-        )
         .addSelect('account.email', 'latestChangerEmail');
 
       if (orderBy)
@@ -1044,12 +1040,19 @@ export class JourneysService {
         );
 
       const journeys = await query.getRawAndEntities();
-      const computedFieldsList = ['latestChangerEmail', 'totalEnrolled'];
+      const journeyIds = journeys.entities.map( (journey) => journey.id );
+
+      const totalCounts = await this.journeyLocationsService.getJourneyListTotalEnrolled(journeyIds);
+
+      const computedFieldsList = ['latestChangerEmail'];
 
       const result = EntityComputedFieldsHelper.processCollection<Journey>(
         journeys,
         computedFieldsList
       );
+
+      for(const i in result)
+        result[i].computed.totalEnrolled = totalCounts[result[i].entity.id];
 
       return { data: result, totalPages };
     } catch (err) {
@@ -1752,7 +1755,7 @@ export class JourneysService {
         isActive: true,
       });
 
-      if (organization.plan.activeJourneyLimit != -1) {
+      if (process.env.NODE_ENV != "development" && organization.plan.activeJourneyLimit != -1) {
         if (activeJourneysCount + 1 > organization.plan.activeJourneyLimit) {
           throw new HttpException(
             'Active journeys limit has been exceeded',

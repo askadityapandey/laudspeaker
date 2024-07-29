@@ -8,6 +8,7 @@ import {
   IsNull,
   QueryRunner,
   Repository,
+  In,
 } from 'typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Journey } from './entities/journey.entity';
@@ -827,5 +828,21 @@ export class JourneyLocationsService {
       count = await this.journeyLocationsRepository.count(queryCriteria);
     }
     return count;
+  }
+
+  async getJourneyListTotalEnrolled(journeyIds: string[]) {
+    const ret = {};
+    const resultSet = await this.journeyLocationsRepository
+      .createQueryBuilder('journeyLocation')
+      .where({journey: In(journeyIds)})
+      .groupBy("journeyLocation.journeyId")
+      .select("journeyLocation.journeyId, COUNT(*) as count")
+      .getRawMany();
+
+    for (const row of resultSet) {
+      ret[row.journeyId] = +row.count;
+    }
+
+    return ret;
   }
 }
