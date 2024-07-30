@@ -46,7 +46,7 @@ export class WorkOrchestrator {
     let prefetchCount = this.processorOptions.prefetchCount;
 
     if (!prefetchCount)
-      prefetchCount = parseInt(process.env.RMQ_QUEUE_PREFETCH_COUNT ?? '1');
+      prefetchCount = parseInt(process.env.RMQ_QUEUE_PREFETCH_COUNT ?? '100');
 
     await channel.prefetch(prefetchCount);
 
