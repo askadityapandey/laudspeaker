@@ -39,10 +39,18 @@ export class Step extends BaseEntity {
   })
   public journey: Journey;
 
+  // TODO:REMOVE
   // Array of JSON-stringified StepCustomer Objects: see step-customer.interface.ts
   @Column('text', { nullable: false, array: true, default: [] })
   public customers: string[];
 
   @Column('jsonb', { nullable: true })
   public metadata: any;
+
+  // explicitly add foreign keys to search without joining
+  @Column("uuid", { nullable: false })
+  journeyId: string;
+
+  @Column("uuid", { nullable: false })
+  workspaceId: string;
 }

@@ -236,22 +236,36 @@ export class JourneyLocationsService {
       )
     );
 
-    // Error handling
-    stream.on('error', (error) => {
-      this.error(error, this.createAndLockBulk.name, session, account.email);
-      throw error;
-    });
-    stream.on('finish', () => {
-      this.debug(
-        `Finished creating journey location rows for ${journeyId}`,
-        this.createAndLockBulk.name,
-        session,
-        account.email
-      );
+    const self = this;
+
+    const promise = new Promise<void>(function(resolve, reject) {
+      const successHandler = () => {
+        self.debug(
+          `Finished creating journey location rows for ${journeyId}`,
+          self.createAndLockBulk.name,
+          session,
+          account.email
+        );
+        resolve();
+      };
+
+      const errorHandler = (error) => {
+        console.log("errorHandler");
+        self.error(error, self.createAndLockBulk.name, session, account.email);
+        reject(error);
+      };
+
+      // Error handling
+      readableStream.on('error', errorHandler);
+      stream.on('error', errorHandler);
+
+      stream.on('finish', successHandler);
+
+      // Pipe the readable stream to the COPY command
+      readableStream.pipe(stream);
     });
 
-    // Pipe the readable stream to the COPY command
-    readableStream.pipe(stream);
+    return promise;
   }
 
   /**

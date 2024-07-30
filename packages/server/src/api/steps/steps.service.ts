@@ -155,22 +155,14 @@ export class StepsService {
     return Sentry.startSpan({ name: 'StepsService.triggerStart' }, async () => {
       const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-      const startStep = await this.cacheService.getIgnoreError(
-        'JourneyStartStep',
-        journey.id,
-        async () => {
-          return await queryRunner.manager.find(Step, {
-            where: {
-              workspace: { id: workspace.id },
-              journey: { id: journey.id },
-              type: StepType.START,
-            },
-          });
-        }
-      );
+      const startStep = await this.getStartStep(
+        account,
+        journey,
+        session,
+        queryRunner);
 
-      if (startStep.length !== 1)
-        throw new Error('Can only have one start step per journey.');
+      if (!startStep)
+        throw new Error('Could not find start step.');
 
       const CUSTOMERS_PER_BATCH = 50000;
       let batch = 0;
@@ -197,7 +189,7 @@ export class StepsService {
           customers.map((document) => {
             return document._id.toString();
           }),
-          startStep[0],
+          startStep,
           session,
           account,
           queryRunner,
@@ -453,15 +445,45 @@ export class StepsService {
   }
 
   /**
-   * Find a step by its ID.
+   * Finds the start step by journey and workspace. Caches the step for next lookup
    * @param account
-   * @param id
+   * @param journeyId
+   * @param session
+   * @returns
+   */
+  async getStartStep(
+    account: Account,
+    journey: Journey,
+    session: string,
+    queryRunner?: QueryRunner
+  ): Promise<Step | null> {
+    const startStep = await this.cacheService.getIgnoreError(
+      'JourneyStartStep',
+      journey.id,
+      async () => {
+        return await this.findByJourneyAndType(
+          account,
+          journey,
+          StepType.START,
+          session,
+          queryRunner);
+        }
+    );
+
+    return startStep;
+  }
+
+  /**
+   * Find a step by journey, workspace and type
+   * @param account
+   * @param journey
+   * @param type
    * @param session
    * @returns
    */
   async findByJourneyAndType(
     account: Account,
-    journey: string,
+    journey: Journey,
     type: StepType,
     session: string,
     queryRunner?: QueryRunner
@@ -471,16 +493,16 @@ export class StepsService {
     if (queryRunner) {
       return await queryRunner.manager.findOne(Step, {
         where: {
-          journey: { id: journey },
-          workspace: { id: workspace.id },
+          journeyId: journey.id,
+          workspaceId: workspace.id,
           type: type,
         },
       });
     } else {
       return await this.stepsRepository.findOne({
         where: {
-          journey: { id: journey },
-          workspace: { id: workspace.id },
+          journeyId: journey.id,
+          workspaceId: workspace.id,
           type: type,
         },
       });

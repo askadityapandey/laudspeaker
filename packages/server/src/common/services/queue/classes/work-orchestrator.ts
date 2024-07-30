@@ -102,25 +102,31 @@ export class WorkOrchestrator {
   }
 
   private async handleMessage(channel, msg, queue: QueueType) {
-    const job = this.jobFromMsg(msg);
-
     const self = this;
 
-    self.processor.process.call(self.processor, job)
-      .then(result => self.handleProcessorSuccess(
+    const job = this.jobFromMsg(msg);
+    let result;
+
+    try {
+      result = await self.processor.process.call(self.processor, job);
+
+      await self.handleProcessorSuccess(
         channel,
         msg,
         job,
         queue,
         self.processor,
-        result))
-      .catch(error => self.handleProcessorError(
+        result);
+    }
+    catch(error) {
+      await self.handleProcessorError(
         channel,
         msg,
         job,
         queue,
         self.processor,
-        error));
+        error);
+    }
   }
 
   private async handleProcessorSuccess(channel, msg, job, queue, processor, result) {
@@ -128,10 +134,9 @@ export class WorkOrchestrator {
   }
 
   private async handleProcessorError(channel, msg, job, queue, processor, error) {
-
     const jobDeliveryCount = this.getJobDeliveryCount(job);
 
-    const maxRetries = this.processorOptions.maxRetries?.count ?? 3;
+    const maxRetries = this.processorOptions?.maxRetries?.count ?? 3;
 
     if (jobDeliveryCount >= maxRetries ) {
       return this.failJob(
@@ -150,7 +155,7 @@ export class WorkOrchestrator {
         queue,
         processor,
         error,
-        this.processorOptions.maxRetries.delayMS
+        this.processorOptions?.maxRetries?.delayMS
       );
     }
   }

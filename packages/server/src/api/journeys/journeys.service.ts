@@ -311,10 +311,7 @@ export class JourneysService {
    * @param session
    * @returns
    */
-
   async getJourneys(account: Account, session: string) {
-    console.log('In getJourneys');
-
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -745,10 +742,10 @@ export class JourneysService {
     clientSession?: ClientSession
   ): Promise<any[]> {
     const jobsData: any[] = [];
-    const step = await this.stepsService.findByJourneyAndType(
+
+    const startStep = await this.stepsService.getStartStep(
       account,
-      journey.id,
-      StepType.START,
+      journey,
       session,
       queryRunner
     );
@@ -798,7 +795,7 @@ export class JourneysService {
       const jobData = {
         owner: modifiedAccount,
         journey: modifiedJourney,
-        step: step,
+        step: startStep,
         location: locations.find((location: JourneyLocation) => {
           return (
             location.customer === (customer._id ?? customer._id.toString()) &&
