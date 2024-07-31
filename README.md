@@ -24,28 +24,21 @@
 
 <details>
   <summary><b>Visual Journey Builder:</b> Build complex workflows the whole team can understand in a visual tool.</summary>
-  <img alt="Journey Builder" src="">
+  <img alt="Journey Builder" src="https://github.com/user-attachments/assets/3b3a91f4-3d10-4621-b09c-3165f5636f55">
 </details>
 <details>
   <summary><b>Segment Builder:</b> Segment users by attributes, actions they have completed, and even retarget based on previous campaigns they have recieved and interacted with</summary>
-  <img alt="Segment Builder" src="">
+  <img alt="Segment Builder" src="https://github.com/user-attachments/assets/59a3567c-af7e-4a69-b57d-d335f016019c"
+>
 </details>
 <details>
   <summary><b>Multiple messaging channels:</b> Trigger Push, Email, SMS, Webhooks and more to nudge users back to complete specific flows.</summary>
-  <img alt="Analytics" src="">
+  <img alt="Analytics" src="https://github.com/user-attachments/assets/c30408ae-daa7-40be-a457-7de6aab9c9d0">
 </details>
 <details>
   <summary><b>Run A/B tests and personalize messages:</b> Build user journeys with A/B tests, use liquid templating, and call external apis to personalize messages for the right users</summary>
-  <img alt="Personalization" src="">
+  <img alt="Personalization" src="https://github.com/user-attachments/assets/e08abd8c-cfdf-46e2-a5e9-17bfb3c0bdb6">
 </details>
-
-
-### next 
-- **Visual Journey Builder:** Build complex workflows the whole team can understand in a visual tool. Describe the onboarding journey and messaging steps clearly.
-- **Multiple messaging channels:** Trigger Push, Email, SMS, Webhooks and more to nudge users back to complete specific flows.
-- **Monitor and Track User Progress:** See user progress and which steps convert.
-- **Segment Users:** Segment users by attributes, actions they have completed, and even retarget based on previous campaigns they have recieved and interacted with
-- **Run A/B tests and personalize messages:** Build user journeys with A/B tests, use liquid templating, and call external apis to personalize messages for the right users
 
 ## 🚀 Try Laudspeaker
 
