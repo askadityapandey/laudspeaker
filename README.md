@@ -139,7 +139,7 @@ We're currently in Public Beta.
         🚧 In-app designer v2 (modals, tooltips)
       </td>
       <td align="left" valign="middle">
-        🔜 Exportable message logs
+        🔜 Exportable journey audit logs
       </td>
     </tr>
   </tbody>
