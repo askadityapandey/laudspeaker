@@ -26,6 +26,21 @@
   <summary><b>Visual Journey Builder:</b> Build complex workflows the whole team can understand in a visual tool.</summary>
   <img alt="Journey Builder" src="">
 </details>
+<details>
+  <summary><b>Segment Builder:</b> Segment users by attributes, actions they have completed, and even retarget based on previous campaigns they have recieved and interacted with</summary>
+  <img alt="Segment Builder" src="">
+</details>
+<details>
+  <summary><b>Multiple messaging channels:</b> Trigger Push, Email, SMS, Webhooks and more to nudge users back to complete specific flows.</summary>
+  <img alt="Analytics" src="">
+</details>
+<details>
+  <summary><b>Run A/B tests and personalize messages:</b> Build user journeys with A/B tests, use liquid templating, and call external apis to personalize messages for the right users</summary>
+  <img alt="Personalization" src="">
+</details>
+
+
+### next 
 - **Visual Journey Builder:** Build complex workflows the whole team can understand in a visual tool. Describe the onboarding journey and messaging steps clearly.
 - **Multiple messaging channels:** Trigger Push, Email, SMS, Webhooks and more to nudge users back to complete specific flows.
 - **Monitor and Track User Progress:** See user progress and which steps convert.
