@@ -141,7 +141,7 @@ export class EnrollmentProcessor extends ProcessorBase {
     }
     const queryRunner = await this.dataSource.createQueryRunner();
     const client = await queryRunner.connect();
-
+    await queryRunner.startTransaction();
     try {
       triggerStartTasks = await this.stepsService.triggerStart(
         job.data.account,
@@ -169,6 +169,8 @@ export class EnrollmentProcessor extends ProcessorBase {
         workspaceId: workspace.id,
       });
 
+      await queryRunner.commitTransaction();
+
       if (triggerStartTasks) {
         await Producer.add(
           QueueType.START,
@@ -182,6 +184,7 @@ export class EnrollmentProcessor extends ProcessorBase {
         job.data.session,
         job.data.account.email
       );
+      await queryRunner.rollbackTransaction();
       err = e;
     } finally {
       await queryRunner.release();
