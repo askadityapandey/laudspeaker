@@ -20,13 +20,19 @@
 
 <img width="1708" alt="UI2" src="https://github.com/laudspeaker/laudspeaker/assets/7728266/4c3c2917-6899-48f7-bcbe-a4bd92049c24">
 
+## Major Features
+
+<details>
+  <summary><b>Visual Journey Builder:</b> Build complex workflows the whole team can understand in a visual tool.</summary>
+  <img alt="Journey Builder" src="">
+</details>
 - **Visual Journey Builder:** Build complex workflows the whole team can understand in a visual tool. Describe the onboarding journey and messaging steps clearly.
 - **Multiple messaging channels:** Trigger Push, Email, SMS, Webhooks and more to nudge users back to complete specific flows.
 - **Monitor and Track User Progress:** See user progress and which steps convert.
 - **Segment Users:** Segment users by attributes, actions they have completed, and even retarget based on previous campaigns they have recieved and interacted with
 - **Run A/B tests and personalize messages:** Build user journeys with A/B tests, use liquid templating, and call external apis to personalize messages for the right users
 
-## 🚀 Get Started
+## 🚀 Try Laudspeaker
 
 Use [Laudspeaker Cloud](https://app.laudspeaker.com/login/?ref=github) or if you are interested in our paid self deployed (enterprise) plan book a time below:
 
@@ -36,7 +42,23 @@ Use [Laudspeaker Cloud](https://app.laudspeaker.com/login/?ref=github) or if you
 
 Questions? Please join our [Slack channel](https://join.slack.com/t/laudspeakerusers/shared_invite/zt-1io0f6u50-rSCnNtqkJT6QIdbPOyJh6g) or visit our [site](https://laudspeaker.com/).
 
-## 🚀 Laudspeaker's roadmap
+## 🔥 What makes Laudspeaker cool?
+
+Lauspeaker is the only multi-channel open-source customer messaging workflow software, which is focused on being event triggered, has been built with a visual journey feature from day one and is focused on scalability, in fact our software has already been used to send over **500million** messages
+
+We support push, email, sms and webhooks as a channels and have many more channels on our roadmap.
+
+We are planning to build Laudspeaker to work well with the Modern Data Stack, integrating with data warehouses and other services so you can easily import and export data with no fear of lock in or losing control of your data.
+
+## 🐥 Status
+
+- [ ] Public Alpha: Anyone can sign up over at [laudspeaker.com](https://laudspeaker.com) but go easy on us, there are wrinkles and we're just getting started.
+- [x] Public Beta: Stable enough for most non-enterprise use-cases.
+- [ ] Public: Production-ready.
+
+We're currently in Public Beta.
+
+## 🚀 Our Roadmap
 
 <table>
 <tr>
@@ -159,23 +181,6 @@ Questions? Please join our [Slack channel](https://join.slack.com/t/laudspeakeru
 </td>       
 </tr>
 </table>
-
-
-## 🔥 What makes Laudspeaker cool?
-
-Lauspeaker is the only multi-channel open-source customer messaging workflow software, which is focused on being event triggered, has been built with a visual journey feature from day one and is focused on scalability.
-
-We support email, sms and slack as a channel and have many more channels on our roadmap.
-
-We are planning to build Laudspeaker to work well with the Modern Data Stack, integrating with data warehouses and other services so you can easily import and export data with no fear of lock in or losing control of your data.
-
-## 🐥 Status
-
-- [ ] Public Alpha: Anyone can sign up over at [laudspeaker.com](https://laudspeaker.com) but go easy on us, there are wrinkles and we're just getting started.
-- [x] Public Beta: Stable enough for most non-enterprise use-cases.
-- [ ] Public: Production-ready.
-
-We're currently in Public Beta.
 
 ## License
 
