@@ -11,12 +11,9 @@ In terms of how we think about product we categorise our work into 4 major bucke
 - Building a scalable system
 
 
-## Roadmap
-
 <table>
 <tr>
-  <th>Q2</th>
-  <th>Q3</th>
+  <th>Q2 2024</th>
 </tr>
 <tr>
   <td>
@@ -25,121 +22,117 @@ In terms of how we think about product we categorise our work into 4 major bucke
   <tbody>
     <tr>
       <td align="left" valign="middle">
-         🔜 Triggers (Message Events)
+        ✅️ Bolster Segmentation filters (events) 
       </td>
       <td align="left" valign="middle">
-          ✔  Triggers (Looping)
-      </td>
-      <td align="left" valign="middle">
-         🔜 
+        ✅️ Handle >10m user scale
       </td>
     </tr>
     <tr>
       <td align="left" valign="middle">
-          🔜️ Branching ( True / False) 
+         ✅️ Collect devilerability metrics in mobile sdks
       </td>
       <td align="left" valign="middle">
-          ✔️ Branching ( Multi Branching)
-      </td>
-      <td align="left" valign="middle">
-          🔜️ Branching ( Random Branching)
+         ✅️ Allow api calls for personalization
       </td>
     </tr>
     <tr>
       <td align="left" valign="middle">
-        ✔ Segmentation (User Attributes)
+         ✅️ Improve CSV upload experience
       </td>
       <td align="left" valign="middle">
-        🔜️ Segmentation (User Attribute Change History)
-      </td>
-      <td align="left" valign="middle">
-        🔜 Segmentation (Event History)
+         ✅️ Improved mobile push support
       </td>
     </tr>
-    <tr>
-      <td align="left" valign="middle">
-        ✔ Metrics (email open rate)
-      </td>
-      <td align="left" valign="middle">
-        ✔ Metrics (email click through rate)
-      </td>
-      <td align="left" valign="middle">
-        🔜 Metrics (step to step conversion)
-      </td>
-    </tr>
-    <tr>
-      <td align="left" valign="middle">
-         🔜 A/B Tests v1
-      </td>
-      <td align="left" valign="middle">
-          ✔ Personalization (Liquid)
-      </td>
-      <td align="left" valign="middle">
-         🔜 Webhooks
-      </td>
-    </tr>
-    
   </tbody>
 </table>
 
-  </td>
-<td>
+</td>       
+</tr>
+</table>
+
+
+<table>
+<tr>
+  <th>Q3 2024</th>
+</tr>
+<tr>
+  <td>
 
 <table>
   <tbody>
     <tr>
       <td align="left" valign="middle">
-          ✔️ 
+        ✅️ Introduce rabbitmq, deprecate mongo
       </td>
       <td align="left" valign="middle">
-          🔜️  Email (via  Smtp)
-      </td>
-      <td align="left" valign="middle">
-          ✔️  
+        🚧 Handle >100m user scale
       </td>
     </tr>
     <tr>
       <td align="left" valign="middle">
-          🔜️
+        🚧 User timezone support
       </td>
       <td align="left" valign="middle">
-          🔜️  Push (via APNS)
-      </td>
-      <td align="left" valign="middle">
-          🔜️  Push ( React Native)
+        🚧 Improve A/B testing capability 
       </td>
     </tr>
     <tr>
       <td align="left" valign="middle">
-          🔜️ 
+        🚧 In-app designer v2 (modals, tooltips)
       </td>
       <td align="left" valign="middle">
-          🔜️ 
-      </td>
-      <td align="left" valign="middle">
-          🔜️  In App (content cards
-      </td>
-    </tr>
-    <tr>
-      <td align="left" valign="middle">
-          🔜  Webhook
-      </td>
-      <td align="left" valign="middle">
-        And more...
-      </td>
-      <td align="left" valign="middle">
-        And Even more...
+        🔜 Exportable message logs
       </td>
     </tr>
   </tbody>
 </table>
 
-</td>
-<td>
+</td>       
+</tr>
+</table>
+
+
+<table>
+<tr>
+  <th>Q4 2024</th>
+</tr>
+<tr>
+  <td>
+
+<table>
+  <tbody>
+    <tr>
+      <td align="left" valign="middle">
+        🔜 Data warehouse import and export 
+      </td>
+      <td align="left" valign="middle">
+         🔜 Approval Flows + Advanced permissions
+      </td>
+    </tr>
+    <tr>
+      <td align="left" valign="middle">
+        🔜 Multi-workspace support for organizations
+      </td>
+      <td align="left" valign="middle">
+        🔜 Mobile Feature #2
+      </td>
+    </tr>
+    <tr>
+      <td align="left" valign="middle">
+       🔜 SSO / SAML integration 
+      </td>
+      <td align="left" valign="middle">
+        🔜 Mobile Feature #3
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 </td>       
 </tr>
 </table>
+
 
 ## Current State of the Product
 
