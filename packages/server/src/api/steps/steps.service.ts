@@ -458,7 +458,7 @@ export class StepsService {
     queryRunner?: QueryRunner
   ): Promise<Step | null> {
     const startStep = await this.cacheService.getIgnoreError(
-      'JourneyStartStep',
+      'JourneyWorkspaceStartStep',
       journey.id,
       async () => {
         return await this.findByJourneyAndType(
