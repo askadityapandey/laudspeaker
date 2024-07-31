@@ -161,7 +161,7 @@ We're currently in Public Beta.
   <tbody>
     <tr>
       <td align="left" valign="middle">
-        🔜 Data warehouse import and export 
+        🔜 Syncing with Data warehouse
       </td>
       <td align="left" valign="middle">
          🔜 Approval Flows + Advanced permissions
