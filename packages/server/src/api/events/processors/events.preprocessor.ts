@@ -33,6 +33,11 @@ import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  ClickHouseTable,
+  ClickHouseEvent,
+  ClickHouseClient
+} from '@/common/services/clickhouse';
 
 export enum ProviderType {
   LAUDSPEAKER = 'laudspeaker',
@@ -72,7 +77,9 @@ export class EventsPreProcessor extends ProcessorBase {
     @InjectModel(Customer.name) public customerModel: Model<CustomerDocument>,
     @InjectRepository(Journey)
     private readonly journeysRepository: Repository<Journey>,
-    @Inject(CacheService) private cacheService: CacheService
+    @Inject(CacheService) private cacheService: CacheService,
+    @Inject(ClickHouseClient)
+    private clickhouseClient: ClickHouseClient,
   ) {
     super();
   }
@@ -179,8 +186,6 @@ export class EventsPreProcessor extends ProcessorBase {
   ): Promise<any> {
     let err: any;
     try {
-      //find customer associated with event or create new customer if not found
-      //console.time(`handleCustom - findOrCreateCustomer ${job.data.session}`)
       const {
         customer,
         findType,
@@ -192,9 +197,6 @@ export class EventsPreProcessor extends ProcessorBase {
           null,
           job.data.event
         );
-      //console.timeEnd(`handleCustom - findOrCreateCustomer ${job.data.session}`)
-      //get all the journeys that are active, and pipe events to each journey in case they are listening for event
-      //console.time(`handleCustom - find journeys ${job.data.session}`)
       let journeys: Journey[] = await this.cacheService.get(
         'Journeys',
         job.data.workspace.id,
@@ -213,10 +215,23 @@ export class EventsPreProcessor extends ProcessorBase {
         }
       );
 
-      //console.timeEnd(`handleCustom - find journeys ${job.data.session}`)
-      // add event to event database for visibility
       if (job.data.event) {
-        //console.time(`handleCustom - create event ${job.data.session}`)
+        const clickHouseRecord: ClickHouseEvent = {
+          correlationKey: job.data.event.correlationKey,
+          correlationValue: job.data.event.correlationValue,
+          event: job.data.event.event,
+          payload: job.data.event.payload,
+          source: job.data.event.source,
+          timestamp: job.data.event.timestamp,
+          uuid: job.data.event.uuid,
+          workspaceId: job.data.workspace.id,
+        };
+        await this.clickhouseClient.insertAsync({
+          table: ClickHouseTable.EVENTS,
+          values: [clickHouseRecord],
+          format: 'JSONEachRow',
+        });
+
         await this.eventModel.create([
           {
             ...this.removeDollarSignsFromKeys(job.data.event),
@@ -224,10 +239,8 @@ export class EventsPreProcessor extends ProcessorBase {
             createdAt: new Date().toISOString(),
           },
         ]);
-        //console.timeEnd(`handleCustom - create event ${job.data.session}`)
       }
 
-      // Always add jobs after committing transactions, otherwise there could be race conditions
       let eventJobs = journeys.map((journey) => ({
         //to do add here modified
         account: job.data.owner,

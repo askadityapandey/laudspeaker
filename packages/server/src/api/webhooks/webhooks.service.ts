@@ -20,7 +20,6 @@ import { EventWebhook } from '@sendgrid/eventwebhook';
 import { Queue } from 'bullmq';
 import { Webhook } from 'svix';
 import fetch from 'node-fetch'; // Ensure you have node-fetch if you're using Node.js
-import { ProviderType } from '../events/processors/events.preprocessor';
 import { Organization } from '../organizations/entities/organization.entity';
 import {
   DEFAULT_PLAN,
