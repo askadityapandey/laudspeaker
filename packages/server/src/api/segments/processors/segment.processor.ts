@@ -24,13 +24,15 @@ import { Journey } from '../../journeys/entities/journey.entity';
 import { Step } from '../../steps/entities/step.entity';
 import { StepsService } from '@/api/steps/steps.service';
 import { StepType } from '@/api/steps/types/step.interface';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  Processor,
+  ProcessorBase,
+  Producer,
+  QueueType
+} from '@/common/services/queue';
 
 @Injectable()
-@Processor('segment_update')
+@Processor(QueueType.SEGMENT_UPDATE)
 export class SegmentUpdateProcessor extends ProcessorBase {
   private providerMap = {
     updateDynamic: this.handleUpdateDynamic,

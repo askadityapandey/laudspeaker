@@ -7,12 +7,15 @@ import { WebhooksService } from '../webhooks/webhooks.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import {
+  Processor,
+  ProcessorBase,
+  QueueType
+} from '@/common/services/queue';
 import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 @Injectable()
-@Processor('slack')
+@Processor(QueueType.SLACK)
 export class SlackProcessor extends ProcessorBase {
   client: WebClient;
   tagEngine: Liquid;

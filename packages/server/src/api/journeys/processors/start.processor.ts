@@ -19,16 +19,18 @@ import { JourneysService } from '../journeys.service';
 import { Step } from '../../steps/entities/step.entity';
 import { StepType } from '../../steps/types/step.interface';
 import { StepsService } from '../../steps/steps.service';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  Processor,
+  ProcessorBase,
+  Producer,
+  QueueType
+} from '@/common/services/queue';
 
 const BATCH_SIZE = +process.env.START_BATCH_SIZE;
 
 @Injectable()
 @Processor(
-  'start', {
+  QueueType.START, {
     prefetchCount: 1
   })
 export class StartProcessor extends ProcessorBase {

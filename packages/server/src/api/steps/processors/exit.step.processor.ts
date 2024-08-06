@@ -22,11 +22,14 @@ import { StepsService } from '../steps.service';
 import { Journey } from '@/api/journeys/entities/journey.entity';
 import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
 import { CacheService } from '@/common/services/cache.service';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import {
+  Processor,
+  ProcessorBase,
+  QueueType
+} from '@/common/services/queue';
 
 @Injectable()
-@Processor('exit.step')
+@Processor(QueueType.EXIT_STEP)
 export class ExitStepProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)

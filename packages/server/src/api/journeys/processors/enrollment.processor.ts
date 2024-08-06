@@ -15,14 +15,16 @@ import { Step } from '../../steps/entities/step.entity';
 import { StepsService } from '@/api/steps/steps.service';
 import { CustomersService } from '@/api/customers/customers.service';
 import { JourneysService } from '@/api/journeys/journeys.service';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  Processor,
+  ProcessorBase,
+  Producer,
+  QueueType
+} from '@/common/services/queue';
 
 @Injectable()
 @Processor(
-  'enrollment', {
+  QueueType.ENROLLMENT, {
     prefetchCount: 1
   })
 export class EnrollmentProcessor extends ProcessorBase {

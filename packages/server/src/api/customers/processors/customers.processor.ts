@@ -13,10 +13,12 @@ import mongoose from 'mongoose';
 import { Customer, CustomerDocument } from '../schemas/customer.schema';
 import { Account } from '../../accounts/entities/accounts.entity';
 import { ProviderType } from '../../events/processors/events.preprocessor';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  Processor,
+  ProcessorBase,
+  Producer,
+  QueueType
+} from '@/common/services/queue';
 
 const containsUnskippedKeys = (updateDescription) => {
   // Combine keys from updatedFields, removedFields, and the fields of truncatedArrays
@@ -73,7 +75,7 @@ const copyMessageWithFilteredUpdateDescription = (message) => {
 };
 
 @Injectable()
-@Processor('customer_change')
+@Processor(QueueType.CUSTOMER_CHANGE)
 export class CustomerChangeProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)

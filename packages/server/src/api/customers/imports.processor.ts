@@ -15,11 +15,14 @@ import { Segment } from '../segments/entities/segment.entity';
 import { Repository } from 'typeorm';
 import { SegmentCustomers } from '../segments/entities/segment-customers.entity';
 import { randomUUID } from 'crypto';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import {
+  Processor,
+  ProcessorBase,
+  QueueType
+} from '@/common/services/queue';
 
 @Injectable()
-@Processor('imports')
+@Processor(QueueType.IMPORTS)
 export class ImportProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)

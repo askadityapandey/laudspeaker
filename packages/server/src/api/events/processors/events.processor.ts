@@ -24,10 +24,12 @@ import * as Sentry from '@sentry/node';
 import { JourneyLocationsService } from '../../journeys/journey-locations.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CacheService } from '@/common/services/cache.service';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  Processor,
+  ProcessorBase,
+  Producer,
+  QueueType
+} from '@/common/services/queue';
 
 export enum EventType {
   EVENT = 'event',
@@ -46,7 +48,7 @@ export enum EventType {
  */
 @Injectable()
 @Processor(
-  'events', {
+  QueueType.EVENTS, {
     maxRetries: {
       count: Number.MAX_SAFE_INTEGER,
       delayMS: 1000

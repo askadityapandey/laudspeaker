@@ -29,10 +29,12 @@ import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import { EventsService } from '../events.service';
 import { CacheService } from '../../../common/services/cache.service';
 import { FindType } from '../../customers/enums/FindType.enum';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  Processor,
+  ProcessorBase,
+  Producer,
+  QueueType
+} from '@/common/services/queue';
 
 export enum ProviderType {
   LAUDSPEAKER = 'laudspeaker',
@@ -49,7 +51,7 @@ export enum ProviderType {
  * event database.
  */
 @Injectable()
-@Processor('events_pre')
+@Processor(QueueType.EVENTS_PRE)
 export class EventsPreProcessor extends ProcessorBase {
   private providerMap: Record<
     ProviderType,

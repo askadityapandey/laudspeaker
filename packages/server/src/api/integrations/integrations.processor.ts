@@ -18,8 +18,11 @@ import { Pool } from 'pg';
 import Cursor from 'pg-cursor';
 import handleMySql from './mysql.worker';
 import { Injectable } from '@nestjs/common';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import {
+  Processor,
+  ProcessorBase,
+  QueueType
+} from '@/common/services/queue';
 
 const hourMs = 60 * 60 * 1000;
 const dayMs = 24 * hourMs;
@@ -38,7 +41,7 @@ const frequencyUnitToMsMap: Record<FrequencyUnit, number> = {
 const BATCH_SiZE = 10_000_000;
 
 @Injectable()
-@Processor('integrations')
+@Processor(QueueType.INTEGRATIONS)
 export class IntegrationsProcessor extends ProcessorBase {
   constructor(
     @InjectModel(Customer.name)

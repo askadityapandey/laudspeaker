@@ -18,13 +18,15 @@ import { Journey } from '@/api/journeys/entities/journey.entity';
 import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
 import { CacheService } from '@/common/services/cache.service';
 import { Temporal } from '@js-temporal/polyfill';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  Processor,
+  ProcessorBase,
+  Producer,
+  QueueType
+} from '@/common/services/queue';
 
 @Injectable()
-@Processor('wait.until.step')
+@Processor(QueueType.WAIT_UNTIL_STEP)
 export class WaitUntilStepProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)

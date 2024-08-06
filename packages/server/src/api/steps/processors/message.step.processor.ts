@@ -33,15 +33,17 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WebhooksService } from '@/api/webhooks/webhooks.service';
 import { OrganizationService } from '@/api/organizations/organizations.service';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  Processor,
+  ProcessorBase,
+  Producer,
+  QueueType
+} from '@/common/services/queue';
 import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 @Injectable()
 @Processor(
-  'message.step', {
+  QueueType.MESSAGE_STEP, {
     maxRetries: {
       count: 0,
     }

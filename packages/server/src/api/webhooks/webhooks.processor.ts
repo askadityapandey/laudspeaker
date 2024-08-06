@@ -18,12 +18,15 @@ import { TemplatesService } from '../templates/templates.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Repository } from 'typeorm';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import {
+  Processor,
+  ProcessorBase,
+  QueueType
+} from '@/common/services/queue';
 import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 
-@Processor('webhooks')
+@Processor(QueueType.WEBHOOKS)
 @Injectable()
 export class WebhooksProcessor extends ProcessorBase {
   private tagEngine = new Liquid();

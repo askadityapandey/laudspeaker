@@ -12,11 +12,14 @@ import { CustomerDocument } from '../../customers/schemas/customer.schema';
 import { Account } from '../../accounts/entities/accounts.entity';
 import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import * as Sentry from '@sentry/node';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import {
+  Processor,
+  ProcessorBase,
+  QueueType
+} from '@/common/services/queue';
 
 @Injectable()
-@Processor('events_post')
+@Processor(QueueType.EVENTS_POST)
 export class EventsPostProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
