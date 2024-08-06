@@ -71,7 +71,7 @@ import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
-import { ClickHouseClient } from '@/common/services/clickhouse';
+import { ClickHouseClient, ClickHouseEvent, ClickHouseEventSource, ClickHouseTable } from '@/common/services/clickhouse';
 
 @Injectable()
 export class EventsService {
@@ -1277,12 +1277,25 @@ export class EventsService {
       { new: true }
     );
 
+    const clickHouseRecord: ClickHouseEvent = {
+      correlationKey: event.correlationKey,
+      correlationValue: customer._id,
+      event: event.event,
+      payload: event.payload,
+      uuid: event.uuid,
+      workspaceId,
+      source: ClickHouseEventSource.MOBILE
+    };
+    await this.clickhouseClient.insertAsync({
+      table: ClickHouseTable.EVENTS,
+      values: [clickHouseRecord],
+      format: 'JSONEachRow',
+    });
+
     await this.EventModel.create({
       event: event.event,
       workspaceId: workspaceId,
       payload: filteredPayload,
-      //we should really standardize on .toISOString() or .toUTCString()
-      //createdAt: new Date().toUTCString(),
       createdAt: new Date().toISOString(),
     });
 
@@ -1498,7 +1511,6 @@ export class EventsService {
           session,
           auth.account.id
         );
-        //console.log("found customers primary key", customer.primaryKeyName, "does not match event primary key", primaryKeyValue )
         return;
       }
     }
@@ -1566,6 +1578,20 @@ export class EventsService {
       { upsert: true }
     );
 
+    const clickHouseRecord: ClickHouseEvent = {
+      correlationKey: event.correlationKey,
+      correlationValue: customer._id,
+      event: event.event,
+      payload: event.payload,
+      uuid: event.uuid,
+      workspaceId,
+      source: ClickHouseEventSource.MOBILE
+    };
+    await this.clickhouseClient.insertAsync({
+      table: ClickHouseTable.EVENTS,
+      values: [clickHouseRecord],
+      format: 'JSONEachRow',
+    });
     await this.EventModel.create({
       event: event.event,
       workspaceId: workspaceId,
@@ -1628,14 +1654,6 @@ export class EventsService {
         },
         { new: true }
       );
-
-    this.debug(
-      `FCM event processed for customer ${customerId}, Device Token Field: ${deviceTokenField}`,
-      this.handleFCM.name,
-      session,
-      auth.account.id
-    );
-
     return updatedCustomer;
   }
 
