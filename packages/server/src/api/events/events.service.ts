@@ -241,23 +241,6 @@ export class EventsService {
     );
   }
 
-  async correlate(
-    account: Account,
-    ev: EventsTable
-  ): Promise<CustomerDocument> {
-    return this.customersService.findByExternalIdOrCreate(
-      account,
-      ev.userId ? ev.userId : ev.anonymousId
-    );
-  }
-
-  async correlateCustomEvent(
-    account: Account,
-    ev: CustomEventTable
-  ): Promise<Correlation> {
-    return this.customersService.findByCustomEvent(account, ev.slackId);
-  }
-
   async getJobStatus(body: StatusJobDto, type: JobTypes, session: string) {
     throw Error("Deprecated")
     // const jobQueues = {

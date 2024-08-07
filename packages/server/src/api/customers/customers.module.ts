@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { CustomersController } from './customers.controller';
 import { CustomersService } from './customers.service';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Customer, CustomerSchema } from './schemas/customer.schema';
+import { Customer } from './entities/customer.entity';
 import {
   CustomerKeys,
   CustomerKeysSchema,
@@ -11,9 +11,6 @@ import { AccountsModule } from '../accounts/accounts.module';
 import { SegmentsModule } from '../segments/segments.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
-import { AudiencesHelper } from '../audiences/audiences.helper';
-import { AudiencesModule } from '../audiences/audiences.module';
-import { WorkflowsModule } from '../workflows/workflows.module';
 import { EventsModule } from '../events/events.module';
 import { StepsModule } from '../steps/steps.module';
 import { CustomersConsumerService } from './customers.consumer';
@@ -33,7 +30,6 @@ import { CacheService } from '@/common/services/cache.service';
 function getProvidersList() {
   let providerList: Array<any> = [
     CustomersService,
-    AudiencesHelper,
     S3Service,
     JourneyLocationsService,
     CacheService,
@@ -68,19 +64,15 @@ function getExportsList() {
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: Customer.name, schema: CustomerSchema },
-    ]),
-    MongooseModule.forFeature([
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
     AccountsModule,
     SegmentsModule,
-    AudiencesModule,
-    WorkflowsModule,
     EventsModule,
     StepsModule,
     TypeOrmModule.forFeature([
       Account,
+      Customer,
       Imports,
       JourneyLocation,
       Segment,
@@ -93,4 +85,4 @@ function getExportsList() {
   providers: getProvidersList(),
   exports: getExportsList(),
 })
-export class CustomersModule {}
+export class CustomersModule { }

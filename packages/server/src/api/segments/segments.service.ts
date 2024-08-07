@@ -12,10 +12,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { DataSource, In, Like, Not, QueryRunner, Repository } from 'typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
-import { AudiencesHelper } from '../audiences/audiences.helper';
+import { StepsHelper } from '../steps/steps.helper';
 import { CustomersService } from '../customers/customers.service';
-import { CustomerDocument } from '../customers/schemas/customer.schema';
-import { WorkflowsService } from '../workflows/workflows.service';
+import { Customer } from '../customers/entities/customer.entity';
 import { CreateSegmentDTO } from './dto/create-segment.dto';
 import { UpdateSegmentDTO } from './dto/update-segment.dto';
 import { SegmentCustomers } from './entities/segment-customers.entity';
@@ -40,12 +39,13 @@ export class SegmentsService {
     @InjectRepository(Segment) public segmentRepository: Repository<Segment>,
     @InjectRepository(SegmentCustomers)
     private segmentCustomersRepository: Repository<SegmentCustomers>,
+    @InjectRepository(Customer)
+    private customersRepository: Repository<Customer>,
     @Inject(forwardRef(() => CustomersService))
     private customersService: CustomersService,
-    private workflowsService: WorkflowsService,
-    private readonly audiencesHelper: AudiencesHelper,
+    private readonly stepsHelper: StepsHelper,
     @InjectConnection() private readonly connection: mongoose.Connection,
-  ) {}
+  ) { }
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
@@ -608,11 +608,16 @@ export class SegmentsService {
       skip,
     });
 
-    const customers = await this.customersService.CustomerModel.find({
-      _id: { $in: records.map((record) => record.customerId) },
-    })
-      .sort({ _id: createdAtSortType === 'asc' ? 1 : -1 })
-      .exec();
+    const customerIds = records.map(record => record.customerId);
+
+    const customers = await this.customersRepository.find({
+      where: {
+        id: In(customerIds),
+      },
+      order: {
+        id: createdAtSortType === 'asc' ? 'ASC' : 'DESC',
+      },
+    });
 
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
@@ -624,12 +629,7 @@ export class SegmentsService {
     )?.toObject();
 
     return {
-      data: customers.map((customer) => ({
-        ...(customer?.toObject() || {}),
-        id: customer._id,
-        createdAt: customer.createdAt,
-        dataSource: 'segmentPeople',
-      })),
+      data: customers,
       totalPages,
       pkName: pk?.key,
     };
@@ -898,32 +898,6 @@ export class SegmentsService {
       customerId,
       workspace,
     });
-    const runner = this.dataSource.createQueryRunner();
-    await runner.connect();
-    await runner.startTransaction();
-    const transactionSession = await this.connection.startSession();
-    transactionSession.startTransaction();
-    try {
-      const customer = await this.customersService.CustomerModel.findById(
-        customerId
-      ).exec();
-      await this.workflowsService.enrollCustomer(
-        account,
-        customer,
-        runner,
-        transactionSession,
-        session
-      );
-      await runner.commitTransaction();
-      await transactionSession.commitTransaction();
-    } catch (error) {
-      this.logger.error(error);
-      await transactionSession.abortTransaction();
-      await runner.rollbackTransaction();
-    } finally {
-      await transactionSession.endSession();
-      await runner.release();
-    }
   }
 
   public async assignCustomers(
@@ -1040,7 +1014,7 @@ export class SegmentsService {
 
     for (const customerId of customerIds) {
       (async () => {
-        const customer = await this.customersService.findById(
+        const customer = await this.customersService.findByCustomerId(
           account,
           customerId
         );
@@ -1067,7 +1041,7 @@ export class SegmentsService {
     });
 
     (async () => {
-      const customer = await this.customersService.findById(
+      const customer = await this.customersService.findByCustomerId(
         account,
         customerId
       );
@@ -1150,10 +1124,10 @@ export class SegmentsService {
 
   public async updateAutomaticSegmentCustomerInclusion(
     account: Account,
-    customer: CustomerDocument,
+    customer: Customer,
     session: string
   ) {
-    await this.deleteCustomerFromAllAutomaticSegments(account, customer._id);
+    await this.deleteCustomerFromAllAutomaticSegments(account, customer.id.toString());
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
     const segments = await this.segmentRepository.findBy({
@@ -1166,39 +1140,16 @@ export class SegmentsService {
     for (const segment of segments) {
       try {
         if (
-          await this.audiencesHelper.checkInclusion(
+          await this.stepsHelper.checkInclusion(
             customer,
             segment.inclusionCriteria,
             session
           )
         )
-          await this.assignCustomer(account, segment.id, customer._id, session);
+          await this.assignCustomer(account, segment.id, customer.id.toString(), session);
       } catch (e) {
         this.logger.error(e);
       }
-    }
-    const runner = this.dataSource.createQueryRunner();
-    await runner.connect();
-    await runner.startTransaction();
-    const transactionSession = await this.connection.startSession();
-    transactionSession.startTransaction();
-    try {
-      await this.workflowsService.enrollCustomer(
-        account,
-        customer,
-        runner,
-        transactionSession,
-        session
-      );
-      await runner.commitTransaction();
-      await transactionSession.commitTransaction();
-    } catch (error) {
-      this.logger.error(error);
-      await transactionSession.abortTransaction();
-      await runner.rollbackTransaction();
-    } finally {
-      await transactionSession.endSession();
-      await runner.release();
     }
   }
 
