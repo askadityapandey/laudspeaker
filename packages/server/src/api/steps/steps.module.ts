@@ -6,13 +6,6 @@ import { Step } from './entities/step.entity';
 import { JobsService } from '../jobs/jobs.service';
 import { Template } from '../templates/entities/template.entity';
 import { Job } from '../jobs/entities/job.entity';
-import { MongooseModule } from '@nestjs/mongoose';
-import { Customer, CustomerSchema } from '../customers/schemas/customer.schema';
-import {
-  CustomerKeys,
-  CustomerKeysSchema,
-} from '../customers/schemas/customer-keys.schema';
-import { Audience } from '../audiences/entities/audience.entity';
 import { SlackModule } from '../slack/slack.module';
 import { CustomersModule } from '../customers/customers.module';
 import { TemplatesModule } from '../templates/templates.module';
@@ -80,17 +73,10 @@ function getProvidersList() {
       Step,
       Template,
       Job,
-      Audience,
       Account,
       JourneyLocation,
       Requeue,
       Workspaces,
-    ]),
-    MongooseModule.forFeature([
-      { name: Customer.name, schema: CustomerSchema },
-    ]),
-    MongooseModule.forFeature([
-      { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
     forwardRef(() => CustomersModule),
     forwardRef(() => WebhooksModule),

@@ -2,15 +2,7 @@ import { Inject, Injectable, LoggerService } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import mongoose, { Model } from 'mongoose';
-import {
-  Customer,
-  CustomerDocument,
-} from './api/customers/schemas/customer.schema';
 import { getType } from 'tst-reflect';
-import {
-  CustomerKeys,
-  CustomerKeysDocument,
-} from './api/customers/schemas/customer-keys.schema';
 import { isDateString, isEmail } from 'class-validator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -85,10 +77,6 @@ export class CronService {
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: LoggerService,
-    @InjectModel(Customer.name)
-    private customerModel: Model<CustomerDocument>,
-    @InjectModel(CustomerKeys.name)
-    private customerKeysModel: Model<CustomerKeysDocument>,
     @InjectModel(Event.name)
     private eventModel: Model<EventDocument>,
     @InjectModel(EventKeys.name)
@@ -117,7 +105,7 @@ export class CronService {
     @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(ClickHouseClient)
     private clickhouseClient: ClickHouseClient,
-  ) {}
+  ) { }
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
@@ -177,83 +165,6 @@ export class CronService {
       })
     );
   }
-
-  // TODO: might be deleted after clarification
-  // @Cron(CronExpression.EVERY_HOUR)
-  // async handleCustomerKeysCron() {
-  //   const session = randomUUID();
-  //   try {
-  //     let current = 0;
-  //     const documentsCount = await this.customerModel
-  //       .estimatedDocumentCount()
-  //       .exec();
-
-  //     const keys: Record<string, any[]> = {};
-  //     const keyCustomerMap: Record<string, Set<string>> = {};
-
-  //     while (current < documentsCount) {
-  //       const batch = await this.customerModel
-  //         .find()
-  //         .skip(current)
-  //         .limit(BATCH_SIZE)
-  //         .exec();
-
-  //       batch.forEach((customer) => {
-  //         const obj = customer.toObject();
-  //         for (const key of Object.keys(obj)) {
-  //           if (KEYS_TO_SKIP.includes(key)) continue;
-
-  //           if (keys[key]) {
-  //             keys[key].push(obj[key]);
-  //             keyCustomerMap[key].add(customer.workspaceId);
-  //             continue;
-  //           }
-
-  //           keys[key] = [obj[key]];
-  //           keyCustomerMap[key] = new Set([customer.workspaceId]);
-  //         }
-  //       });
-  //       current += BATCH_SIZE;
-  //     }
-
-  //     for (const key of Object.keys(keys)) {
-  //       const validItem = keys[key].find(
-  //         (item) => item !== '' && item !== undefined && item !== null
-  //       );
-
-  //       if (validItem === '' || validItem === undefined || validItem === null)
-  //         continue;
-
-  //       const keyType = getType(validItem);
-  //       const isArray = keyType.isArray();
-  //       let type = isArray ? getType(validItem[0]).name : keyType.name;
-
-  //       if (type === 'String') {
-  //         if (isEmail(validItem)) type = 'Email';
-  //         if (isDateString(validItem)) type = 'Date';
-  //       }
-
-  //       for (const workspaceId of keyCustomerMap[key].values()) {
-  //         await this.customerKeysModel
-  //           .updateOne(
-  //             { key, workspaceId },
-  //             {
-  //               $set: {
-  //                 key,
-  //                 type,
-  //                 isArray,
-  //                 workspaceId,
-  //               },
-  //             },
-  //             { upsert: true }
-  //           )
-  //           .exec();
-  //       }
-  //     }
-  //   } catch (e) {
-  //     this.error(e, this.handleCustomerKeysCron.name, session);
-  //   }
-  // }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async minuteTasks() {
@@ -357,11 +268,11 @@ export class CronService {
                           ).epochMilliseconds
                         ).getTime() < Date.now() &&
                         Date.now() <
-                          new Date(
-                            Temporal.Instant.from(
-                              step.metadata.timeBranch.window.to
-                            ).epochMilliseconds
-                          ).getTime()
+                        new Date(
+                          Temporal.Instant.from(
+                            step.metadata.timeBranch.window.to
+                          ).epochMilliseconds
+                        ).getTime()
                       )
                     ) {
                       continue;
@@ -414,11 +325,11 @@ export class CronService {
                         ).epochMilliseconds
                       ).getTime() < Date.now() &&
                       Date.now() <
-                        new Date(
-                          Temporal.Instant.from(
-                            step.metadata.window.to
-                          ).epochMilliseconds
-                        ).getTime()
+                      new Date(
+                        Temporal.Instant.from(
+                          step.metadata.window.to
+                        ).epochMilliseconds
+                      ).getTime()
                     )
                   ) {
                     continue;
@@ -456,9 +367,7 @@ export class CronService {
                     ),
                   session: session,
                   journey: journeys[journeyIndex],
-                  customer: await this.customerModel
-                    .findById(locations[locationsIndex].customer)
-                    .exec(),
+                  customer: await this.customersService.findByCustomerIdUnauthenticated(locations[locationsIndex].customer.id.toString()),
                   location: locations[locationsIndex],
                   branch,
                   // TODO: extrapolate stepDepth from journey
@@ -586,7 +495,7 @@ export class CronService {
           // THIS MIGHT BE SLOWER THAN WE WANT querying for the customer from mongo.
           // findAndLock only uses customer.id, but the function currently
           // only accepts the whole customer document. Consider changing
-          const customer = await this.customersService.findByCustomerId(
+          const customer = await this.customersService.findByCustomerIdUnauthenticated(
             requeue.customerId,
             undefined
           );
@@ -1392,13 +1301,13 @@ export class CronService {
                 .time.recurrence.endsOn === RecurrenceEndsOptions.After &&
               +delayedJourneys[journeysIndex].journeyEntrySettings?.entryTiming
                 .time.recurrence.endAdditionalValue <=
-                delayedJourneys[journeysIndex].enrollment_count - 1
+              delayedJourneys[journeysIndex].enrollment_count - 1
             ) {
               continue;
             } else if (
               delayedJourneys[journeysIndex].journeyEntrySettings?.entryTiming
                 .time.recurrence.endsOn ===
-                RecurrenceEndsOptions.SpecificDate &&
+              RecurrenceEndsOptions.SpecificDate &&
               new Date(
                 delayedJourneys[
                   journeysIndex
@@ -1453,14 +1362,14 @@ export class CronService {
                 delayedJourneys[journeysIndex]?.journeySettings?.maxEntries
                   ?.enabled &&
                   count >
-                    parseInt(
-                      delayedJourneys[journeysIndex]?.journeySettings
-                        ?.maxEntries?.maxEntries
-                    )
+                  parseInt(
+                    delayedJourneys[journeysIndex]?.journeySettings
+                      ?.maxEntries?.maxEntries
+                  )
                   ? parseInt(
-                      delayedJourneys[journeysIndex]?.journeySettings
-                        ?.maxEntries?.maxEntries
-                    )
+                    delayedJourneys[journeysIndex]?.journeySettings
+                      ?.maxEntries?.maxEntries
+                  )
                   : count,
                 queryRunner,
                 client,

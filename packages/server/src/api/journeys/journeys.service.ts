@@ -22,14 +22,8 @@ import { UpdateJourneyDto } from './dto/update-journey.dto';
 import { Journey } from './entities/journey.entity';
 import errors from '../../shared/utils/errors';
 import { CustomersService } from '../customers/customers.service';
-import {
-  Customer,
-  CustomerDocument,
-} from '../customers/schemas/customer.schema';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { isUUID } from 'class-validator';
-import mongoose, { ClientSession, Model } from 'mongoose';
-import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { BadRequestException } from '@nestjs/common/exceptions';
 import { StepsService } from '../steps/steps.service';
 import { Step } from '../steps/entities/step.entity';
@@ -89,6 +83,8 @@ import { EntityWithComputedFields } from '@/common/entities/entityWithComputedFi
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 import { Segment, SegmentType } from '../segments/entities/segment.entity';
+import { Customer } from '../customers/entities/customer.entity';
+import { CustomerKeysService } from '../customers/customer-keys.service';
 
 export enum JourneyStatus {
   ACTIVE = 'Active',
@@ -185,22 +181,22 @@ interface TagChange {
 
 interface QuietHoursChange {
   type:
-    | SettingsChangeType.ENABLE_QUIETE_HOURS
-    | SettingsChangeType.CHANGE_QUIETE_HOURS;
+  | SettingsChangeType.ENABLE_QUIETE_HOURS
+  | SettingsChangeType.CHANGE_QUIETE_HOURS;
   quietHours: any;
 }
 
 interface MaxUserEntriesChange {
   type:
-    | SettingsChangeType.ENABLE_MAX_USER_ENTRIES
-    | SettingsChangeType.CHANGE_MAX_USER_ENTRIES;
+  | SettingsChangeType.ENABLE_MAX_USER_ENTRIES
+  | SettingsChangeType.CHANGE_MAX_USER_ENTRIES;
   maxUserEntries: any;
 }
 
 interface MaxMessageSendsChange {
   type:
-    | SettingsChangeType.ENABLE_MAX_MESSAGE_SENDS
-    | SettingsChangeType.CHANGE_MAX_MESSAGE_SENDS;
+  | SettingsChangeType.ENABLE_MAX_MESSAGE_SENDS
+  | SettingsChangeType.CHANGE_MAX_MESSAGE_SENDS;
   maxMessageSends: any;
 }
 
@@ -234,15 +230,15 @@ export class JourneysService {
     @InjectRepository(JourneyChange)
     public journeyChangesRepository: Repository<JourneyChange>,
     @Inject(StepsService) private stepsService: StepsService,
-    @InjectModel(Customer.name) public CustomerModel: Model<CustomerDocument>,
     @Inject(forwardRef(() => CustomersService))
     private customersService: CustomersService,
-    @InjectConnection() private readonly connection: mongoose.Connection,
+    @Inject(forwardRef(() => CustomerKeysService))
+    private customerKeysService: CustomerKeysService,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @Inject(RedisService) private redisService: RedisService,
     @Inject(CacheService) private cacheService: CacheService
-  ) {}
+  ) { }
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
@@ -633,7 +629,6 @@ export class JourneysService {
     customerUpdateType: 'NEW' | 'CHANGE',
     session: string,
     queryRunner: QueryRunner,
-    clientSession: ClientSession
   ) {
     const workspace = account.teams?.[0]?.organization?.workspaces?.[0];
 
@@ -649,10 +644,10 @@ export class JourneysService {
         isDynamic: true,
       },
     });
-    const customer = await this.customersService.findById(
+    const customer = await this.customersService.findByCustomerId(
       account,
       customerId,
-      clientSession
+      queryRunner
     );
     for (const journey of journeys) {
       // get segments for journey
@@ -691,7 +686,7 @@ export class JourneysService {
           change = 'ADD';
         } else if (
           journeyEntrySettings.enrollmentType ===
-            JourneyEnrollmentType.OnlyFuture &&
+          JourneyEnrollmentType.OnlyFuture &&
           customerUpdateType === 'NEW'
         ) {
           change = 'ADD';
@@ -709,7 +704,6 @@ export class JourneysService {
             [],
             session,
             queryRunner,
-            clientSession
           );
           break;
         case 'REMOVE':
@@ -718,7 +712,6 @@ export class JourneysService {
             journey,
             customer,
             session,
-            clientSession
           );
           break;
       }
@@ -735,11 +728,10 @@ export class JourneysService {
   async enrollCustomersInJourney(
     account: Account,
     journey: Journey,
-    customers: CustomerDocument[],
+    customers: Customer[],
     locations: JourneyLocation[],
     session: string,
     queryRunner: QueryRunner,
-    clientSession?: ClientSession
   ): Promise<any[]> {
     const jobsData: any[] = [];
 
@@ -785,7 +777,7 @@ export class JourneysService {
         )
       ) {
         this.log(
-          `Max customer limit reached on journey: ${journey.id}. Preventing customer: ${customer._id} from being enrolled.`,
+          `Max customer limit reached on journey: ${journey.id}. Preventing customer: ${customer.id} from being enrolled.`,
           this.enrollCustomersInJourney.name,
           session,
           account.id
@@ -798,8 +790,8 @@ export class JourneysService {
         step: startStep,
         location: locations.find((location: JourneyLocation) => {
           return (
-            location.customer === (customer._id ?? customer._id.toString()) &&
-            location.journey === journey.id
+            location.customer.id.toString() === (customer.id ?? customer.id.toString()) &&
+            location.journey.id === journey.id
           );
         }),
         session: session,
@@ -817,25 +809,10 @@ export class JourneysService {
   public async unenrollCustomerFromJourney(
     account: Account,
     journey: Journey,
-    customer: CustomerDocument,
+    customer: Customer,
     session: string,
-    clientSession: ClientSession
   ) {
     // TODO_JH: remove from steps also
-    await this.CustomerModel.updateOne(
-      { _id: customer._id },
-      {
-        $pullAll: {
-          journeys: [journey.id],
-        },
-        // TODO_JH: This logic needs to be checked
-        $unset: {
-          journeyEnrollmentsDates: [journey.id],
-        },
-      }
-    )
-      .session(clientSession)
-      .exec();
   }
 
   /**
@@ -852,10 +829,9 @@ export class JourneysService {
    */
   async enrollCustomer(
     account: Account,
-    customer: CustomerDocument,
+    customer: Customer,
     queryRunner: QueryRunner,
-    clientSession: ClientSession,
-    session: string
+    session: string,
   ): Promise<void> {
     try {
       const workspace = account.teams?.[0]?.organization?.workspaces?.[0];
@@ -871,38 +847,6 @@ export class JourneysService {
           isDynamic: true,
         },
       });
-      for (
-        let journeyIndex = 0;
-        journeyIndex < journeys?.length;
-        journeyIndex++
-      ) {
-        const journey = journeys[journeyIndex];
-        if (
-          (await this.customersService.checkInclusion(
-            customer,
-            journey.inclusionCriteria,
-            session,
-            account
-          )) &&
-          customer.journeys.indexOf(journey.id) < 0
-        ) {
-          await this.CustomerModel.updateOne(
-            { _id: customer._id },
-            {
-              $addToSet: {
-                journeys: journey.id,
-              },
-              $set: {
-                journeyEnrollmentsDates: {
-                  [journey.id]: new Date().toUTCString(),
-                },
-              },
-            }
-          )
-            .session(clientSession)
-            .exec();
-        }
-      }
     } catch (err) {
       this.error(err, this.enrollCustomer.name, session, account.id);
       throw err;
@@ -1002,8 +946,8 @@ export class JourneysService {
               ...(key === 'isActive'
                 ? { isStopped: false, isPaused: false }
                 : key === 'isPaused'
-                ? { isStopped: false }
-                : {}),
+                  ? { isStopped: false }
+                  : {}),
             });
         }
       } else {
@@ -1037,7 +981,7 @@ export class JourneysService {
         );
 
       const journeys = await query.getRawAndEntities();
-      const journeyIds = journeys.entities.map( (journey) => journey.id );
+      const journeyIds = journeys.entities.map((journey) => journey.id);
 
       const totalCounts = await this.journeyLocationsService.getJourneyListTotalEnrolled(journeyIds);
 
@@ -1048,7 +992,7 @@ export class JourneysService {
         computedFieldsList
       );
 
-      for(const i in result)
+      for (const i in result)
         result[i].computed.totalEnrolled = totalCounts[result[i].entity.id];
 
       return { data: result, totalPages };
@@ -1084,10 +1028,10 @@ export class JourneysService {
       frequency === 'daily'
         ? eachDayOfInterval({ start: startTime, end: endTime })
         : // Postgres' week starts on Monday
-          eachWeekOfInterval(
-            { start: startTime, end: endTime },
-            { weekStartsOn: 1 }
-          );
+        eachWeekOfInterval(
+          { start: startTime, end: endTime },
+          { weekStartsOn: 1 }
+        );
 
     const totalPoints = pointDates.length;
 
@@ -1214,18 +1158,16 @@ export class JourneysService {
           LEFT JOIN step ON step.id = journey_location."stepId"
           WHERE journey_location."journeyId" = $1 AND "customer" LIKE $2
         ) as a
-      ${
-        filter === 'all'
-          ? ''
-          : filter === 'in-progress'
+      ${filter === 'all'
+        ? ''
+        : filter === 'in-progress'
           ? `WHERE a."isFinished" = false`
           : filter === 'finished'
-          ? `WHERE a."isFinished" = true`
-          : ''
+            ? `WHERE a."isFinished" = true`
+            : ''
       }
-      ORDER BY a.${sortBy === 'status' ? `"isFinished"` : `"lastUpdate"`} ${
-      sortType === 'asc' ? 'ASC' : 'DESC'
-    }
+      ORDER BY a.${sortBy === 'status' ? `"isFinished"` : `"lastUpdate"`} ${sortType === 'asc' ? 'ASC' : 'DESC'
+      }
     `;
 
     const countQuery = `SELECT COUNT(*) as count FROM (${baseQuery}) as a`;
@@ -1252,29 +1194,26 @@ export class JourneysService {
 
     const workspace = account.teams?.[0]?.organization?.workspaces?.[0];
 
-    const pk = await this.customersService.CustomerKeysModel.findOne({
-      isPrimary: true,
-      workspaceId: workspace.id,
-    });
+    const pk = await this.customerKeysService.getPrimaryKey(workspace.id, session);
 
     if (pk) {
       const customerIds = data.map((item) => item.customerId);
 
-      const customers = this.CustomerModel.find({
-        _id: { $in: customerIds },
-      }).cursor();
+      // const customers = this.CustomerModel.find({
+      //   _id: { $in: customerIds },
+      // }).cursor();
 
-      for await (const customer of customers) {
-        const dataItem = data.find((item) => item.customerId === customer.id);
+      // for await (const customer of customers) {
+      //   const dataItem = data.find((item) => item.customerId === customer.id);
 
-        if (dataItem) dataItem[pk.key] = customer[pk.key];
-      }
+      //   if (dataItem) dataItem[pk.key] = customer[pk.key];
+      // }
     }
 
     return {
       data: data.map((item) => ({
         customerId: item.customerId,
-        [pk.key]: item[pk.key],
+        [pk.name]: item[pk.name],
         status: item.isFinished ? 'Finished' : 'Enrolled',
         lastUpdate: +item.lastUpdate,
       })),
@@ -1350,8 +1289,8 @@ export class JourneysService {
       ? ActivityEventType.SETTINGS
       : changedKeys.includes('journeyEntrySettings') ||
         changedKeys.includes('inclusionCriteria')
-      ? ActivityEventType.ENTRY
-      : ActivityEventType.JOURNEY;
+        ? ActivityEventType.ENTRY
+        : ActivityEventType.JOURNEY;
 
     const changes: Change[] = [];
 
@@ -2036,7 +1975,7 @@ export class JourneysService {
 
       if (
         JSON.stringify(journey.inclusionCriteria) !==
-          JSON.stringify(inclusionCriteria) &&
+        JSON.stringify(inclusionCriteria) &&
         (journey.isActive || journey.isPaused)
       ) {
         // TODO: add logic of eligable users update on parameters change (using changeSegmentOption)
@@ -2165,7 +2104,7 @@ export class JourneysService {
               if (nodes[i].data['template']['selected']['pushBuilder'])
                 metadata.selectedPlatform =
                   nodes[i].data['template']['selected']['pushBuilder'][
-                    'selectedPlatform'
+                  'selectedPlatform'
                   ];
             }
             this.debug(
@@ -2363,23 +2302,23 @@ export class JourneysService {
                   const event = new MessageEvent();
                   event.providerType =
                     relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'providerType'
+                    'providerType'
                     ];
                   event.journey =
                     relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'from'
+                    'from'
                     ]['key'];
                   event.step =
                     relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'fromSpecificMessage'
+                    'fromSpecificMessage'
                     ]['key'];
                   event.eventCondition =
                     relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'eventCondition'
+                    'eventCondition'
                     ];
                   event.happenCondition =
                     relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'happenCondition'
+                    'happenCondition'
                     ];
                   branch.events.push(event);
                 }
@@ -2408,16 +2347,16 @@ export class JourneysService {
                     ].split(';;')[0];
                   event.happenCondition =
                     relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'happenCondition'
+                    'happenCondition'
                     ];
                   if (event.happenCondition === 'changed to') {
                     event.value =
                       relevantEdges[i].data['branch'].conditions[eventsIndex][
-                        'value'
+                      'value'
                       ];
                     event.valueType =
                       relevantEdges[i].data['branch'].conditions[eventsIndex][
-                        'valueType'
+                      'valueType'
                       ];
                   }
 

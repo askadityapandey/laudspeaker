@@ -2,7 +2,6 @@ import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PublicKey, Signature, Ecdsa } from 'starkbank-ecdsa';
-import { Audience } from '../audiences/entities/audience.entity';
 import { Account } from '../accounts/entities/accounts.entity';
 import { createHmac } from 'crypto';
 import {

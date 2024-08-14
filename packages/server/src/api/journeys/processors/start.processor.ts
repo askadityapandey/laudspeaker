@@ -7,8 +7,6 @@ import {
 } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { DataSource } from 'typeorm';
-import { InjectConnection } from '@nestjs/mongoose';
-import mongoose from 'mongoose';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
 import { CustomersService } from '../../customers/customers.service';
@@ -36,7 +34,6 @@ export class StartProcessor extends ProcessorBase {
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(CustomersService)
     private readonly customersService: CustomersService,
     @Inject(JourneyLocationsService)
@@ -113,8 +110,8 @@ export class StartProcessor extends ProcessorBase {
    * `Job` type contains the following fields :
    * - `ownerID` Owner of the Journey
    * - `stepID` ID of journey's start step
-   * - `skip` How many documents to skip when querying mongo
-   * - `limit` Limit on returned number of mongo documents
+   * - `skip` How many documents to skip when querying
+   * - `limit` Limit on returned number of documents
    * - `query` The query to perform to lookup customers
    * - `session` Session used for logging
    *
@@ -150,7 +147,7 @@ export class StartProcessor extends ProcessorBase {
       await queryRunner.connect();
       await queryRunner.startTransaction();
       try {
-        // Retrieve customers from mongo
+        // Retrieve customers
         const customers = await this.customersService.find(
           job.data.owner,
           job.data.query,

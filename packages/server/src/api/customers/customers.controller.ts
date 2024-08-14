@@ -28,7 +28,6 @@ import { ApiKeyAuthGuard } from '../auth/guards/apikey-auth.guard';
 import { randomUUID } from 'crypto';
 import { GetBulkCustomerCountDto } from './dto/get-bulk-customer-count.dto';
 import { RavenInterceptor } from 'nest-raven';
-import { AttributeType } from './schemas/customer-keys.schema';
 import { ImportCustomersDTO } from './dto/import-customers.dto';
 import { extname } from 'path';
 import { UpdatePK_DTO } from './dto/update-pk.dto';
@@ -40,6 +39,7 @@ import { ModifyAttributesDto } from './dto/modify-attributes.dto';
 import { SendFCMDto } from './dto/send-fcm.dto';
 import { IdentifyCustomerDTO } from './dto/identify-customer.dto';
 import { SetCustomerPropsDTO } from './dto/set-customer-props.dto';
+import { AttributeType, AttributeTypeName } from './entities/attribute-type.entity';
 
 @Controller('customers')
 export class CustomersController {
@@ -135,7 +135,7 @@ export class CustomersController {
       searchKey,
       searchValue,
       showFreezed === 'true',
-      orderType === 'asc' ? 'asc' : 'desc'
+      orderType === 'asc' ? 'asc' : 'desc',
     );
   }
 
@@ -148,8 +148,10 @@ export class CustomersController {
     @Query('skip') skip = 0,
     @Query('search') search = ''
   ) {
+    const session=randomUUID();
     return await this.customersService.searchForTest(
       <Account>user,
+      session,
       take,
       skip,
       search
@@ -212,28 +214,6 @@ export class CustomersController {
     );
   }
 
-  @Get('/audienceStats')
-  @UseGuards(JwtAuthGuard)
-  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  findAudienceStatsCustomers(
-    @Req() { user }: Request,
-    @Query('take') take?: string,
-    @Query('skip') skip?: string,
-    @Query('event') event?: string,
-    @Query('audienceId') audienceId?: string
-  ) {
-    const session = randomUUID();
-
-    return this.customersService.findAudienceStatsCustomers(
-      <Account>user,
-      session,
-      take && +take,
-      skip && +skip,
-      event,
-      audienceId
-    );
-  }
-
   @Get('/stats-from-step')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
@@ -264,25 +244,17 @@ export class CustomersController {
     return this.customersService.getLastImportCSV(<Account>user, session);
   }
 
-  @Get('/:id')
+  @Get('/:uuid')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  async findOne(@Req() { user }: Request, @Param() { id }: { id: string }) {
+  async findOne(@Req() { user }: Request, @Param() { uuid }: { uuid: string }) {
     const session = randomUUID();
     const {
-      _id,
-      __v,
-      workspaceId,
-      verified,
-      journeys,
-      journeyEnrollmentsDates,
-      slackTeamId,
-      posthogId,
-      workflows,
-      customComponents,
+      id,
+      workspace,
       ...customer
-    } = await this.customersService.findOne(<Account>user, id, session);
-    const createdAt = customer.createdAt;
+    } = await this.customersService.findOneByUUID(<Account>user, uuid, session);
+    const createdAt = customer.created_at;
     return { ...customer, createdAt };
   }
 
@@ -314,7 +286,7 @@ export class CustomersController {
       createCustomerDto,
       session
     );
-    return cust._id;
+    return cust.uuid;
   }
 
   @Post('/upsert/')
@@ -393,7 +365,7 @@ export class CustomersController {
       name,
       type,
       dateFormat,
-    }: { name: string; type: AttributeType; dateFormat: unknown }
+    }: { name: string; type: AttributeTypeName; dateFormat: unknown }
   ) {
     const session = randomUUID();
     return this.customersService.createAttribute(
@@ -616,48 +588,6 @@ export class CustomersController {
       custId,
       take,
       skip
-    );
-  }
-
-  @Post('/send-fcm')
-  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  @UseGuards(ApiKeyAuthGuard)
-  async sendFCMToken(@Req() { user }: Request, @Body() body: SendFCMDto) {
-    const session = randomUUID();
-    return this.customersService.sendFCMToken(
-      <{ account: Account; workspace: Workspaces }>user,
-      body,
-      session
-    );
-  }
-
-  @Post('/identify-customer')
-  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  @UseGuards(ApiKeyAuthGuard)
-  async identifyCustomer(
-    @Req() { user }: Request,
-    @Body() body: IdentifyCustomerDTO
-  ) {
-    const session = randomUUID();
-    return this.customersService.identifyCustomer(
-      <{ account: Account; workspace: Workspaces }>user,
-      body,
-      session
-    );
-  }
-
-  @Post('/set-customer-props')
-  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  @UseGuards(ApiKeyAuthGuard)
-  async setCustomerProperpties(
-    @Req() { user }: Request,
-    @Body() body: SetCustomerPropsDTO
-  ) {
-    const session = randomUUID();
-    return this.customersService.setCustomerProperties(
-      <{ account: Account; workspace: Workspaces }>user,
-      body,
-      session
     );
   }
 }

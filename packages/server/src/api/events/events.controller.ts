@@ -135,36 +135,6 @@ export class EventsController {
     );
   }
 
-  @Post('/identify-customer')
-  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  @UseGuards(ApiKeyAuthGuard)
-  async identifyCustomer(
-    @Req() { user }: Request,
-    @Body() body: IdentifyCustomerDTO
-  ) {
-    const session = randomUUID();
-    return this.eventsService.identifyCustomer(
-      <{ account: Account; workspace: Workspaces }>user,
-      body,
-      session
-    );
-  }
-
-  @Post('/set-customer-props')
-  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  @UseGuards(ApiKeyAuthGuard)
-  async setCustomerProperpties(
-    @Req() { user }: Request,
-    @Body() body: SetCustomerPropsDTO
-  ) {
-    const session = randomUUID();
-    return this.eventsService.setCustomerProperties(
-      <{ account: Account; workspace: Workspaces }>user,
-      body,
-      session
-    );
-  }
-
   @Get('/possible-attributes/:resourceId?')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())

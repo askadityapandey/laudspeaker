@@ -3,10 +3,6 @@ import { CustomersController } from './customers.controller';
 import { CustomersService } from './customers.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Customer } from './entities/customer.entity';
-import {
-  CustomerKeys,
-  CustomerKeysSchema,
-} from './schemas/customer-keys.schema';
 import { AccountsModule } from '../accounts/accounts.module';
 import { SegmentsModule } from '../segments/segments.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -26,10 +22,12 @@ import { Segment } from '../segments/entities/segment.entity';
 import { SegmentCustomers } from '../segments/entities/segment-customers.entity';
 import { CustomerChangeProcessor } from './processors/customers.processor';
 import { CacheService } from '@/common/services/cache.service';
+import { CustomerKeysService } from './customer-keys.service';
 
 function getProvidersList() {
   let providerList: Array<any> = [
     CustomersService,
+    CustomerKeysService,
     S3Service,
     JourneyLocationsService,
     CacheService,
@@ -63,9 +61,6 @@ function getExportsList() {
 
 @Module({
   imports: [
-    MongooseModule.forFeature([
-      { name: CustomerKeys.name, schema: CustomerKeysSchema },
-    ]),
     AccountsModule,
     SegmentsModule,
     EventsModule,

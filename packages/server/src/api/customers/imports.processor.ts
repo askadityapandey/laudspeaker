@@ -5,9 +5,6 @@ import { S3Service } from '../s3/s3.service';
 import { CustomersService } from './customers.service';
 import { ImportOptions } from './dto/import-customers.dto';
 import * as fastcsv from 'fast-csv';
-import { Customer, CustomerDocument } from './schemas/customer.schema';
-import { Model } from 'mongoose';
-import { InjectModel } from '@nestjs/mongoose';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -26,7 +23,6 @@ export class ImportProcessor extends ProcessorBase {
     private readonly logger: Logger,
     @Inject(CustomersService) private customersService: CustomersService,
     @Inject(S3Service) private s3Service: S3Service,
-    @InjectModel(Customer.name) public CustomerModel: Model<CustomerDocument>,
     @InjectRepository(Segment) public segmentRepository: Repository<Segment>,
     @InjectRepository(SegmentCustomers)
     public segmentCustomersRepository: Repository<SegmentCustomers>

@@ -1,9 +1,7 @@
 import { Module } from '@nestjs/common';
 import { forwardRef } from '@nestjs/common/utils';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AudiencesHelper } from '../audiences/audiences.helper';
 import { CustomersModule } from '../customers/customers.module';
-import { WorkflowsModule } from '../workflows/workflows.module';
 import { SegmentCustomers } from './entities/segment-customers.entity';
 import { Segment } from './entities/segment.entity';
 import { SegmentsController } from './segments.controller';
@@ -15,11 +13,12 @@ import { AccountsModule } from '../accounts/accounts.module';
 import { SegmentCustomersService } from './segment-customers.service';
 import { Account } from '../accounts/entities/accounts.entity';
 import { StepsModule } from '../steps/steps.module';
+import { StepsHelper } from '../steps/steps.helper';
 
 function getProvidersList() {
   let providerList: Array<any> = [
     SegmentsService,
-    AudiencesHelper,
+    StepsHelper,
     SegmentCustomersService,
   ];
 
@@ -50,7 +49,6 @@ function getExportList() {
   imports: [
     TypeOrmModule.forFeature([Segment, SegmentCustomers, Account]),
     forwardRef(() => CustomersModule),
-    forwardRef(() => WorkflowsModule),
     forwardRef(() => JourneysModule),
     forwardRef(() => StepsModule),
     forwardRef(() => AccountsModule),

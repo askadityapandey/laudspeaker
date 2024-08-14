@@ -4,23 +4,11 @@ import {
 import { Job, MetricsTime, Queue, UnrecoverableError } from 'bullmq';
 import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
-import mongoose, { Model } from 'mongoose';
-import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
 import { Journey } from '../../journeys/entities/journey.entity';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import {
-  PosthogEventType,
-  PosthogEventTypeDocument,
-} from '../schemas/posthog-event-type.schema';
-import {
-  PosthogEvent,
-  PosthogEventDocument,
-} from '../schemas/posthog-event.schema';
 import { EventDocument } from '../schemas/event.schema';
-import {
-  Customer,
-  CustomerDocument,
-} from '../../customers/schemas/customer.schema';
 import * as Sentry from '@sentry/node';
 import { EventType } from './events.processor';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -33,6 +21,7 @@ import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import { Customer } from '@/api/customers/entities/customer.entity';
 
 export enum ProviderType {
   LAUDSPEAKER = 'laudspeaker',
@@ -64,12 +53,10 @@ export class EventsPreProcessor extends ProcessorBase {
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
     private dataSource: DataSource,
-    @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(forwardRef(() => EventsService))
     private readonly eventsService: EventsService,
     @InjectModel(Event.name)
     private eventModel: Model<EventDocument>,
-    @InjectModel(Customer.name) public customerModel: Model<CustomerDocument>,
     @InjectRepository(Journey)
     private readonly journeysRepository: Repository<Journey>,
     @Inject(CacheService) private cacheService: CacheService
@@ -184,7 +171,7 @@ export class EventsPreProcessor extends ProcessorBase {
       const {
         customer,
         findType,
-      }: { customer: CustomerDocument; findType: FindType } =
+      }: { customer: Customer; findType: FindType } =
         await this.eventsService.findOrCreateCustomer(
           job.data.workspace.id,
           job.data.session,
@@ -285,8 +272,6 @@ export class EventsPreProcessor extends ProcessorBase {
   }
 
   async handleMessage(job: Job<any, any, string>): Promise<any> {
-    const transactionSession = await this.connection.startSession();
-    transactionSession.startTransaction();
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -314,10 +299,8 @@ export class EventsPreProcessor extends ProcessorBase {
           }, EventType.MESSAGE);
       }
 
-      await transactionSession.commitTransaction();
       await queryRunner.commitTransaction();
     } catch (e) {
-      await transactionSession.abortTransaction();
       await queryRunner.rollbackTransaction();
       this.error(
         e,
@@ -327,7 +310,6 @@ export class EventsPreProcessor extends ProcessorBase {
       );
       err = e;
     } finally {
-      await transactionSession.endSession();
       await queryRunner.release();
     }
     if (err) {
@@ -342,8 +324,6 @@ export class EventsPreProcessor extends ProcessorBase {
   }
 
   async handleAttributeChange(job: Job<any, any, string>): Promise<any> {
-    const transactionSession = await this.connection.startSession();
-    transactionSession.startTransaction();
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -374,10 +354,8 @@ export class EventsPreProcessor extends ProcessorBase {
         }
       }
 
-      await transactionSession.commitTransaction();
       await queryRunner.commitTransaction();
     } catch (e) {
-      await transactionSession.abortTransaction();
       await queryRunner.rollbackTransaction();
       this.error(
         e,
@@ -387,7 +365,6 @@ export class EventsPreProcessor extends ProcessorBase {
       );
       err = e;
     } finally {
-      await transactionSession.endSession();
       await queryRunner.release();
     }
     if (err) {

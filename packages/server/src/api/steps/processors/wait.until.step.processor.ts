@@ -8,7 +8,6 @@ import {
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { StepType } from '../types/step.interface';
 import { Step } from '../entities/step.entity';
-import { CustomerDocument } from '@/api/customers/schemas/customer.schema';
 import { Account } from '@/api/accounts/entities/accounts.entity';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
@@ -22,6 +21,7 @@ import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import { Customer } from '@/api/customers/entities/customer.entity';
 
 @Injectable()
 @Processor('wait.until.step')
@@ -102,7 +102,7 @@ export class WaitUntilStepProcessor extends ProcessorBase {
         step: Step;
         owner: Account;
         journey: Journey;
-        customer: CustomerDocument;
+        customer: Customer;
         location: JourneyLocation;
         session: string;
         event?: string;

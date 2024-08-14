@@ -12,14 +12,6 @@ import { AppController } from './app.controller';
 import { join } from 'path';
 import { CronService } from './app.cron.service';
 import { ScheduleModule } from '@nestjs/schedule';
-import {
-  Customer,
-  CustomerSchema,
-} from './api/customers/schemas/customer.schema';
-import {
-  CustomerKeys,
-  CustomerKeysSchema,
-} from './api/customers/schemas/customer-keys.schema';
 import { Account } from './api/accounts/entities/accounts.entity';
 import { Verification } from './api/auth/entities/verification.entity';
 import { EventSchema, Event } from './api/events/schemas/event.schema';
@@ -220,8 +212,6 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
     TypeOrmModule.forRootAsync({ useClass: TypeOrmConfigService }),
     ApiModule,
     MongooseModule.forFeature([
-      { name: Customer.name, schema: CustomerSchema },
-      { name: CustomerKeys.name, schema: CustomerKeysSchema },
       { name: Event.name, schema: EventSchema },
       { name: EventKeys.name, schema: EventKeysSchema },
     ]),

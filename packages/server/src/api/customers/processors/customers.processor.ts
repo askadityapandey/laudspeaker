@@ -10,7 +10,6 @@ import { AccountsService } from '@/api/accounts/accounts.service';
 import { SegmentsService } from '@/api/segments/segments.service';
 import { InjectConnection } from '@nestjs/mongoose';
 import mongoose from 'mongoose';
-import { Customer, CustomerDocument } from '../schemas/customer.schema';
 import { Account } from '../../accounts/entities/accounts.entity';
 import { ProviderType } from '../../events/processors/events.preprocessor';
 import { Processor } from '@/common/services/queue/decorators/processor';
@@ -154,92 +153,92 @@ export class CustomerChangeProcessor extends ProcessorBase {
       string
     >
   ): Promise<any> {
-    let err: any;
-    const queryRunner = await this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-    const clientSession = await this.connection.startSession();
-    await clientSession.startTransaction();
+    // let err: any;
+    // const queryRunner = await this.dataSource.createQueryRunner();
+    // await queryRunner.connect();
+    // await queryRunner.startTransaction();
+    // const clientSession = await this.connection.startSession();
+    // await clientSession.startTransaction();
     try {
-      let message: ChangeStreamDocument<Customer> | String = Buffer.from(
-        job.data.changeMessage.message.value
-      ).toString();
+    //   let message: ChangeStreamDocument<Customer> | String = Buffer.from(
+    //     job.data.changeMessage.message.value
+    //   ).toString();
 
-      // keep parsing until the kafka payload is turned into an object
-      while (typeof message === 'string' || message instanceof String) {
-        message = JSON.parse(message.toString());
-      }
+    //   // keep parsing until the kafka payload is turned into an object
+    //   while (typeof message === 'string' || message instanceof String) {
+    //     message = JSON.parse(message.toString());
+    //   }
 
-      let account: Account;
-      let customer: CustomerDocument;
-      switch (message.operationType) {
-        case 'insert':
-        case 'update':
-        case 'replace':
-          if (
-            message.operationType === 'update' &&
-            !containsUnskippedKeys(message.updateDescription)
-          )
-            break;
-          customer = await this.customersService.findByCustomerId(
-            message.documentKey._id,
-            clientSession
-          );
-          if (!customer) {
-            this.warn(
-              `No customer with id ${message.documentKey._id}`,
-              this.process.name,
-              job.data.session
-            );
-            break;
-          }
-          account =
-            await this.accountsService.findOrganizationOwnerByWorkspaceId(
-              customer.workspaceId,
-              job.data.session
-            );
-          await this.segmentsService.updateCustomerSegments(
-            account,
-            customer._id,
-            job.data.session,
-            queryRunner
-          );
-          await this.journeysService.updateEnrollmentForCustomer(
-            account,
-            customer._id,
-            message.operationType === 'insert' ? 'NEW' : 'CHANGE',
-            job.data.session,
-            queryRunner,
-            clientSession
-          );
-          if (message.operationType === 'update')
-            await Producer.add(QueueType.EVENTS_PRE, {
-              account: account,
-              session: job.data.session,
-              message: copyMessageWithFilteredUpdateDescription(message),
-            }, ProviderType.WU_ATTRIBUTE);
-          break;
-        case 'delete': {
-          // TODO_JH: remove customerID from all steps also
-          const customerId = message.documentKey._id;
-          await this.segmentsService.removeCustomerFromAllSegments(
-            customerId,
-            queryRunner
-          );
-          break;
-        }
-      }
-      await clientSession.commitTransaction();
-      await queryRunner.commitTransaction();
+    //   let account: Account;
+    //   let customer: CustomerDocument;
+    //   switch (message.operationType) {
+    //     case 'insert':
+    //     case 'update':
+    //     case 'replace':
+    //       if (
+    //         message.operationType === 'update' &&
+    //         !containsUnskippedKeys(message.updateDescription)
+    //       )
+    //         break;
+    //       customer = await this.customersService.findByCustomerId(
+    //         message.documentKey._id,
+    //         clientSession
+    //       );
+    //       if (!customer) {
+    //         this.warn(
+    //           `No customer with id ${message.documentKey._id}`,
+    //           this.process.name,
+    //           job.data.session
+    //         );
+    //         break;
+    //       }
+    //       account =
+    //         await this.accountsService.findOrganizationOwnerByWorkspaceId(
+    //           customer.workspaceId,
+    //           job.data.session
+    //         );
+    //       await this.segmentsService.updateCustomerSegments(
+    //         account,
+    //         customer._id,
+    //         job.data.session,
+    //         queryRunner
+    //       );
+    //       await this.journeysService.updateEnrollmentForCustomer(
+    //         account,
+    //         customer._id,
+    //         message.operationType === 'insert' ? 'NEW' : 'CHANGE',
+    //         job.data.session,
+    //         queryRunner,
+    //         clientSession
+    //       );
+    //       if (message.operationType === 'update')
+    //         await Producer.add(QueueType.EVENTS_PRE, {
+    //           account: account,
+    //           session: job.data.session,
+    //           message: copyMessageWithFilteredUpdateDescription(message),
+    //         }, ProviderType.WU_ATTRIBUTE);
+    //       break;
+    //     case 'delete': {
+    //       // TODO_JH: remove customerID from all steps also
+    //       const customerId = message.documentKey._id;
+    //       await this.segmentsService.removeCustomerFromAllSegments(
+    //         customerId,
+    //         queryRunner
+    //       );
+    //       break;
+    //     }
+    //   }
+    //   await clientSession.commitTransaction();
+    //   await queryRunner.commitTransaction();
     } catch (e) {
-      this.error(e, this.process.name, job.data.session);
-      err = e;
-      await clientSession.abortTransaction();
-      await queryRunner.rollbackTransaction();
+      // this.error(e, this.process.name, job.data.session);
+      // err = e;
+      // await clientSession.abortTransaction();
+      // await queryRunner.rollbackTransaction();
     } finally {
-      await clientSession.endSession();
-      await queryRunner.release();
-      if (err) throw err;
+      // await clientSession.endSession();
+      // await queryRunner.release();
+      // if (err) throw err;
     }
   }
 }

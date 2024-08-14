@@ -1,4 +1,3 @@
-import { AttributeType } from '@/api/customers/schemas/customer-keys.schema';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -10,15 +9,16 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
+import { AttributeTypeName } from '../entities/attribute-type.entity';
 
 export class CreateAttributeDto {
   @IsString()
   @IsNotEmpty()
   key: string;
 
-  @IsEnum(AttributeType)
+  @IsEnum(AttributeTypeName)
   @IsNotEmpty()
-  type: AttributeType;
+  type: AttributeTypeName;
 
   @IsString()
   @IsOptional()

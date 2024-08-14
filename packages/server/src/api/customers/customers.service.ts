@@ -21,16 +21,9 @@ import { Customer } from './entities/customer.entity';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import mockData from '../../fixtures/mockData';
 import { Account } from '../accounts/entities/accounts.entity';
-import { Audience } from '../audiences/entities/audience.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, QueryRunner, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, QueryRunner, Repository } from 'typeorm';
 import { EventDto } from '../events/dto/event.dto';
-import {
-  AttributeType,
-  CustomerKeys,
-  CustomerKeysDocument,
-} from './schemas/customer-keys.schema';
-import { Queue } from 'bullmq';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { attributeConditions } from '../../fixtures/attributeConditions';
 import { getType } from 'tst-reflect';
@@ -38,10 +31,7 @@ import { isDateString, isEmail } from 'class-validator';
 import { parse } from 'csv-parse';
 import * as datefns from 'date-fns';
 import { SegmentsService } from '../segments/segments.service';
-import { AudiencesHelper } from '../audiences/audiences.helper';
 import { SegmentCustomers } from '../segments/entities/segment-customers.entity';
-import { AudiencesService } from '../audiences/audiences.service';
-import { WorkflowsService } from '../workflows/workflows.service';
 import { EventsService } from '../events/events.service';
 import * as _ from 'lodash';
 import { randomUUID } from 'crypto';
@@ -98,6 +88,10 @@ import {
   ClickHouseRow
 } from '@/common/services/clickhouse';
 import { v7 as uuidv7 } from 'uuid';
+import { StepsHelper } from '../steps/steps.helper';
+import { AttributeTypeName } from './entities/attribute-type.entity';
+import { CustomerKeysService } from './customer-keys.service';
+import { CustomerKey } from './entities/customer-keys.entity';
 
 export type Correlation = {
   cust: Customer;
@@ -219,34 +213,14 @@ export const systemAttributes: SystemAttribute[] = [
 
 export interface QueryOptions {
   // ... other properties ...
-  customerKeys?: { key: string; type: AttributeType }[];
+  customerKeys?: { key: string; type: AttributeTypeName }[];
 }
-
-const createIndexIfNotExists = async (collection, indexSpec, options = {}) => {
-  const indexes = await collection.indexes();
-  const indexExists = indexes.some((index) => {
-    const keysMatch = Object.keys(indexSpec).every(
-      (key) =>
-        index.key.hasOwnProperty(key) && index.key[key] === indexSpec[key]
-    );
-    return keysMatch;
-  });
-
-  if (!indexExists) {
-    await collection.createIndex(indexSpec, options);
-    console.log(`Index ${JSON.stringify(indexSpec)} created successfully.`);
-  } else {
-    console.log(`Index ${JSON.stringify(indexSpec)} already exists.`);
-  }
-};
 
 @Injectable()
 export class CustomersService {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectModel(CustomerKeys.name)
-    public CustomerKeysModel: Model<CustomerKeysDocument>,
     private dataSource: DataSource,
     private segmentsService: SegmentsService,
     @InjectRepository(Account)
@@ -255,14 +229,13 @@ export class CustomersService {
     public customersRepository: Repository<Customer>,
     @InjectRepository(Imports)
     public importsRepository: Repository<Imports>,
-    private readonly audiencesHelper: AudiencesHelper,
-    private readonly audiencesService: AudiencesService,
-    @Inject(WorkflowsService)
-    private readonly workflowsService: WorkflowsService,
+    private readonly stepsHelper: StepsHelper,
     @Inject(StepsService)
     private readonly stepsService: StepsService,
     @Inject(EventsService)
     private readonly eventsService: EventsService,
+    @Inject(CustomerKeysService)
+    private readonly customerKeysService: CustomerKeysService,
     @InjectConnection()
     private readonly connection: mongoose.Connection,
     private readonly s3Service: S3Service,
@@ -271,73 +244,7 @@ export class CustomersService {
     @Inject(CacheService) private cacheService: CacheService,
     @Inject(ClickHouseClient)
     private clickhouseClient: ClickHouseClient,
-  ) {
-    const session = randomUUID();
-
-    (async () => {
-      try {
-        const collection = this.connection.db.collection('customers');
-        async function getExistingIndexes(collection) {
-          const indexes = await collection.listIndexes().toArray();
-          return indexes.map((index) => index.key);
-        }
-
-        async function removeObsoleteIndexes(collection, requiredIndexes) {
-          const existingIndexes = await getExistingIndexes(collection);
-          for (const existingIndex of existingIndexes) {
-            const indexKey = JSON.stringify(existingIndex);
-            if (
-              !requiredIndexes.includes(indexKey) &&
-              indexKey !== JSON.stringify({ _id: 1 })
-            ) {
-              await collection.dropIndex(existingIndex);
-            }
-          }
-        }
-
-        const requiredIndexes = [];
-
-        requiredIndexes.push(JSON.stringify({ workspaceId: 1 }));
-        await createIndexIfNotExists(collection, { workspaceId: 1 });
-
-        requiredIndexes.push(JSON.stringify({ other_ids: 1, workspaceId: 1 }));
-        await createIndexIfNotExists(collection, {
-          other_ids: 1,
-          workspaceId: 1,
-        });
-
-        requiredIndexes.push(JSON.stringify({ other_ids: 1 }));
-        await createIndexIfNotExists(collection, { other_ids: 1 });
-
-        requiredIndexes.push(JSON.stringify({ _id: 1, workspaceId: 1 }));
-        await createIndexIfNotExists(collection, { _id: 1, workspaceId: 1 });
-
-        for (const [channel, channelRules] of Object.entries(rulesRaw)) {
-          for (const rule of channelRules) {
-            const indexSpec = { [rule]: 1, workspaceId: 1 };
-            requiredIndexes.push(JSON.stringify(indexSpec));
-            await createIndexIfNotExists(collection, indexSpec, {
-              unique: true,
-              partialFilterExpression: { [rule]: { $exists: true } },
-            });
-          }
-        }
-
-        const keyCollection = this.connection.db.collection('customerkeys');
-        const primaryKeyDocs = keyCollection.find({ isPrimary: true });
-        for await (const primaryKey of primaryKeyDocs) {
-          const indexSpec = { [primaryKey.key]: 1, workspaceId: 1 };
-          requiredIndexes.push(JSON.stringify(indexSpec));
-          await createIndexIfNotExists(collection, indexSpec, {
-            unique: true,
-            partialFilterExpression: { [primaryKey.key]: { $exists: true } },
-          });
-        }
-
-        await removeObsoleteIndexes(collection, requiredIndexes);
-      } catch (err) { }
-    })();
-  }
+  ) { }
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
@@ -433,65 +340,43 @@ export class CustomersService {
     account: Account,
     createCustomerDto: any,
     session: string,
-    queryRunner: QueryRunner
-  ): Promise<
-    Customer &
-    mongoose.Document & {
-      _id: Types.ObjectId;
-    }
-  > {
+  ): Promise<Customer> {
     const organization = account?.teams?.[0]?.organization;
     const workspace = organization?.workspaces?.[0];
 
     await this.checkCustomerLimit(organization);
 
-    const createdCustomer = await queryRunner.manager.create(Customer, {
-      UUID: uuidv7(),
-      workspace: { id: workspace.id },
-      created_at: new Date(),
-      updated_at: new Date(),
-      ...createCustomerDto,
-    });
+    const createdCustomer = new Customer();
+    createdCustomer.uuid = uuidv7();
+    createdCustomer.workspace = workspace;
+    createdCustomer.created_at = new Date();
+    createdCustomer.updated_at = new Date();
+    createdCustomer.user_attributes = { ...createCustomerDto };
 
-    const ret = await queryRunner.manager.save(Customer, createdCustomer)
-
-    for (const key of Object.keys(ret.toObject()).filter(
-      (item) => !KEYS_TO_SKIP.includes(item)
-    )) {
-      const value = ret[key];
-      if (value === '' || value === undefined || value === null) continue;
-
-      const keyType = getType(value);
-      const isArray = keyType.isArray();
-      let type = isArray ? getType(value[0]).name : keyType.name;
-
-      if (type === 'String') {
-        if (isEmail(value)) type = 'Email';
-        if (isDateString(value)) type = 'Date';
-      }
-
-      await this.CustomerKeysModel.updateOne(
-        { key, workspaceId: workspace.id },
-        {
-          $set: {
-            key,
-            type,
-            isArray,
-            workspaceId: workspace.id,
-          },
-        },
-        { upsert: true }
-      ).exec();
-    }
-
-    return ret;
+    return await this.customersRepository.save(createdCustomer);
   }
 
-  async getFieldType(key: string, workspaceId: string): Promise<string | null> {
-    const customerKey = await this.CustomerKeysModel.findOne({
-      key,
-      workspaceId,
-    }).exec();
+
+  async createAnonymous(
+    account: Account,
+  ): Promise<Customer> {
+    const organization = account?.teams?.[0]?.organization;
+    const workspace = organization?.workspaces?.[0];
+
+    await this.checkCustomerLimit(organization);
+
+    const createdCustomer = new Customer();
+    createdCustomer.uuid = uuidv7();
+    createdCustomer.workspace = workspace;
+    createdCustomer.created_at = new Date();
+    createdCustomer.updated_at = new Date();
+    createdCustomer.system_attributes.is_anonymous = true;
+
+    return await this.customersRepository.save(createdCustomer);
+  }
+
+  async getFieldType(key: string, workspaceId: string, session: string): Promise<string | null> {
+    const customerKey = await this.customerKeysService.getKeyByName(key, workspaceId, session);
 
     // If the customerKey is found, return its type; otherwise, return null
     return customerKey ? customerKey.type : null;
@@ -499,6 +384,7 @@ export class CustomersService {
 
   async findAll(
     account: Account,
+    session: string,
     take = 100,
     skip = 0,
     key = '',
@@ -516,7 +402,7 @@ export class CustomersService {
 
     const totalPages = Math.ceil(totalCustomers / take) || 1;
 
-    const fieldType = await this.getFieldType(key, workspace.id);
+    const fieldType = await this.getFieldType(key, workspace.id, session);
 
     let queryCondition;
     switch (fieldType) {
@@ -559,7 +445,24 @@ export class CustomersService {
 
     const customer = await this.customersRepository.findOne({
       where: {
-        uuid: id,
+        id: parseInt(id),
+        workspace: { id: workspace.id },
+      }
+    });
+    if (!customer) {
+      throw new HttpException('Person not found', HttpStatus.NOT_FOUND);
+    }
+
+    return customer;
+  }
+
+
+  async findOneByUUID(account: Account, uuid: string, session: string) {
+    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+
+    const customer = await this.customersRepository.findOne({
+      where: {
+        uuid: uuid,
         workspace: { id: workspace.id },
       }
     });
@@ -682,6 +585,53 @@ export class CustomersService {
     return replacementRes;
   }
 
+  async updateCustomer(
+    account: Account,
+    customerId: number,
+    fieldName: keyof Customer,
+    newValue: any,
+    session: string,
+    queryRunner?: QueryRunner
+  ): Promise<Customer> {
+    if (queryRunner) {
+      const customer = await queryRunner.manager.findOne(Customer, {
+        where: {
+          id: customerId,
+          workspace: { id: account?.teams?.[0]?.organization?.workspaces?.[0].id }
+        }
+      });
+      if (!customer) {
+        throw new Error(`Customer with ID ${customerId} not found`);
+      }
+      if (typeof customer[fieldName] === 'object' && customer[fieldName] !== null) {
+        (customer[fieldName] as any) = { ...customer[fieldName], ...newValue };
+      } else {
+        (customer as any)[fieldName] = newValue;
+      }
+      await queryRunner.manager.save(Customer, customer);
+      return customer;
+    } else {
+
+      const customer = await this.customersRepository.findOne({
+        where: {
+          id: customerId,
+          workspace: { id: account?.teams?.[0]?.organization?.workspaces?.[0].id }
+        }
+      });
+      if (!customer) {
+        throw new Error(`Customer with ID ${customerId} not found`);
+      }
+      if (typeof customer[fieldName] === 'object' && customer[fieldName] !== null) {
+        (customer[fieldName] as any) = { ...customer[fieldName], ...newValue };
+      } else {
+        (customer as any)[fieldName] = newValue;
+      }
+      await this.customersRepository.save(customer);
+      return customer;
+
+    }
+  }
+
   async returnAllPeopleInfo(
     account: Account,
     session: string,
@@ -701,6 +651,7 @@ export class CustomersService {
     );
     const { data, totalPages } = await this.findAll(
       <Account>account,
+      session,
       take,
       skip,
       searchKey,
@@ -710,12 +661,7 @@ export class CustomersService {
     );
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-    const pk = (
-      await this.CustomerKeysModel.findOne({
-        isPrimary: true,
-        workspaceId: workspace.id,
-      })
-    )?.toObject();
+    const pk = await this.customerKeysService.getPrimaryKey(workspace.id, session);
 
     const listInfo = await Promise.all(
       data.map(async (person) => {
@@ -739,8 +685,8 @@ export class CustomersService {
         */
         info.dataSource = 'people';
 
-        if (pk && person[pk.key]) {
-          info[pk.key] = person[pk.key];
+        if (pk && person[pk.name]) {
+          info[pk.name] = person[pk.name];
         }
 
         if (checkInSegment)
@@ -754,7 +700,7 @@ export class CustomersService {
       })
     );
 
-    return { data: listInfo, totalPages, pkName: pk?.key };
+    return { data: listInfo, totalPages, pkName: pk?.name };
   }
 
   async ingestPosthogPersons(
@@ -788,18 +734,44 @@ export class CustomersService {
       res = await queryRunner.manager.find(Customer, {
         where: {
           id: Number(id),
-          workspace: {id: account?.teams?.[0]?.organization?.workspaces?.[0].id}
+          workspace: { id: account?.teams?.[0]?.organization?.workspaces?.[0].id }
         }
       })
     } else {
       res = await this.customersRepository.find({
         where: {
           id: Number(id),
-          workspace: {id: account?.teams?.[0]?.organization?.workspaces?.[0].id}
+          workspace: { id: account?.teams?.[0]?.organization?.workspaces?.[0].id }
         }
       })
     }
     return res.length ? res[0] : null;
+  }
+
+
+  async findByCustomerIdUnauthenticated(id: string, queryRunner?: QueryRunner) {
+    let res;
+    if (queryRunner) {
+      res = await queryRunner.manager.find(Customer, {
+        where: {
+          id: Number(id),
+        }
+      })
+    } else {
+      res = await this.customersRepository.find({
+        where: {
+          id: Number(id),
+        }
+      })
+    }
+    return res.length ? res[0] : null;
+  }
+
+  /*
+  * TODO: Fill this in
+  */
+  async deleteFromWorkspace(workspaceId: string, session: string, queryRunner?: QueryRunner) {
+    return;
   }
 
   /**
@@ -826,7 +798,7 @@ export class CustomersService {
     skip?: number,
     limit?: number,
     collectionName?: string
-  ): Promise<CustomerDocument[]> {
+  ): Promise<Customer[]> {
     let query: any;
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
     let customers: any[];
@@ -838,9 +810,9 @@ export class CustomersService {
       !criteria.query.statements ||
       !criteria.query.statements.length
     ) {
-      query = this.CustomerModel.find({
+      query = {
         workspaceId: workspace.id,
-      });
+      };
       if (transactionSession) query.session(transactionSession);
       if (limit) query.limit(limit);
       if (skip) query.skip(skip);
@@ -890,9 +862,9 @@ export class CustomersService {
       !criteria.query.statements ||
       !criteria.query.statements.length
     ) {
-      query = this.CustomerModel.countDocuments({
+      query = {
         workspaceId: workspace.id,
-      });
+      };
       if (transactionSession) query.session(transactionSession);
       count = await query.exec();
     } else {
@@ -920,7 +892,7 @@ export class CustomersService {
     session: string,
     account?: Account
   ) {
-    return this.audiencesHelper.checkInclusion(
+    return this.stepsHelper.checkInclusion(
       customer,
       inclusionCriteria,
       session,
@@ -931,20 +903,20 @@ export class CustomersService {
   // get keys that weren't marked as primary but may be used
   // as channels for sending messages (e.g. email, email_address,
   // phone, phone_number, etc..)
-  async getMessageChannelsCustomerKeys(workspaceId: string): Promise<string[]> {
+  async getMessageChannelsCustomerKeys(workspaceId: string, session: string): Promise<string[]> {
     let keys = [];
 
-    const customerKeys = await this.CustomerKeysModel.find({ workspaceId });
+    const customerKeys = await this.customerKeysService.getAll(workspaceId, session);
 
     for (const customerKey of customerKeys) {
       if (
-        customerKey.isPrimary ||
-        (customerKey.type !== AttributeType.STRING &&
-          customerKey.type !== AttributeType.EMAIL)
+        customerKey.is_primary ||
+        (customerKey.attribute_type.name !== AttributeTypeName.STRING &&
+          customerKey.attribute_type.name !== AttributeTypeName.EMAIL)
       )
         continue;
 
-      let customerKeyName = customerKey.key;
+      let customerKeyName = customerKey.name;
 
       for (const [channel, channelRules] of Object.entries(rules)) {
         let matchFound = false;
@@ -1003,7 +975,8 @@ export class CustomersService {
 
     // try to find customers via message channel fields
     const messageChannelsKeys = await this.getMessageChannelsCustomerKeys(
-      workspaceId
+      workspaceId,
+      session
     );
 
     for (const messageChannelsKey of messageChannelsKeys) {
@@ -1104,9 +1077,13 @@ export class CustomersService {
       );
     }
 
-    let customers = await this.CustomerModel.find({
-      $or: findConditions,
-    });
+    // TODO: Mongo to Postgres
+
+    let customers = [];
+
+    // let customers = await this.CustomerModel.find({
+    //   $or: findConditions,
+    // });
 
     for (const findType of Object.values(FindType)) {
       for (let i = 0; i < customers.length; i++) {
@@ -1194,7 +1171,7 @@ export class CustomersService {
     session: string,
     object?: Record<string, any>
   ): Promise<CustomerSearchOptionResult> {
-    let customer: CustomerDocument;
+    let customer: Customer;
     let findType: FindType;
     let result: CustomerSearchOptionResult = {
       customer: null,
@@ -1247,26 +1224,15 @@ export class CustomersService {
       object
     );
 
-    this.debug(
-      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
-       customerUpsertData: ${JSON.stringify(customerUpsertData)},
-       systemSource: ${JSON.stringify(systemSource)},
-       object: ${JSON.stringify(object)},
-       searchOptions: ${JSON.stringify(searchOptions)},
-       result: ${JSON.stringify(result)}`,
-      this.findOrCreateCustomerBySearchOptions.name,
-      session
-    );
-
     // If customer still not found, create a new one
     if (!result.customer) {
-      const newId = searchOptions.correlationValue || randomUUID();
+      const newUUID = searchOptions.correlationValue || uuidv7();
 
       // add source information
       // TODO: need to namespace the user and system attributes
       // so there won't any collisions
       const upsertData = {
-        _id: newId,
+        uuid: newUUID,
         workspaceId,
         createdAt: new Date(),
         laudspeakerSystemSource: systemSource,
@@ -1280,16 +1246,6 @@ export class CustomersService {
 
       _.merge(upsertData, customerUpsertData);
 
-      this.debug(
-        `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
-         customerUpsertData: ${JSON.stringify(customerUpsertData)},
-         systemSource: ${JSON.stringify(systemSource)},
-         object: ${JSON.stringify(object)},
-         searchOptions: ${JSON.stringify(searchOptions)},
-         upsertData: ${JSON.stringify(upsertData)}`,
-        this.findOrCreateCustomerBySearchOptions.name,
-        session
-      );
 
       try {
         result.customer = await this.CustomerModel.create(upsertData);
@@ -1385,7 +1341,7 @@ export class CustomersService {
           { ...upsertCustomerDto.properties }
         );
 
-      return Promise.resolve({ id: customer._id });
+      return Promise.resolve({ id: customer.id.toString() });
     } catch (err) {
       this.error(err, this.upsert.name, session, auth.account.email);
       throw err;
@@ -1414,7 +1370,7 @@ export class CustomersService {
         HttpStatus.BAD_REQUEST
       );
 
-    const ret: CustomerDocument = await this.CustomerModel.findOneAndDelete(
+    const ret: Customer = await this.CustomerModel.findOneAndDelete(
       {
         workspaceId: auth.workspace.id,
         [primaryKey.key]: deleteCustomerDto.primary_key,
@@ -1444,7 +1400,7 @@ export class CustomersService {
     auth: { account: Account; workspace: Workspaces },
     readCustomerDto: ReadCustomerDto,
     session: string
-  ): Promise<CustomerDocument> {
+  ): Promise<Customer> {
     let primaryKey = await this.getPrimaryKeyStrict(auth.workspace.id, session);
 
     if (!primaryKey)
@@ -1458,7 +1414,7 @@ export class CustomersService {
       return acc;
     }, {});
 
-    const ret: CustomerDocument = await this.CustomerModel.findOne(
+    const ret: Customer = await this.CustomerModel.findOne(
       {
         workspaceId: auth.workspace.id,
         [primaryKey.key]: readCustomerDto.primary_key,
@@ -1506,29 +1462,27 @@ export class CustomersService {
   async getAttributes(account: Account, resourceId: string, session: string) {
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-    const attributes = await this.CustomerKeysModel.find({
-      workspaceId: workspace.id,
-    }).exec();
+    const attributes = await this.customerKeysService.getAll(workspace.id, session)
     if (resourceId === 'attributes') {
       return {
         id: resourceId,
         nextResourceURL: 'attributeConditions',
         options: attributes.map((attribute) => ({
-          label: attribute.key,
-          id: attribute.key,
-          nextResourceURL: attribute.key,
+          label: attribute.name,
+          id: attribute.name,
+          nextResourceURL: attribute.name,
         })),
         type: 'select',
       };
     }
 
     const attribute = attributes.find(
-      (attribute) => attribute.key === resourceId
+      (attribute) => attribute.name === resourceId
     );
     if (attribute)
       return {
         id: resourceId,
-        options: attributeConditions(attribute.type, attribute.isArray),
+        options: attributeConditions(attribute.attribute_type.name, attribute.attribute_type.name === AttributeTypeName.ARRAY),
         type: 'select',
       };
 
@@ -1617,13 +1571,11 @@ export class CustomersService {
 
       const res = await errorPromise;
 
-      const primaryAttribute = await this.CustomerKeysModel.findOne({
-        $and: [{ isPrimary: true }, { workspaceId: workspace.id }],
-      });
+      const primaryAttribute = await this.customerKeysService.getPrimaryKey(workspace.id, session);
 
-      if (primaryAttribute && !res.headers.includes(primaryAttribute.key)) {
+      if (primaryAttribute && !res.headers.includes(primaryAttribute.name)) {
         throw new BadRequestException(
-          `CSV file should contain column with same name as defined Primary key: ${primaryAttribute.key}`
+          `CSV file should contain column with same name as defined Primary key: ${primaryAttribute.name}`
         );
       }
 
@@ -1702,13 +1654,11 @@ export class CustomersService {
         },
       });
 
-      const primaryAttribute = await this.CustomerKeysModel.findOne({
-        $and: [{ isPrimary: true }, { workspaceId: workspace.id }],
-      });
+      const primaryAttribute = await this.customerKeysService.getPrimaryKey(workspace.id, session);
 
       const response = { ...importFile, primaryAttribute: undefined };
       if (primaryAttribute) {
-        response.primaryAttribute = primaryAttribute.toObject();
+        response.primaryAttribute = primaryAttribute;
       }
       return response;
     } catch (error) {
@@ -1801,53 +1751,6 @@ export class CustomersService {
     });
   }
 
-  public async getDynamicAudiencesWithCustomer(
-    customerId: string
-  ): Promise<Audience[]> {
-    return this.dataSource.query(
-      'SELECT * FROM audience WHERE $1 = ANY(audience."customers") AND (SELECT workflow."isDynamic" FROM workflow WHERE workflow."id" = audience."workflowId") = true',
-      [customerId]
-    );
-  }
-
-  public async recheckDynamicInclusion(
-    account: Account,
-    customer: CustomerDocument,
-    session: string
-  ) {
-    const audiences = await this.getDynamicAudiencesWithCustomer(customer._id);
-    for (const audience of audiences) {
-      const inclusionCriteria = await this.audiencesService.getFilter(
-        account,
-        audience.id,
-        session
-      );
-
-      if (!inclusionCriteria) continue;
-
-      const custIndex = audience.customers.indexOf(customer._id);
-
-      if (
-        custIndex > -1 &&
-        !(await this.audiencesHelper.checkInclusion(
-          customer,
-          inclusionCriteria,
-          session,
-          account
-        ))
-      ) {
-        audience.customers.splice(custIndex, 1);
-      }
-    }
-
-    await this.audiencesService.audiencesRepository.save(
-      audiences.map((audience) => ({
-        id: audience.id,
-        customers: audience.customers,
-      }))
-    );
-  }
-
   public async getSystemAttributes() {
     return systemAttributes;
   }
@@ -1936,7 +1839,7 @@ export class CustomersService {
         totalPages,
         data: await Promise.all(
           customerIds.map(async (id) => ({
-            ...(await this.findById(account, id))?.toObject(),
+            ...(await this.findByCustomerId(account, id))?.toObject(),
             id,
           }))
         ),
@@ -1976,7 +1879,7 @@ export class CustomersService {
 
   public async isCustomerEnrolledInJourney(
     account: Account,
-    customer: CustomerDocument,
+    customer: Customer,
     journey: Journey,
     session: string,
     queryRunner: QueryRunner
@@ -3967,13 +3870,10 @@ export class CustomersService {
   async getPrimaryKey(account: Account, session: string): Promise<string> {
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-    const customerKeyDocument = await this.CustomerKeysModel.findOne({
-      workspaceId: workspace.id,
-      isPrimary: true,
-    });
+    const customerKeyDocument = await this.customerKeysService.getPrimaryKey(workspace.id, session);
 
     if (customerKeyDocument) {
-      const currentPK = customerKeyDocument.key;
+      const currentPK = customerKeyDocument.name;
 
       this.debug(
         `current pk is: ${currentPK}`,
@@ -4005,16 +3905,14 @@ export class CustomersService {
   async getPrimaryKeyStrict(
     workspaceId: string,
     session: string
-  ): Promise<CustomerKeysDocument> {
-    let primaryKey: CustomerKeysDocument =
+  ): Promise<CustomerKey> {
+    let primaryKey: CustomerKey =
       await this.cacheService.getIgnoreError(
         'PrimaryKey',
         workspaceId,
         async () => {
-          return await this.CustomerKeysModel.findOne({
-            workspaceId,
-            isPrimary: true,
-          });
+          return await this.customerKeysService.getPrimaryKey(workspaceId, session);
+          ;
         }
       );
 
@@ -4511,9 +4409,6 @@ export class CustomersService {
               { $out: intermediateCollection },
             ];
 
-            const result = await this.CustomerModel.aggregate(allUsers).exec();
-            //console.log("outputted to", intermediateCollection);
-
             return intermediateCollection;
           }
 
@@ -4676,7 +4571,6 @@ export class CustomersService {
             account.id
           );
 
-          const result3 = await this.CustomerModel.aggregate(pipeline3).exec();
           //const result3 = await this.eventsService.getCustomersbyEventsMongo(pipeline3);
 
           /*
@@ -4834,7 +4728,7 @@ export class CustomersService {
     query: any,
     account: Account,
     session: string,
-    customer?: CustomerDocument,
+    customer?: Customer,
     customerId?: string,
     options?: QueryOptions
     //customerKeys?: { key: string, type: AttributeType }[]
@@ -4852,7 +4746,7 @@ export class CustomersService {
     }
     if (customerId && !customer) {
       // If customerId is provided but customer is not
-      customer = await this.findById(account, customerId);
+      customer = await this.findByCustomerId(account, customerId);
       // customer = await this.CustomerModel.findOne({
       //   _id: new Types.ObjectId(customerId),
       //   ownerId: account.id,
@@ -4901,7 +4795,7 @@ export class CustomersService {
   }
 
   async evaluateStatementWithSubQuery(
-    customer: CustomerDocument,
+    customer: Customer,
     statement: any,
     account: Account,
     session: string,
@@ -4935,7 +4829,7 @@ export class CustomersService {
    *
    */
   async evaluateSingleStatement(
-    customer: CustomerDocument,
+    customer: Customer,
     statement: any,
     account: Account,
     session: string
@@ -5050,7 +4944,7 @@ export class CustomersService {
    *
    */
   async evaluateMessageStatement(
-    customer: CustomerDocument,
+    customer: Customer,
     statement: any,
     account: Account,
     typeOfMessage: string,
@@ -5196,7 +5090,7 @@ export class CustomersService {
    *
    */
   async evaluateEventStatement(
-    customer: CustomerDocument,
+    customer: Customer,
     statement: any,
     account: Account,
     session: string
@@ -5213,14 +5107,12 @@ export class CustomersService {
       $or: [],
     };
 
-    const currentPK: string = await this.CustomerKeysModel.findOne({
-      workspaceId: workspace.id,
-      isPrimary: true,
-    });
-    if (currentPK && customer[currentPK]) {
+    const currentPK = await this.customerKeysService.getPrimaryKey(workspace.id, session);
+
+    if (currentPK && customer[currentPK.name]) {
       const pkCondition = {};
-      pkCondition[`correlationKey`] = currentPK;
-      pkCondition[`correlationValue`] = customer[currentPK];
+      pkCondition[`correlationKey`] = currentPK.name;
+      pkCondition[`correlationValue`] = customer[currentPK.name];
       mongoQuery.$or.push(pkCondition);
     } else {
       // Handle case where currentPK is null
@@ -5236,7 +5128,7 @@ export class CustomersService {
     //we need this condition to handle our mobile sdk since we save events with customer ID not customer primary key as the correlationKey
     const idCondition = {
       correlationKey: '_id',
-      correlationValue: customer._id, // Assuming customer.id stores the MongoDB _id
+      correlationValue: customer.id, // Assuming customer.id stores the MongoDB _id
     };
     mongoQuery.$or.push(idCondition);
 
@@ -5319,7 +5211,7 @@ export class CustomersService {
   }
 
   evaluateAttributeStatement(
-    customer: CustomerDocument,
+    customer: Customer,
     statement: any,
     account: Account,
     session: string
@@ -5514,6 +5406,7 @@ export class CustomersService {
 
   public async searchForTest(
     account: Account,
+    session: string,
     take = 100,
     skip = 0,
     search = '',
@@ -5533,10 +5426,7 @@ export class CustomersService {
       ],
     };
 
-    const pk = await this.CustomerKeysModel.findOne({
-      isPrimary: true,
-      workspaceId: workspace.id,
-    });
+    const pk = await this.customerKeysService.getPrimaryKey(workspace.id, session);
 
     if (search) {
       const findRegexp = new RegExp(`.*${search}.*`, 'i');
@@ -5547,7 +5437,7 @@ export class CustomersService {
           //...(isValidObjectId(search) ? [{ _id: search }] : []),
           { email: findRegexp },
           { phone: findRegexp },
-          ...(pk ? [{ [pk.key]: findRegexp }] : []),
+          ...(pk ? [{ [pk.name]: findRegexp }] : []),
         ],
       };
 
@@ -5575,8 +5465,8 @@ export class CustomersService {
         info['id'] = cust['_id'].toString();
         info['email'] = cust['email']?.toString() || '';
         info['phone'] = cust['phone']?.toString() || '';
-        if (pk?.key) {
-          info[pk.key] = cust[pk.key]?.toString() || '';
+        if (pk?.name) {
+          info[pk.name] = cust[pk.name]?.toString() || '';
         }
 
         return info;
@@ -5588,7 +5478,7 @@ export class CustomersService {
   async createAttribute(
     account: Account,
     key: string,
-    type: AttributeType,
+    type: AttributeTypeName,
     dateFormat: unknown,
     session?: string,
     isArray?: boolean
@@ -5596,7 +5486,7 @@ export class CustomersService {
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
     try {
-      if (!Object.values(AttributeType).includes(type)) {
+      if (!Object.values(AttributeTypeName).includes(type)) {
         throw new BadRequestException(
           `Type: ${type} can't be used for attribute creation.`
         );
@@ -5630,43 +5520,6 @@ export class CustomersService {
       this.error(error, this.createAttribute.name, session);
       throw error;
     }
-  }
-
-  async updateAttribute(
-    account: Account,
-    updateAttributeDto: UpdateAttributeDto
-  ) {
-    validateKeyForMutations(updateAttributeDto.key);
-
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
-
-    const attributeInDb = await this.CustomerKeysModel.findOne({
-      _id: updateAttributeDto.id,
-      workspaceId: workspace.id,
-    }).exec();
-
-    if (!attributeInDb) {
-      throw new HttpException('Attribute not found', 404);
-    }
-
-    const { key } = updateAttributeDto;
-
-    await this.CustomerModel.updateMany(
-      {
-        workspaceId: workspace.id,
-      },
-      {
-        $rename: {
-          [attributeInDb.key]: key.trim(),
-        },
-      }
-    );
-
-    await attributeInDb.updateOne({
-      $set: {
-        key,
-      },
-    });
   }
 
   async deleteAttribute(account: Account, id: string) {
@@ -5740,16 +5593,16 @@ export class CustomersService {
 
   convertForImport(
     value: string,
-    convertTo: AttributeType,
+    convertTo: AttributeTypeName,
     columnName: string,
     dateFormat?: string
   ) {
     let error = '';
     let isError = false;
     let converted;
-    if (convertTo === AttributeType.STRING) {
+    if (convertTo === AttributeTypeName.STRING) {
       converted = value ? String(value) : null;
-    } else if (convertTo === AttributeType.NUMBER) {
+    } else if (convertTo === AttributeTypeName.NUMBER) {
       if (!value) {
         converted = null;
       } else {
@@ -5759,7 +5612,7 @@ export class CustomersService {
           isError = true;
         }
       }
-    } else if (convertTo === AttributeType.BOOLEAN) {
+    } else if (convertTo === AttributeTypeName.BOOLEAN) {
       const trimmedLowerValue = value.trim().toLowerCase();
       converted = acceptableBooleanConvertable.true.includes(trimmedLowerValue)
         ? true
@@ -5767,8 +5620,8 @@ export class CustomersService {
           ? false
           : null;
     } else if (
-      convertTo === AttributeType.DATE ||
-      convertTo === AttributeType.DATE_TIME
+      convertTo === AttributeTypeName.DATE ||
+      convertTo === AttributeTypeName.DATE_TIME
     ) {
       const parsedDate = dateFormat
         ? datefns.parse(value, dateFormat, new Date())
@@ -5776,7 +5629,7 @@ export class CustomersService {
 
       if (isValid(parsedDate)) converted = parsedDate;
       else isError = true;
-    } else if (convertTo === AttributeType.EMAIL) {
+    } else if (convertTo === AttributeTypeName.EMAIL) {
       if (isEmail(value)) {
         converted = String(value);
       } else {
@@ -6233,155 +6086,5 @@ export class CustomersService {
     }
     await clientSession.commitTransaction();
     await clientSession.endSession();
-  }
-
-  async sendFCMToken(
-    auth: { account: Account; workspace: Workspaces },
-    body: SendFCMDto,
-    session: string
-  ) {
-    if (!body.type)
-      throw new HttpException('No type given', HttpStatus.BAD_REQUEST);
-    if (!body.token)
-      throw new HttpException('No FCM token given', HttpStatus.BAD_REQUEST);
-
-    const organization = auth.account.teams[0].organization;
-    const workspace = auth.workspace;
-
-    let customer = await this.CustomerModel.findOne({
-      _id: body.customerId,
-      workspaceId: workspace.id,
-    });
-
-    if (!customer) {
-      await this.checkCustomerLimit(organization);
-
-      this.error('Customer not found', this.sendFCMToken.name, session);
-
-      customer = await this.CustomerModel.create({
-        isAnonymous: true,
-        workspaceId: workspace.id,
-      });
-    }
-
-    await this.CustomerModel.updateOne(
-      { _id: customer._id },
-      {
-        [body.type === PushPlatforms.ANDROID
-          ? 'androidDeviceToken'
-          : 'iosDeviceToken']: body.token,
-      }
-    );
-
-    return customer._id;
-  }
-
-  async identifyCustomer(
-    auth: { account: Account; workspace: Workspaces },
-    body: IdentifyCustomerDTO,
-    session: string
-  ) {
-    if (!body.__PrimaryKey)
-      throw new HttpException(
-        'No Primary Key given',
-        HttpStatus.NOT_ACCEPTABLE
-      );
-
-    if (!auth?.account || !body?.customerId) {
-      return;
-    }
-
-    const organization = auth.account.teams[0].organization;
-    const workspace = auth.workspace;
-
-    let customer = await this.CustomerModel.findOne({
-      _id: body.customerId,
-      workspaceId: workspace.id,
-    });
-
-    if (!customer) {
-      await this.checkCustomerLimit(organization);
-
-      this.error(
-        'Invalid customer id. Creating new anonymous customer...',
-        this.identifyCustomer.name,
-        session
-      );
-      customer = await this.CustomerModel.create({
-        isAnonymous: true,
-        workspaceId: workspace.id,
-      });
-    }
-
-    if (!customer.isAnonymous) {
-      throw new HttpException(
-        'Failed to identify: already identified',
-        HttpStatus.NOT_ACCEPTABLE
-      );
-    }
-
-    const primaryKey = await this.CustomerKeysModel.findOne({
-      workspaceId: workspace.id,
-      isPrimary: true,
-    });
-
-    const identifiedCustomer = await this.CustomerModel.findOne({
-      workspaceId: workspace.id,
-      [primaryKey.key]: body.__PrimaryKey,
-    });
-
-    if (identifiedCustomer) {
-      await this.deleteEverywhere(customer._id);
-
-      await customer.deleteOne();
-
-      return identifiedCustomer._id;
-    } else {
-      await this.CustomerModel.findByIdAndUpdate(customer._id, {
-        ...customer.toObject(),
-        ...body.optionalProperties,
-        //...uniqueProperties,
-        [primaryKey.key]: body.__PrimaryKey,
-        workspaceId: workspace.id,
-        isAnonymous: false,
-      });
-    }
-
-    return customer._id;
-  }
-
-  async setCustomerProperties(
-    auth: { account: Account; workspace: Workspaces },
-    body: SetCustomerPropsDTO,
-    session: string
-  ) {
-    if (!auth.account || !body.customerId) {
-      return;
-    }
-
-    const workspace = auth.workspace;
-
-    const customer = await this.CustomerModel.findOne({
-      _id: body.customerId,
-      workspaceId: workspace.id,
-    });
-
-    if (!customer || customer.isAnonymous) {
-      this.error(
-        'Invalid customer id. Please call identify first',
-        this.setCustomerProperties.name,
-        session
-      );
-      throw new HttpException(
-        'Invalid customer id. Please call identify first',
-        HttpStatus.NOT_FOUND
-      );
-    }
-
-    await this.CustomerModel.findByIdAndUpdate(customer._id, {
-      ...customer.toObject(),
-      ...body.optionalProperties,
-      workspaceId: workspace.id,
-    });
   }
 }

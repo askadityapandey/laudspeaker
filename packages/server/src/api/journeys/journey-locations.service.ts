@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import {
   DataSource,
   FindManyOptions,
-  FindOptions,
   FindOptionsWhere,
   IsNull,
   QueryRunner,
@@ -12,15 +11,14 @@ import {
 } from 'typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Journey } from './entities/journey.entity';
-import { CustomerDocument } from '../customers/schemas/customer.schema';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Step } from '../steps/entities/step.entity';
 import { JourneyLocation } from './entities/journey-location.entity';
 import { StepType } from '../steps/types/step.interface';
-import { date } from 'liquidjs/dist/builtin/filters';
 import { randomUUID } from 'crypto';
 import { Readable } from 'node:stream';
 import * as copyFrom from 'pg-copy-streams';
+import { Customer } from '../customers/entities/customer.entity';
 
 const LOCATION_LOCK_TIMEOUT_MS = +process.env.LOCATION_LOCK_TIMEOUT_MS;
 
@@ -34,7 +32,7 @@ export class JourneyLocationsService {
     public journeyLocationsRepository: Repository<JourneyLocation>,
     @InjectRepository(Account)
     public accountRepository: Repository<Account>
-  ) {}
+  ) { }
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
@@ -117,7 +115,7 @@ export class JourneyLocationsService {
    */
   async createAndLock(
     journey: Journey,
-    customer: CustomerDocument,
+    customer: Customer,
     step: Step,
     session: string,
     account: Account,
@@ -125,7 +123,7 @@ export class JourneyLocationsService {
   ) {
     this.log(
       JSON.stringify({
-        info: `Creating JourneyLocation (${journey.id}, ${customer._id})`,
+        info: `Creating JourneyLocation (${journey.id}, ${customer.id})`,
       }),
       this.createAndLock.name,
       session,
@@ -138,22 +136,22 @@ export class JourneyLocationsService {
       // Step 1: Check if customer is already enrolled in Journey; if so, throw error
       const location = await queryRunner.manager.findOne(JourneyLocation, {
         where: {
-          journey: journey.id,
+          journey: { id: journey.id },
           workspace: { id: workspace.id },
-          customer: customer._id,
+          customer: { id: customer.id },
         },
       });
 
       if (location)
         throw new Error(
-          `Customer ${customer._id} already enrolled in journey ${journey.id}; located in step ${location.step.id}`
+          `Customer ${customer.id} already enrolled in journey ${journey.id}; located in step ${location.step.id}`
         );
 
       // Step 2: Create new journey Location row, add time that user entered the journey
       await queryRunner.manager.save(JourneyLocation, {
-        journey: journey.id,
+        journey: { id: journey.id },
         workspace,
-        customer: customer._id,
+        customer: { id: customer.id },
         step: step,
         stepEntry: Date.now(),
         moveStarted: Date.now(),
@@ -161,19 +159,19 @@ export class JourneyLocationsService {
     } else {
       const location = await this.journeyLocationsRepository.findOne({
         where: {
-          journey: journey.id,
+          journey: { id: journey.id },
           workspace: { id: workspace.id },
-          customer: customer._id,
+          customer: { id: customer.id },
         },
       });
       if (location)
         throw new Error(
-          `Customer ${customer._id} already enrolled in journey ${journey.id}; located in step ${location.step.id}`
+          `Customer ${customer.id} already enrolled in journey ${journey.id}; located in step ${location.step.id}`
         );
       await this.journeyLocationsRepository.save({
-        journey: journey.id,
+        journey: { id: journey.id },
         workspace,
-        customer: customer._id,
+        customer: { id: customer.id },
         step: step,
         stepEntry: Date.now(),
         moveStarted: Date.now(),
@@ -223,7 +221,8 @@ export class JourneyLocationsService {
       read() {
         customers.forEach((customerId) => {
           this.push(
-            `${journeyId}\t${customerId}\t${step.id}\t${workspace.id}\t${moveStarted}\t${stepEntry}\t${journeyEntry}\t${stepEntryAt.toISOString()}\t${journeyEntryAt.toISOString()}\n`
+            `${journeyId}\t${customerId}\t${step.id}\t${workspace.id
+            }\t${moveStarted}\t${stepEntry}\t${journeyEntry}\t${stepEntryAt.toISOString()}\t${journeyEntryAt.toISOString()}\n`
           );
         });
         this.push(null); // No more data
@@ -238,7 +237,7 @@ export class JourneyLocationsService {
 
     const self = this;
 
-    const promise = new Promise<void>(function(resolve, reject) {
+    const promise = new Promise<void>(function (resolve, reject) {
       const successHandler = () => {
         self.debug(
           `Finished creating journey location rows for ${journeyId}`,
@@ -280,7 +279,7 @@ export class JourneyLocationsService {
    */
   async findAndMove(
     journey: Journey,
-    customer: CustomerDocument,
+    customer: Customer,
     from: Step,
     to: Step,
     session: string,
@@ -335,7 +334,7 @@ export class JourneyLocationsService {
    */
   async findForWrite(
     journey: Journey,
-    customer: CustomerDocument,
+    customer: Customer,
     session: string,
     account?: Account,
     queryRunner?: QueryRunner
@@ -343,16 +342,16 @@ export class JourneyLocationsService {
     if (queryRunner) {
       return await queryRunner.manager.findOne(JourneyLocation, {
         where: {
-          journey: journey.id,
-          customer: customer._id,
+          journey: { id: journey.id },
+          customer: { id: customer.id },
         },
         relations: ['step'],
       });
     } else {
       return await this.journeyLocationsRepository.findOne({
         where: {
-          journey: journey.id,
-          customer: customer._id,
+          journey: { id: journey.id },
+          customer: { id: customer.id },
         },
         relations: ['step'],
       });
@@ -495,9 +494,9 @@ export class JourneyLocationsService {
     } else {
       await this.journeyLocationsRepository.update(
         {
-          journey: location.journey,
+          journey: { id: location.journey.id },
           workspace: workspace ? { id: workspace.id } : undefined,
-          customer: location.customer,
+          customer: {id: location.customer.id},
         },
         {
           step: to,
@@ -519,7 +518,7 @@ export class JourneyLocationsService {
    */
   async find(
     journey: Journey,
-    customer: CustomerDocument,
+    customer: Customer,
     session: string,
     account?: Account,
     queryRunner?: QueryRunner
@@ -537,23 +536,88 @@ export class JourneyLocationsService {
     if (queryRunner) {
       return await queryRunner.manager.findOne(JourneyLocation, {
         where: {
-          journey: journey.id,
+          journey: { id: journey.id },
           workspace: workspace ? { id: workspace.id } : undefined,
-
-          customer: customer._id,
+          customer: { id: customer.id },
         },
         relations: ['workspace', 'journey', 'step'],
       });
     } else {
       return await this.journeyLocationsRepository.findOne({
         where: {
-          journey: journey.id,
+          journey: { id: journey.id },
           workspace: workspace ? { id: workspace.id } : undefined,
-
-          customer: customer._id,
+          customer: { id: customer.id },
         },
         relations: ['workspace', 'journey', 'step'],
       });
+    }
+  }
+
+  async *findAllStaticCustomersInTimeBasedStepsUsingStream(
+    journey: Journey,
+    session: string,
+    processorIndex: number,
+    totalProcessors: number,
+    timeoutDuration: number = 30000, // default timeout duration in milliseconds
+    queryRunner?: QueryRunner
+  ) {
+    let stream;
+    if (queryRunner) {
+      stream = await queryRunner.manager
+        .createQueryBuilder(JourneyLocation, 'journeyLocation')
+        .leftJoinAndSelect('journeyLocation.step', 'step') // Correct join statement
+        .where('journeyLocation.journeyId = :journeyId', {
+          journeyId: journey.id,
+        })
+        .andWhere('journeyLocation.moveStarted IS NULL')
+        .andWhere(
+          `MOD(('x'||substr(MD5(journeyLocation.customer), 1, 16))::bit(64)::bigint, ${totalProcessors}) = ${processorIndex}`
+        )
+        .andWhere('step.type IN (:...types)', {
+          // Ensuring 'step' is used correctly
+          types: [
+            StepType.TIME_DELAY,
+            StepType.TIME_WINDOW,
+            StepType.WAIT_UNTIL_BRANCH,
+          ],
+        })
+        .take(1000) // Limit the number of rows returned
+        .stream();
+    } else {
+      stream = await this.journeyLocationsRepository
+        .createQueryBuilder('journeyLocation')
+        .leftJoinAndSelect('journeyLocation.step', 'step') // Correct join statement
+        .where('journeyLocation.journeyId = :journeyId', {
+          journeyId: journey.id,
+        })
+        .andWhere('journeyLocation.moveStarted IS NULL')
+        .andWhere(
+          `MOD(('x'||substr(MD5(journeyLocation.customer), 1, 16))::bit(64)::bigint, ${totalProcessors}) = ${processorIndex}`
+        )
+        .andWhere('step.type IN (:...types)', {
+          // Ensuring 'step' is used correctly
+          types: [
+            StepType.TIME_DELAY,
+            StepType.TIME_WINDOW,
+            StepType.WAIT_UNTIL_BRANCH,
+          ],
+        })
+        .take(1) // Limit the number of rows returned
+        .stream();
+    }
+
+    const timeoutHandle = setTimeout(() => {
+      stream.destroy(); // Handle depending on stream implementation
+      console.log('Stream was manually closed due to timeout.');
+    }, timeoutDuration);
+
+    try {
+      for await (const row of stream) {
+        yield row; // Yield each row as it comes in
+      }
+    } finally {
+      clearTimeout(timeoutHandle); // Ensure cleanup
     }
   }
 
@@ -577,7 +641,7 @@ export class JourneyLocationsService {
     if (queryRunner) {
       return await queryRunner.manager.find(JourneyLocation, {
         where: {
-          journey: journey.id,
+          journey: { id: journey.id },
           step: [
             {
               type: StepType.TIME_DELAY,
@@ -596,7 +660,7 @@ export class JourneyLocationsService {
     } else {
       return await this.journeyLocationsRepository.find({
         where: {
-          journey: journey.id,
+          journey: { id: journey.id },
           step: {
             type:
               StepType.TIME_DELAY ||
@@ -687,7 +751,7 @@ export class JourneyLocationsService {
    */
   async findAndLock(
     journey: Journey,
-    customer: CustomerDocument,
+    customer: Customer,
     session: string,
     account?: Account,
     queryRunner?: QueryRunner
@@ -756,9 +820,9 @@ export class JourneyLocationsService {
     } else {
       await this.journeyLocationsRepository.update(
         {
-          journey: location.journey,
+          journey: {id: location.journey.id},
           workspace: workspace ? { id: workspace.id } : undefined,
-          customer: location.customer,
+          customer: {id: location.customer.id},
         },
         {
           moveStarted: Date.now(),
@@ -769,8 +833,8 @@ export class JourneyLocationsService {
 
   async setMessageSent(location: JourneyLocation, queryRunner?: QueryRunner) {
     const findCriteria: FindOptionsWhere<JourneyLocation> = {
-      journey: location.journey,
-      customer: location.customer,
+      journey: {id: location.journey.id},
+      customer: {id: location.customer.id},
     };
     const updateData: Partial<JourneyLocation> = {
       messageSent: true,
@@ -802,7 +866,7 @@ export class JourneyLocationsService {
     const queryCriteria: FindManyOptions<JourneyLocation> = {
       where: {
         workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
-        journey: journey.id,
+        journey: { id: journey.id },
       },
     };
     let count: number;
@@ -831,7 +895,7 @@ export class JourneyLocationsService {
     const queryCriteria: FindManyOptions<JourneyLocation> = {
       where: {
         workspace: { id: account.teams[0].organization.workspaces[0].id },
-        journey: journey.id,
+        journey: { id: journey.id },
         messageSent: true,
       },
     };
@@ -848,7 +912,7 @@ export class JourneyLocationsService {
     const ret = {};
     const resultSet = await this.journeyLocationsRepository
       .createQueryBuilder('journeyLocation')
-      .where({journey: In(journeyIds)})
+      .where({ journey: In(journeyIds) })
       .groupBy("journeyLocation.journeyId")
       .select("journeyLocation.journeyId, COUNT(*) as count")
       .getRawMany();

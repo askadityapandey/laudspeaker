@@ -7,8 +7,8 @@ import {
   IsOptional,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AttributeType } from '../schemas/customer-keys.schema';
 import { Trim } from 'class-sanitizer';
+import { AttributeTypeName } from '../entities/attribute-type.entity';
 
 export enum ImportOptions {
   NEW = 'NEW',
@@ -31,8 +31,8 @@ class ImportAttribute {
   @IsString()
   key: string;
 
-  @IsEnum(AttributeType)
-  type: AttributeType;
+  @IsEnum(AttributeTypeName)
+  type: AttributeTypeName;
 
   @IsOptional()
   @IsString()

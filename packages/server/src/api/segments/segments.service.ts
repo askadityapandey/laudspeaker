@@ -19,16 +19,13 @@ import { CreateSegmentDTO } from './dto/create-segment.dto';
 import { UpdateSegmentDTO } from './dto/update-segment.dto';
 import { SegmentCustomers } from './entities/segment-customers.entity';
 import { Segment, SegmentType } from './entities/segment.entity';
-import { InjectConnection } from '@nestjs/mongoose';
-import mongoose, { Types } from 'mongoose';
-import e, { query } from 'express';
 import { CountSegmentUsersSizeDTO } from './dto/size-count.dto';
 import { randomUUID } from 'crypto';
 import { Filter, Document } from 'mongodb';
-import { Queue } from 'bullmq';
 import * as Sentry from '@sentry/node';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import { CustomerKeysService } from '../customers/customer-keys.service';
 
 @Injectable()
 export class SegmentsService {
@@ -43,8 +40,9 @@ export class SegmentsService {
     private customersRepository: Repository<Customer>,
     @Inject(forwardRef(() => CustomersService))
     private customersService: CustomersService,
+    @Inject(forwardRef(() => CustomerKeysService))
+    private customerKeysService: CustomerKeysService,
     private readonly stepsHelper: StepsHelper,
-    @InjectConnection() private readonly connection: mongoose.Connection,
   ) { }
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -183,7 +181,7 @@ export class SegmentsService {
           workspace: {
             id: workspace.id,
           },
-          customerId: id,
+          customer: { id: parseInt(id) },
         },
       })) / take || 1
     );
@@ -193,7 +191,7 @@ export class SegmentsService {
         workspace: {
           id: workspace.id,
         },
-        customerId: id,
+        customer: { id: parseInt(id) },
       },
       take: take < 100 ? take : 100,
       skip,
@@ -237,10 +235,10 @@ export class SegmentsService {
     const records = await this.segmentCustomersRepository.findBy({
       segment: segmentId,
     });
-    const collectionHandle = this.connection.db.collection(collectionName);
+    const collectionHandle =new Object();//this.connection.db.collection(collectionName);
 
     for (const record of records) {
-      const customerId = record.customerId; // Assuming customerId is a field in record
+      const customerId = record.customer.id.toString(); // Assuming customerId is a field in record
       // Update the collection: increment the count for this customerId
       const objectId = customerId;
       await collectionHandle.updateOne(
@@ -287,31 +285,6 @@ export class SegmentsService {
     return result;
   }
 
-  /*
-   * Garbage collector for mongo collections!
-   */
-
-  //to do add part that filters out list of important dbs
-  //to do add debugs
-  async deleteCollectionsWithPrefix(prefix: string): Promise<void> {
-    try {
-      const collections = await this.connection.db.listCollections().toArray();
-
-      // Filter collections that start with the given prefix
-      const collectionsToDelete = collections
-        .filter((collection) => collection.name.startsWith(prefix))
-        .map((collection) => collection.name);
-
-      // Delete each collection
-      for (const collectionName of collectionsToDelete) {
-        //toggle for testing segments
-        await this.connection.db.collection(collectionName).drop();
-      }
-    } catch (error) {
-      const session = randomUUID();
-      this.error(error, this.deleteCollectionsWithPrefix.name, session);
-    }
-  }
 
   /*
    *
@@ -353,10 +326,7 @@ export class SegmentsService {
       // Convert SegmentCustomers to MongoDB documents
       let mongoDocuments = segmentCustomers.map((sc) => {
         return {
-          //_id: new Types.ObjectId(sc.customerId),
-          _id: sc.customerId,
-          //_id: new ObjectId(sc.customerId), // Assuming customerId is stored in string format
-          // Add other properties if needed
+          _id: sc.customer.id,
         };
       });
 
@@ -608,7 +578,7 @@ export class SegmentsService {
       skip,
     });
 
-    const customerIds = records.map(record => record.customerId);
+    const customerIds = records.map(record => record.customer.id);
 
     const customers = await this.customersRepository.find({
       where: {
@@ -621,17 +591,12 @@ export class SegmentsService {
 
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-    const pk = (
-      await this.customersService.CustomerKeysModel.findOne({
-        isPrimary: true,
-        workspaceId: workspace.id,
-      })
-    )?.toObject();
-
+    const pk =
+      await this.customerKeysService.getPrimaryKey(workspace.id,session);
     return {
       data: customers,
       totalPages,
-      pkName: pk?.key,
+      pkName: pk?.name,
     };
   }
 
@@ -839,7 +804,7 @@ export class SegmentsService {
 
     const foundRecord = await queryRunner.manager.findOneBy(SegmentCustomers, {
       segment: segmentId,
-      customerId,
+      customer: { id: parseInt(customerId) },
     });
 
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
@@ -887,7 +852,7 @@ export class SegmentsService {
 
     const foundRecord = await this.segmentCustomersRepository.findOneBy({
       segment: { id: segment.id },
-      customerId,
+      customer: { id: parseInt(customerId) },
     });
 
     if (foundRecord)
@@ -1009,22 +974,8 @@ export class SegmentsService {
   ) {
     await this.segmentCustomersRepository.delete({
       segment: { id },
-      customerId: In(customerIds),
+      customer: In(customerIds),
     });
-
-    for (const customerId of customerIds) {
-      (async () => {
-        const customer = await this.customersService.findByCustomerId(
-          account,
-          customerId
-        );
-        await this.customersService.recheckDynamicInclusion(
-          account,
-          customer,
-          session
-        );
-      })();
-    }
   }
 
   public async deleteCustomer(
@@ -1037,20 +988,8 @@ export class SegmentsService {
 
     await this.segmentCustomersRepository.delete({
       segment: { id: segment.id },
-      customerId,
+      customer: { id: parseInt(customerId) },
     });
-
-    (async () => {
-      const customer = await this.customersService.findByCustomerId(
-        account,
-        customerId
-      );
-      await this.customersService.recheckDynamicInclusion(
-        account,
-        customer,
-        session
-      );
-    })();
   }
 
   public async deleteCustomerFromAllAutomaticSegments(
@@ -1163,14 +1102,14 @@ export class SegmentsService {
     if (!queryRunner) {
       record = await this.segmentCustomersRepository.findOneBy({
         segment: id, //{ id, owner: { id: account.id } },
-        customerId,
+        customer: { id: parseInt(customerId) },
       });
     } else {
       try {
         record = await queryRunner.manager.findOne(SegmentCustomers, {
           where: {
             segment: id, // {id},//{ id, owner: { id: account.id } },
-            customerId,
+            customer: { id: parseInt(customerId) },
           },
         });
       } catch (e) {

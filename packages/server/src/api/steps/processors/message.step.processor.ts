@@ -10,7 +10,6 @@ import {
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { StepType } from '../types/step.interface';
 import { Step } from '../entities/step.entity';
-import { CustomerDocument } from '@/api/customers/schemas/customer.schema';
 import { Account } from '@/api/accounts/entities/accounts.entity';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
@@ -38,6 +37,7 @@ import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { Customer } from '@/api/customers/entities/customer.entity';
 
 @Injectable()
 @Processor(
@@ -132,7 +132,7 @@ export class MessageStepProcessor extends ProcessorBase {
         step: Step;
         owner: Account;
         journey: Journey;
-        customer: CustomerDocument;
+        customer: Customer;
         location: JourneyLocation;
         session: string;
         event?: string;
@@ -307,7 +307,7 @@ export class MessageStepProcessor extends ProcessorBase {
           let key = mailgunAPIKey;
           let from = sendingName;
 
-          const { _id, workspaceId, workflows, journeys, ...tags } =
+          const { id, ...tags } =
             job.data.customer;
           const filteredTags = cleanTagsForSending(tags);
           const sender = new MessageSender(this.logger, this.accountRepository);
@@ -391,7 +391,7 @@ export class MessageStepProcessor extends ProcessorBase {
                 name: TemplateType.EMAIL,
                 accountID: job.data.owner.id,
                 cc: template.cc,
-                customerID: job.data.customer._id,
+                customerID: job.data.customer.id,
                 domain: sendingDomain,
                 email: sendingEmail,
                 stepID: job.data.step.id,
@@ -402,9 +402,9 @@ export class MessageStepProcessor extends ProcessorBase {
                   template.subject,
                   filteredTags
                 ),
-                to: job.data.customer.phEmail
-                  ? job.data.customer.phEmail
-                  : job.data.customer.email,
+                to: job.data.customer.user_attributes.phEmail
+                  ? job.data.customer.user_attributes.phEmail
+                  : job.data.customer.user_attributes.email,
                 text: await this.templatesService.parseApiCallTags(
                   template.text,
                   filteredTags
@@ -442,11 +442,11 @@ export class MessageStepProcessor extends ProcessorBase {
                       name: 'android',
                       accountID: job.data.owner.id,
                       stepID: job.data.step.id,
-                      customerID: job.data.customer._id,
+                      customerID: job.data.customer.id,
                       firebaseCredentials:
                         workspace?.pushPlatforms?.Android?.credentials,
                       // pushChannel?.pushPlatforms?.Android?.credentials,
-                      deviceToken: job.data.customer.androidDeviceToken,
+                      deviceToken: job.data.customer.user_attributes.androidDeviceToken,
                       pushTitle: template.pushObject.settings.Android.title,
                       pushText:
                         template.pushObject.settings.Android.description,
@@ -467,11 +467,11 @@ export class MessageStepProcessor extends ProcessorBase {
                       name: 'ios',
                       accountID: job.data.owner.id,
                       stepID: job.data.step.id,
-                      customerID: job.data.customer._id,
+                      customerID: job.data.customer.id,
                       firebaseCredentials:
                         workspace?.pushPlatforms?.iOS?.credentials,
                       // pushChannel?.pushPlatforms?.iOS?.credentials,
-                      deviceToken: job.data.customer.iosDeviceToken,
+                      deviceToken: job.data.customer.user_attributes.iosDeviceToken,
                       pushTitle: template.pushObject.settings.iOS.title,
                       pushText: template.pushObject.settings.iOS.description,
                       kvPairs: template.pushObject.fields,
@@ -493,11 +493,11 @@ export class MessageStepProcessor extends ProcessorBase {
                       name: 'ios',
                       accountID: job.data.owner.id,
                       stepID: job.data.step.id,
-                      customerID: job.data.customer._id,
+                      customerID: job.data.customer.id,
                       firebaseCredentials:
                         workspace?.pushPlatforms?.iOS?.credentials,
                       // pushChannel?.pushPlatforms?.iOS?.credentials,
-                      deviceToken: job.data.customer.iosDeviceToken,
+                      deviceToken: job.data.customer.user_attributes.iosDeviceToken,
                       pushTitle: template.pushObject.settings.iOS.title,
                       pushText: template.pushObject.settings.iOS.description,
                       kvPairs: template.pushObject.fields,
@@ -519,11 +519,11 @@ export class MessageStepProcessor extends ProcessorBase {
                       name: 'android',
                       accountID: job.data.owner.id,
                       stepID: job.data.step.id,
-                      customerID: job.data.customer._id,
+                      customerID: job.data.customer.id,
                       firebaseCredentials:
                         workspace?.pushPlatforms?.Android?.credentials,
                       // pushChannel?.pushPlatforms?.Android?.credentials,
-                      deviceToken: job.data.customer.androidDeviceToken,
+                      deviceToken: job.data.customer.user_attributes.androidDeviceToken,
                       pushTitle: template.pushObject.settings.Android.title,
                       pushText:
                         template.pushObject.settings.Android.description,
@@ -548,7 +548,7 @@ export class MessageStepProcessor extends ProcessorBase {
                   name: TemplateType.SMS,
                   accountID: job.data.owner.id,
                   stepID: job.data.step.id,
-                  customerID: job.data.customer._id,
+                  customerID: job.data.customer.id,
                   templateID: template.id,
                   from: workspace.smsFrom,
                   sid: workspace.smsAccountSid,
@@ -558,7 +558,7 @@ export class MessageStepProcessor extends ProcessorBase {
                     filteredTags
                   ),
                   to:
-                    job.data.customer.phPhoneNumber || job.data.customer.phone,
+                    job.data.customer.user_attributes.phPhoneNumber || job.data.customer.user_attributes.phone,
                   token: workspace.smsAuthToken,
                   trackingEmail: email,
                   session: job.data.session,
@@ -572,7 +572,7 @@ export class MessageStepProcessor extends ProcessorBase {
                   template,
                   filteredTags,
                   stepId: job.data.step.id,
-                  customerId: job.data.customer._id,
+                  customerId: job.data.customer.id,
                   accountId: job.data.owner.id,
                   stepDepth: job.data.stepDepth,
                 };
@@ -599,7 +599,7 @@ export class MessageStepProcessor extends ProcessorBase {
               {
                 stepId: job.data.step.id,
                 createdAt: new Date(),
-                customerId: job.data.customer._id,
+                customerId: job.data.customer.id.toString(),
                 event: 'aborted',
                 eventProvider: ClickHouseEventProvider.TRACKER,
                 messageId: job.data.step.metadata.humanReadableName,
@@ -635,7 +635,7 @@ export class MessageStepProcessor extends ProcessorBase {
               {
                 stepId: job.data.step.id,
                 createdAt: new Date(),
-                customerId: job.data.customer._id,
+                customerId: job.data.customer.id.toString(),
                 event: 'sent',
                 eventProvider: ClickHouseEventProvider.TRACKER,
                 messageId: job.data.step.metadata.humanReadableName,
@@ -666,7 +666,7 @@ export class MessageStepProcessor extends ProcessorBase {
           await this.stepsService.requeueMessage(
             job.data.owner,
             job.data.step,
-            job.data.customer._id,
+            job.data.customer.id.toString(),
             requeueTime,
             job.data.session
           );

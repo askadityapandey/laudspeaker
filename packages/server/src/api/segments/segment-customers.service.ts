@@ -2,12 +2,12 @@ import { Logger, Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, FindManyOptions, QueryRunner, Repository } from 'typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
-import { CustomerDocument } from '../customers/schemas/customer.schema';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Readable } from 'node:stream';
 import * as copyFrom from 'pg-copy-streams';
 import { SegmentCustomers } from './entities/segment-customers.entity';
 import { Segment } from './entities/segment.entity';
+import { Customer } from '../customers/entities/customer.entity';
 
 const LOCATION_LOCK_TIMEOUT_MS = +process.env.LOCATION_LOCK_TIMEOUT_MS;
 
@@ -20,7 +20,7 @@ export class SegmentCustomersService {
     public segmentCustomersRepository: Repository<SegmentCustomers>,
     @InjectRepository(Account)
     public accountRepository: Repository<Account>
-  ) {}
+  ) { }
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
@@ -93,14 +93,14 @@ export class SegmentCustomersService {
    */
   async create(
     segment: Segment,
-    customer: CustomerDocument,
+    customer: Customer,
     session: string,
     account: Account,
     queryRunner?: QueryRunner
   ) {
     this.log(
       JSON.stringify({
-        info: `Adding customer ${customer._id} to segment ${segment.id}`,
+        info: `Adding customer ${customer.id} to segment ${segment.id}`,
       }),
       this.create.name,
       session,
@@ -115,20 +115,20 @@ export class SegmentCustomersService {
         where: {
           segment: { id: segment.id },
           workspace: { id: workspace.id },
-          customerId: customer._id,
+          customer: { id: customer.id },
         },
       });
 
       if (location)
         throw new Error(
-          `Customer ${customer._id} already a part of segment ${segment.id}`
+          `Customer ${customer.id} already a part of segment ${segment.id}`
         );
 
       // Step 2: Create new journey Location row, add time that user entered the journey
       await queryRunner.manager.save(SegmentCustomers, {
         segment: { id: segment.id },
         workspace,
-        customerId: customer._id,
+        customer: { id: customer.id },
         segmentEntry: Date.now(),
       });
     } else {
@@ -136,17 +136,17 @@ export class SegmentCustomersService {
         where: {
           segment: { id: segment.id },
           workspace: { id: workspace.id },
-          customerId: customer._id,
+          customer: { id: customer.id },
         },
       });
       if (location)
         throw new Error(
-          `Customer ${customer._id} already a part of segment ${segment.id}`
+          `Customer ${customer.id} already a part of segment ${segment.id}`
         );
       await this.segmentCustomersRepository.save({
         segment: { id: segment.id },
         workspace,
-        customerId: customer._id,
+        customer: { id: customer.id },
         segmentEntry: Date.now(),
       });
     }
@@ -154,14 +154,14 @@ export class SegmentCustomersService {
 
   async deleteFromSingleSegment(
     segment: Segment,
-    customer: CustomerDocument,
+    customer: Customer,
     session: string,
     account: Account,
     queryRunner?: QueryRunner
   ) {
     this.log(
       JSON.stringify({
-        info: `Removing customer ${customer._id} from segment ${segment.id}`,
+        info: `Removing customer ${customer.id} from segment ${segment.id}`,
       }),
       this.deleteFromSingleSegment.name,
       session,
@@ -176,20 +176,20 @@ export class SegmentCustomersService {
         where: {
           segment: { id: segment.id },
           workspace: { id: workspace.id },
-          customerId: customer._id,
+          customer: { id: customer.id },
         },
       });
 
       if (location)
         throw new Error(
-          `Customer ${customer._id} already a part of segment ${segment.id}`
+          `Customer ${customer.id} already a part of segment ${segment.id}`
         );
 
       // Step 2: Create new journey Location row, add time that user entered the journey
       await queryRunner.manager.save(SegmentCustomers, {
         segment: { id: segment.id },
         workspace,
-        customerId: customer._id,
+        customer: { id: customer.id },
         segmentEntry: Date.now(),
       });
     } else {
@@ -197,17 +197,17 @@ export class SegmentCustomersService {
         where: {
           segment: { id: segment.id },
           workspace: { id: workspace.id },
-          customerId: customer._id,
+          customer: { id: customer.id },
         },
       });
       if (location)
         throw new Error(
-          `Customer ${customer._id} already a part of segment ${segment.id}`
+          `Customer ${customer.id} already a part of segment ${segment.id}`
         );
       await this.segmentCustomersRepository.save({
         segment: { id: segment.id },
         workspace,
-        customerId: customer._id,
+        customer: { id: customer.id },
         segmentEntry: Date.now(),
       });
     }
@@ -215,14 +215,14 @@ export class SegmentCustomersService {
 
   async deleteFromAllSegments(
     segment: Segment,
-    customer: CustomerDocument,
+    customer: Customer,
     session: string,
     account: Account,
     queryRunner?: QueryRunner
   ) {
     this.log(
       JSON.stringify({
-        info: `Removing customer ${customer._id} from segment ${segment.id}`,
+        info: `Removing customer ${customer.id} from segment ${segment.id}`,
       }),
       this.deleteFromAllSegments.name,
       session,
@@ -237,20 +237,20 @@ export class SegmentCustomersService {
         where: {
           segment: { id: segment.id },
           workspace: { id: workspace.id },
-          customerId: customer._id,
+          customer: { id: customer.id },
         },
       });
 
       if (location)
         throw new Error(
-          `Customer ${customer._id} already a part of segment ${segment.id}`
+          `Customer ${customer.id} already a part of segment ${segment.id}`
         );
 
       // Step 2: Create new journey Location row, add time that user entered the journey
       await queryRunner.manager.save(SegmentCustomers, {
         segment: { id: segment.id },
         workspace,
-        customerId: customer._id,
+        customer: { id: customer.id },
         segmentEntry: Date.now(),
       });
     } else {
@@ -258,17 +258,17 @@ export class SegmentCustomersService {
         where: {
           segment: { id: segment.id },
           workspace: { id: workspace.id },
-          customerId: customer._id,
+          customer: { id: customer.id },
         },
       });
       if (location)
         throw new Error(
-          `Customer ${customer._id} already a part of segment ${segment.id}`
+          `Customer ${customer.id} already a part of segment ${segment.id}`
         );
       await this.segmentCustomersRepository.save({
         segment: { id: segment.id },
         workspace,
-        customerId: customer._id,
+        customer: { id: customer.id },
         segmentEntry: Date.now(),
       });
     }
@@ -462,7 +462,7 @@ export class SegmentCustomersService {
       where: {
         // workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
         segment: segment,
-        customerId: customer,
+        customer: { id: parseInt(customer) },
       },
     };
     let found: SegmentCustomers;

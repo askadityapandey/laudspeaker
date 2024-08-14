@@ -13,8 +13,6 @@ import { Segment, SegmentType } from '../entities/segment.entity';
 import { SegmentsService } from '../segments.service';
 import { CustomersService } from '../../customers/customers.service';
 import { CreateSegmentDTO } from '../dto/create-segment.dto';
-import { InjectConnection } from '@nestjs/mongoose';
-import mongoose from 'mongoose';
 import { SegmentCustomers } from '../entities/segment-customers.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UpdateSegmentDTO } from '../dto/update-segment.dto';
@@ -46,7 +44,6 @@ export class SegmentUpdateProcessor extends ProcessorBase {
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(forwardRef(() => CustomersService))
     private customersService: CustomersService,
-    @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(SegmentCustomersService)
     private segmentCustomersService: SegmentCustomersService,
     @InjectRepository(SegmentCustomers)
@@ -432,25 +429,15 @@ export class SegmentUpdateProcessor extends ProcessorBase {
         segment: { id: segment.id },
       });
 
-      for (const { customerId } of forDelete) {
-        const customer = await this.customersService.CustomerModel.findById(
-          customerId
-        ).exec();
+      for (const { customer } of forDelete) {
         await this.segmentsService.updateAutomaticSegmentCustomerInclusion(
-          job.data.account,
-          customer,
-          job.data.session
-        );
-        await this.customersService.recheckDynamicInclusion(
           job.data.account,
           customer,
           job.data.session
         );
       }
 
-      const amount = await this.customersService.CustomerModel.count({
-        workspaceId: job.data.workspace.id,
-      });
+      const amount = await this.customersService.countCustomersInWorkspace(job.data.workspace.id);
 
       const batchOptions = {
         current: 0,
@@ -481,17 +468,6 @@ export class SegmentUpdateProcessor extends ProcessorBase {
         segment: { id: segment.id },
       });
 
-      for (const { customerId } of records) {
-        const customer = await this.customersService.CustomerModel.findById(
-          customerId
-        ).exec();
-        await this.customersService.recheckDynamicInclusion(
-          job.data.account,
-          customer,
-          job.data.session
-        );
-      }
-
       await queryRunner.manager.save(Segment, {
         ...segment,
         isUpdating: false,
@@ -508,7 +484,6 @@ export class SegmentUpdateProcessor extends ProcessorBase {
       err = e;
     } finally {
       await queryRunner.release();
-      // await this.customerChangeQueue.resume();
       if (err) throw err;
     }
   }

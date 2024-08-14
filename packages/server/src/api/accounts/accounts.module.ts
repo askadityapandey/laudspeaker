@@ -11,19 +11,12 @@ import { JourneysModule } from '../journeys/journeys.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { StepsModule } from '../steps/steps.module';
 import { MongooseModule } from '@nestjs/mongoose';
-import {
-  CustomerKeys,
-  CustomerKeysSchema,
-} from '../customers/schemas/customer-keys.schema';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { Organization } from '../organizations/entities/organization.entity';
 import { OrganizationPlan } from '../organizations/entities/organization-plan.entity';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([
-      { name: CustomerKeys.name, schema: CustomerKeysSchema },
-    ]),
     TypeOrmModule.forFeature([
       Account,
       Workspaces,

@@ -8,12 +8,6 @@ import {
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { StepType } from '../types/step.interface';
 import { Step } from '../entities/step.entity';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import {
-  Customer,
-  CustomerDocument,
-} from '@/api/customers/schemas/customer.schema';
 import { Account } from '@/api/accounts/entities/accounts.entity';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
@@ -24,6 +18,7 @@ import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity
 import { CacheService } from '@/common/services/cache.service';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { Customer } from '../../customers/entities/customer.entity';
 
 @Injectable()
 @Processor('exit.step')
@@ -31,7 +26,6 @@ export class ExitStepProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectModel(Customer.name) public customerModel: Model<CustomerDocument>,
     @Inject(JourneyLocationsService)
     private journeyLocationsService: JourneyLocationsService
   ) {
@@ -103,7 +97,7 @@ export class ExitStepProcessor extends ProcessorBase {
         step: Step;
         owner: Account;
         journey: Journey;
-        customer: CustomerDocument;
+        customer: Customer;
         location: JourneyLocation;
         session: string;
         event?: string;

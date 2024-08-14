@@ -5,7 +5,6 @@ import { Step } from './entities/step.entity';
 import { CreateStepDto } from './dto/create-step.dto';
 import { UpdateStepDto } from './dto/update-step.dto';
 import { Account } from '../accounts/entities/accounts.entity';
-import { CustomerDocument } from '../customers/schemas/customer.schema';
 import Errors from '../../shared/utils/errors';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Queue } from 'bullmq';
@@ -14,8 +13,6 @@ import { Requeue } from './entities/requeue.entity';
 import { JourneyLocationsService } from '../journeys/journey-locations.service';
 import { CustomersService } from '../customers/customers.service';
 import { Journey } from '../journeys/entities/journey.entity';
-import { InjectConnection } from '@nestjs/mongoose';
-import mongoose, { ClientSession } from 'mongoose';
 import * as Sentry from '@sentry/node';
 import {
   ClickHouseTable,
@@ -34,7 +31,6 @@ export class StepsService {
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectConnection() private readonly connection: mongoose.Connection,
     @InjectRepository(Step)
     public stepsRepository: Repository<Step>,
     @InjectRepository(Requeue)
@@ -187,7 +183,7 @@ export class StepsService {
         await this.journeyLocationsService.createAndLockBulk(
           journey.id,
           customers.map((document) => {
-            return document._id.toString();
+            return document.id.toString();
           }),
           startStep,
           session,

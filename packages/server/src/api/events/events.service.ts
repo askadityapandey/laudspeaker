@@ -7,12 +7,8 @@ import {
   HttpStatus,
   BadRequestException,
 } from '@nestjs/common';
-import { Correlation, CustomersService } from '../customers/customers.service';
-import { CustomerDocument } from '../customers/schemas/customer.schema';
-import { AttributeType } from '../customers/schemas/customer-keys.schema';
+import { CustomersService } from '../customers/customers.service';
 import {
-  EventsTable,
-  CustomEventTable,
   JobTypes,
 } from './interfaces/event.interface';
 import { Account } from '../accounts/entities/accounts.entity';
@@ -22,7 +18,6 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { StatusJobDto } from './dto/status-event.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Job, Queue, UnrecoverableError } from 'bullmq';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import mongoose, { ClientSession, Model, SortOrder } from 'mongoose';
 import { EventDocument, Event } from './schemas/event.schema';
@@ -44,7 +39,6 @@ import {
 } from './schemas/posthog-event.schema';
 import { JourneysService } from '../journeys/journeys.service';
 import admin from 'firebase-admin';
-import { Journey } from '../journeys/entities/journey.entity';
 import { CustomerPushTest } from './dto/customer-push-test.dto';
 import {
   PlatformSettings,
@@ -54,10 +48,6 @@ import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { ProviderType } from './processors/events.preprocessor';
 import { SendFCMDto } from './dto/send-fcm.dto';
 import { IdentifyCustomerDTO } from './dto/identify-customer.dto';
-import {
-  CustomerKeys,
-  CustomerKeysDocument,
-} from '../customers/schemas/customer-keys.schema';
 import { SetCustomerPropsDTO } from './dto/set-customer-props.dto';
 import { MobileBatchDto } from './dto/mobile-batch.dto';
 import e from 'express';
@@ -71,6 +61,9 @@ import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
+import { Customer } from '../customers/entities/customer.entity';
+import { CustomerKeysService } from '../customers/customer-keys.service';
+import { AttributeTypeName } from '../customers/entities/attribute-type.entity';
 
 @Injectable()
 export class EventsService {
@@ -80,10 +73,10 @@ export class EventsService {
     private dataSource: DataSource,
     @Inject(forwardRef(() => CustomersService))
     private readonly customersService: CustomersService,
+    @Inject(forwardRef(() => CustomerKeysService))
+    private readonly customerKeysService: CustomerKeysService,
     @Inject(forwardRef(() => WebhooksService))
     private readonly webhooksService: WebhooksService,
-    @InjectModel(CustomerKeys.name)
-    public CustomerKeysModel: Model<CustomerKeysDocument>,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
     @InjectModel(Event.name)
@@ -97,8 +90,6 @@ export class EventsService {
     @InjectModel(PosthogEventType.name)
     private PosthogEventTypeModel: Model<PosthogEventTypeDocument>,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @Inject(forwardRef(() => JourneysService))
-    private readonly journeysService: JourneysService
   ) {
     this.tagEngine.registerTag('api_call', {
       parse(token) {
@@ -733,15 +724,8 @@ export class EventsService {
   }
 
   //to do need to specify how this is
-  async getEventsByMongo(mongoQuery: any, customer: CustomerDocument) {
-    //console.log("In getEvents by mongo");
-
-    // const tehevents = await this.EventModel.find(mongoQuery).exec();
-    //console.log("events are", JSON.stringify(tehevents, null, 2))
-
-    //console.log("events are", JSON.stringify(await this.EventModel.find(mongoQuery).exec(),null, 2));
+  async getEventsByMongo(mongoQuery: any, customer: Customer) {
     const count = await this.EventModel.count(mongoQuery).exec();
-    //console.log("count is", count);
     return count;
   }
 
@@ -863,148 +847,26 @@ export class EventsService {
     const organization = auth.account.teams[0].organization;
     const workspace = auth.workspace;
 
-    let customer = await this.customersService.CustomerModel.findOne({
-      _id: body.customerId,
-      workspaceId: workspace.id,
-    });
+    let customer = await this.customersService.findByCustomerId(auth.account, body.customerId);
 
     if (!customer) {
-      this.error('Customer not found', this.sendFCMToken.name, session);
+      this.warn('Customer not found, creating anonymous customer', this.sendFCMToken.name, session);
 
       await this.customersService.checkCustomerLimit(organization);
 
-      customer = await this.customersService.CustomerModel.create({
-        isAnonymous: true,
-        workspaceId: workspace.id,
-      });
+      customer = await this.customersService.createAnonymous(auth.account);
     }
 
-    await this.customersService.CustomerModel.updateOne(
-      { _id: customer._id },
+    await this.customersService.updateCustomer(auth.account, customer.id, 'user_attributes',
       {
         [body.type === PushPlatforms.ANDROID
           ? 'androidDeviceToken'
           : 'iosDeviceToken']: body.token,
-      }
+      },
+      session
     );
 
     return customer._id;
-  }
-
-  async identifyCustomer(
-    auth: { account: Account; workspace: Workspaces },
-    body: IdentifyCustomerDTO,
-    session: string
-  ) {
-    if (!body.__PrimaryKey)
-      throw new HttpException(
-        'No Primary Key given',
-        HttpStatus.NOT_ACCEPTABLE
-      );
-
-    if (!auth?.account || !body?.customerId) {
-      return;
-    }
-
-    const organization = auth.account.teams[0].organization;
-    const workspace = auth.workspace;
-
-    let customer = await this.customersService.CustomerModel.findOne({
-      _id: body.customerId,
-      workspaceId: workspace.id,
-    });
-
-    if (!customer) {
-      await this.customersService.checkCustomerLimit(organization);
-
-      this.error(
-        'Invalid customer id. Creating new anonymous customer...',
-        this.identifyCustomer.name,
-        session
-      );
-      customer = await this.customersService.CustomerModel.create({
-        _id: body.customerId, // Assuming body.customerId is a valid UUID and unique
-        workspaceId: workspace.id,
-        // Set other necessary fields for a new customer
-        isAnonymous: true, // or false, as appropriate for your use case
-        // Include any other properties you need to initialize for a new customer
-      });
-    }
-
-    if (!customer.isAnonymous) {
-      throw new HttpException(
-        'Failed to identify: already identified',
-        HttpStatus.NOT_ACCEPTABLE
-      );
-    }
-
-    const primaryKey = await this.CustomerKeysModel.findOne({
-      workspaceId: workspace.id,
-      isPrimary: true,
-    });
-
-    const identifiedCustomer =
-      await this.customersService.CustomerModel.findOne({
-        workspaceId: workspace.id,
-        [primaryKey.key]: body.__PrimaryKey,
-      });
-
-    if (identifiedCustomer) {
-      await this.customersService.deleteEverywhere(customer._id);
-
-      await customer.deleteOne();
-
-      return identifiedCustomer._id;
-    } else {
-      await this.customersService.CustomerModel.findByIdAndUpdate(
-        customer._id,
-        {
-          ...customer.toObject(),
-          ...body.optionalProperties,
-          //...uniqueProperties,
-          [primaryKey.key]: body.__PrimaryKey,
-          workspaceId: workspace.id,
-          isAnonymous: false,
-        }
-      );
-    }
-
-    return customer._id;
-  }
-
-  async setCustomerProperties(
-    auth: { account: Account; workspace: Workspaces },
-    body: SetCustomerPropsDTO,
-    session: string
-  ) {
-    if (!auth.account || !body.customerId) {
-      return;
-    }
-
-    const workspace = auth.workspace;
-
-    const customer = await this.customersService.CustomerModel.findOne({
-      _id: body.customerId,
-      workspaceId: workspace.id,
-    });
-
-    if (!customer || customer.isAnonymous) {
-      this.error(
-        'Invalid customer id. Please call identify first',
-        this.setCustomerProperties.name,
-        session
-      );
-      throw new HttpException(
-        'Invalid customer id. Please call identify first',
-        HttpStatus.NOT_FOUND
-      );
-    }
-
-    await this.customersService.CustomerModel.findByIdAndUpdate(customer._id, {
-      ...customer.toObject(),
-      ...body.optionalProperties,
-      workspaceId: workspace.id,
-    });
   }
 
   async sendTestPushByCustomer(account: Account, body: CustomerPushTest) {
@@ -1021,7 +883,7 @@ export class EventsService {
       );
     }
 
-    const customer = await this.customersService.findById(
+    const customer = await this.customersService.findbycustomer(
       account,
       body.customerId
     );
@@ -1116,28 +978,28 @@ export class EventsService {
               android:
                 platform === PushPlatforms.ANDROID
                   ? {
-                      notification: {
-                        sound: 'default',
-                        imageUrl: settings?.image?.imageSrc,
-                      },
-                    }
+                    notification: {
+                      sound: 'default',
+                      imageUrl: settings?.image?.imageSrc,
+                    },
+                  }
                   : undefined,
               apns:
                 platform === PushPlatforms.IOS
                   ? {
-                      payload: {
-                        aps: {
-                          badge: 1,
-                          sound: 'default',
-                          category: settings.clickBehavior?.type,
-                          contentAvailable: true,
-                          mutableContent: true,
-                        },
+                    payload: {
+                      aps: {
+                        badge: 1,
+                        sound: 'default',
+                        category: settings.clickBehavior?.type,
+                        contentAvailable: true,
+                        mutableContent: true,
                       },
-                      fcmOptions: {
-                        imageUrl: settings?.image?.imageSrc,
-                      },
-                    }
+                    },
+                    fcmOptions: {
+                      imageUrl: settings?.image?.imageSrc,
+                    },
+                  }
                   : undefined,
               data: body.pushObject.fields.reduce((acc, field) => {
                 acc[field.key] = field.value;
@@ -1245,18 +1107,17 @@ export class EventsService {
     }
 
     // Retrieve all CustomerKeys for the workspace
-    const customerKeys = await this.CustomerKeysModel.find({ workspaceId });
+    const customerKeys = await this.customerKeysService.getAll(workspaceId, session);
 
-    const customersPrimaryKey = customerKeys.find((k) => k.isPrimary);
+    const customersPrimaryKey = customerKeys.find((k) => k.is_primary);
 
     if (!customersPrimaryKey) {
-      this.debug(
+      this.warn(
         `Primary key not found for workspace --set a primary key first`,
         this.handleSet.name,
         session,
-        auth.account.id
+        auth.account.email
       );
-      // Handle the absence of a primary key definition
       return;
     }
 
@@ -1272,11 +1133,11 @@ export class EventsService {
     // Exclude the primary key and 'other_ids' from updates
     const filteredPayload = {};
     Object.keys(event.payload).forEach((key) => {
-      if (key !== customersPrimaryKey.key && key !== 'other_ids') {
-        const customerKey = customerKeys.find((k) => k.key === key);
+      if (key !== customersPrimaryKey.name && key !== 'other_ids') {
+        const customerKey = customerKeys.find((k) => k.name === key);
         if (
           customerKey &&
-          this.isValidType(event.payload[key], customerKey.type)
+          this.isValidType(event.payload[key], customerKey.attribute_type.name)
         ) {
           filteredPayload[key] = event.payload[key];
         } else {
@@ -1287,11 +1148,11 @@ export class EventsService {
       }
     });
 
-    // Update the customer with validated and filtered payload
-    await this.customersService.CustomerModel.updateOne(
-      { _id: customer._id },
-      { $set: filteredPayload },
-      { new: true }
+    await this.customersService.updateCustomer(auth.account, customer.id, 'user_attributes',
+      {
+        ...filteredPayload
+      },
+      session
     );
 
     await this.EventModel.create({
@@ -1307,53 +1168,24 @@ export class EventsService {
   }
 
   async deduplication(
-    customer: CustomerDocument,
+    customer: Customer,
     correlationValue: string | string[],
     session: string,
     account: Account
   ) {
-    this.debug(
-      `customer: ${JSON.stringify(customer)},
-      correlationValue: ${JSON.stringify(correlationValue)}`,
-      this.deduplication.name,
-      session,
-      account.id
-    );
 
     let updateResult;
 
     // Step 1: Check if the customer's _id is not equal to the given correlation value
-    if (customer._id.toString() !== correlationValue) {
+    if (customer.id.toString() !== correlationValue) {
       // Step 2: Update the customer's other_ids array with the correlation value if it doesn't already have it
-      updateResult = await this.customersService.CustomerModel.updateOne(
-        {
-          _id: customer._id,
-          other_ids: { $ne: correlationValue }, // Ensures we don't add duplicates
-        },
-        {
-          $push: { other_ids: correlationValue },
-        }
-      );
-
-      //console.log('Update result:', updateResult);
+      updateResult = await this.customersService.updateCustomer(account, customer.id, 'other_ids',
+        (typeof correlationValue) === 'string' ? [correlationValue, ...customer.other_ids] : [...correlationValue, ...customer.other_ids],
+        session);
     }
 
     // Additional Step: Retrieve the potential duplicate customer to compare deviceTokenSetAt for both device types
-    const duplicateCustomer = await this.customersService.CustomerModel.findOne(
-      {
-        _id: correlationValue,
-      }
-    );
-
-    this.debug(
-      `customer: ${JSON.stringify(customer)},
-      correlationValue: ${JSON.stringify(correlationValue)},
-      updateResult: ${JSON.stringify(updateResult)},
-      duplicateCustomer: ${JSON.stringify(duplicateCustomer)}`,
-      this.deduplication.name,
-      session,
-      account.id
-    );
+    const duplicateCustomer = await this.customersService.findOneByUUID(account, correlationValue[0], session);
 
     // Determine which deviceTokenSetAt fields to compare
     const deviceTypes = ['ios', 'android'];
@@ -1376,45 +1208,17 @@ export class EventsService {
       }
     }
 
-    this.debug(
-      `customer: ${JSON.stringify(customer)},
-      correlationValue: ${JSON.stringify(correlationValue)},
-      updateResult: ${JSON.stringify(updateResult)},
-      duplicateCustomer: ${JSON.stringify(duplicateCustomer)},
-      updateFields: ${JSON.stringify(updateFields)}`,
-      this.deduplication.name,
-      session,
-      account.id
-    );
-
     // If there are fields to update (i.e., a more recent token was found), perform the update
     if (Object.keys(updateFields).length > 0) {
-      await this.customersService.CustomerModel.updateOne(
+      await this.customersService.updateCustomer(account, customer.id, 'user_attributes',
         {
-          _id: customer._id,
+          ...updateFields,
         },
-        {
-          $set: updateFields,
-        }
-      );
+        session);
     }
 
     // Step 3: Delete any other customers that have an _id matching the correlation value
-    const deleteResult = await this.customersService.CustomerModel.deleteMany({
-      _id: correlationValue,
-    });
-
-    this.debug(
-      `customer: ${JSON.stringify(customer)},
-      correlationValue: ${JSON.stringify(correlationValue)},
-      updateResult: ${JSON.stringify(updateResult)},
-      duplicateCustomer: ${JSON.stringify(duplicateCustomer)},
-      updateFields: ${JSON.stringify(updateFields)},
-      deleteResult: ${JSON.stringify(deleteResult)}`,
-      this.deduplication.name,
-      session,
-      account.id
-    );
+    const deleteResult = await this.customersService.deleteByUUID(account, correlationValue,);
   }
 
   async findOrCreateCustomer(
@@ -1464,10 +1268,10 @@ export class EventsService {
     const workspaceId = auth.workspace.id;
 
     // Retrieve all CustomerKeys for the workspace to validate and filter updates
-    const customerKeys = await this.CustomerKeysModel.find({ workspaceId });
+    const customerKeys = await this.customerKeysService.getAll(workspaceId, session);
 
     // Find the primary key among the CustomerKeys
-    const customersPrimaryKey = customerKeys.find((k) => k.isPrimary);
+    const customersPrimaryKey = customerKeys.find((k) => k.is_primary);
 
     if (!customersPrimaryKey) {
       this.debug(
@@ -1481,8 +1285,8 @@ export class EventsService {
     }
 
     // Now you have the primary key's name and type
-    const primaryKeyName = customersPrimaryKey.key;
-    const primaryKeyType = customersPrimaryKey.type;
+    const primaryKeyName = customersPrimaryKey.name;
+    const primaryKeyType = customersPrimaryKey.attribute_type.name;
 
     // Check if the primary key value matches the expected type
     if (!this.isValidType(primaryKeyValue, primaryKeyType)) {
@@ -1546,7 +1350,7 @@ export class EventsService {
         // Check and add $anon_distinct_id to other_ids if not already present and valid and not equal to the customer's own _id
         const isValid = this.isValidType(
           event.payload[key],
-          AttributeType.STRING
+          AttributeTypeName.STRING
         ); // Assuming $anon_distinct_id should always be a string
         const anonId = event.payload[key];
         if (
@@ -1559,10 +1363,10 @@ export class EventsService {
         }
       } else {
         // Handle other keys normally
-        const customerKey = customerKeys.find((k) => k.key === key);
+        const customerKey = customerKeys.find((k) => k.name === key);
         if (
           customerKey &&
-          this.isValidType(event.payload[key], customerKey.type)
+          this.isValidType(event.payload[key], customerKey.attribute_type.name)
         ) {
           filteredPayload[key] = event.payload[key];
         } else {
@@ -1570,18 +1374,18 @@ export class EventsService {
       }
     });
 
-    // Assuming the merging logic or creation of a new customer has been handled before this
-    // Update the customer with validated and filtered payload, including handling of arrays
-    await this.customersService.CustomerModel.updateOne(
-      { _id: customer._id },
+    await this.customersService.updateCustomer(auth.account, customer.id, 'other_ids',
       {
-        $set: filteredPayload,
-        ...(otherIdsUpdates.length > 0 && {
-          $addToSet: { other_ids: { $each: otherIdsUpdates } },
-        }),
+        ...otherIdsUpdates,
+        ...customer.other_ids
       },
-      { upsert: true }
-    );
+      session);
+
+    await this.customersService.updateCustomer(auth.account, customer.id, 'user_attributes',
+      {
+        ...filteredPayload,
+      },
+      session);
 
     await this.EventModel.create({
       event: event.event,
@@ -1590,7 +1394,7 @@ export class EventsService {
       createdAt: new Date().toISOString(),
     });
 
-    return customer._id;
+    return customer.id;
   }
 
   async handleFCM(
@@ -1619,7 +1423,6 @@ export class EventsService {
         session,
         auth.account.id
       );
-      // Optionally, handle the error condition here
       return;
     }
 
@@ -1635,45 +1438,33 @@ export class EventsService {
 
     // Update the customer with the provided device token
     const updatedCustomer =
-      await this.customersService.CustomerModel.findOneAndUpdate(
-        { _id: customer._id, workspaceId },
+      await this.customersService.updateCustomer(auth.account, customer.id, 'user_attributes',
         {
-          $set: {
-            [deviceTokenField]: deviceTokenValue,
-            [deviceTokenSetAtField]: new Date(), // Dynamically sets the appropriate deviceTokenSetAt field
-          },
+          [deviceTokenField]: deviceTokenValue,
+          [deviceTokenSetAtField]: new Date(),
         },
-        { new: true }
+        session
       );
-
-    this.debug(
-      `FCM event processed for customer ${customerId}, Device Token Field: ${deviceTokenField}`,
-      this.handleFCM.name,
-      session,
-      auth.account.id
-    );
 
     return updatedCustomer;
   }
 
-  isValidType(value: any, type: AttributeType): boolean {
+  isValidType(value: any, type: AttributeTypeName): boolean {
     switch (type) {
-      case AttributeType.STRING:
+      case AttributeTypeName.STRING:
         return typeof value === 'string';
-      case AttributeType.NUMBER:
+      case AttributeTypeName.NUMBER:
         return typeof value === 'number';
-      case AttributeType.BOOLEAN:
+      case AttributeTypeName.BOOLEAN:
         return typeof value === 'boolean';
-      case AttributeType.EMAIL:
-        // Simple regex for email validation, consider a library for production use
+      case AttributeTypeName.EMAIL:
         return typeof value === 'string' && /^\S+@\S+\.\S+$/.test(value);
-      case AttributeType.DATE:
-      case AttributeType.DATE_TIME:
-        // Check if it's a valid Date
+      case AttributeTypeName.DATE:
+      case AttributeTypeName.DATE_TIME:
         return !isNaN(Date.parse(value));
-      case AttributeType.ARRAY:
+      case AttributeTypeName.ARRAY:
         return Array.isArray(value);
-      case AttributeType.OBJECT:
+      case AttributeTypeName.OBJECT:
         return (
           typeof value === 'object' && !Array.isArray(value) && value !== null
         );

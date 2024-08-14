@@ -4,7 +4,6 @@ import {
 import { Job, MetricsTime, Queue, UnrecoverableError } from 'bullmq';
 import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { Account } from '../../accounts/entities/accounts.entity';
-import { CustomerDocument } from '../../customers/schemas/customer.schema';
 import { CustomersService } from '../../customers/customers.service';
 import { DataSource, Repository } from 'typeorm';
 import { Step } from '../../steps/entities/step.entity';
@@ -15,8 +14,6 @@ import {
   StepType,
 } from '../../steps/types/step.interface';
 import { Journey } from '../../journeys/entities/journey.entity';
-import { PosthogTriggerParams } from '../../workflows/entities/workflow.entity';
-import { AudiencesHelper } from '../../audiences/audiences.helper';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { WebsocketGateway } from '@/websockets/websocket.gateway';
 import * as _ from 'lodash';
@@ -28,11 +25,23 @@ import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import { StepsHelper } from '@/api/steps/steps.helper';
+import { Customer } from '@/api/customers/entities/customer.entity';
 
 export enum EventType {
   EVENT = 'event',
   ATTRIBUTE = 'attribute_change',
   MESSAGE = 'message',
+}
+export enum PosthogTriggerParams {
+  Track = 'track',
+  Page = 'page',
+  Rageclick = 'Rageclick',
+  Typed = 'Typed (Change)',
+  Autocapture = 'Autocapture (Click)',
+  Submit = 'Submit',
+  Pageview = 'Pageview',
+  Pageleave = 'Pageleave',
 }
 
 /**
@@ -67,7 +76,7 @@ export class EventsProcessor extends ProcessorBase {
     private dataSource: DataSource,
     @Inject(forwardRef(() => CustomersService))
     private readonly customersService: CustomersService,
-    private readonly audiencesHelper: AudiencesHelper,
+    private readonly stepsHelper: StepsHelper,
     @Inject(forwardRef(() => WebsocketGateway))
     private websocketGateway: WebsocketGateway,
     @Inject(JourneyLocationsService)
@@ -167,7 +176,7 @@ export class EventsProcessor extends ProcessorBase {
         account: Account;
         //workspace: Workspace;
         journey: Journey;
-        customer: CustomerDocument;
+        customer: Customer;
         event: any;
         session: string;
       },
@@ -345,11 +354,11 @@ export class EventsProcessor extends ProcessorBase {
                 const matches: boolean = ['exists', 'doesNotExist'].includes(
                   comparisonType
                 )
-                  ? this.audiencesHelper.operableCompare(
+                  ? this.stepsHelper.operableCompare(
                       job.data.event?.payload?.context?.page?.url,
                       comparisonType
                     )
-                  : await this.audiencesHelper.conditionalCompare(
+                  : await this.stepsHelper.conditionalCompare(
                       job.data.event?.payload?.context?.page?.url,
                       value,
                       comparisonType
@@ -359,11 +368,11 @@ export class EventsProcessor extends ProcessorBase {
                 const matches = ['exists', 'doesNotExist'].includes(
                   comparisonType
                 )
-                  ? this.audiencesHelper.operableCompare(
+                  ? this.stepsHelper.operableCompare(
                       job.data.event?.payload?.[key],
                       comparisonType
                     )
-                  : await this.audiencesHelper.conditionalCompare(
+                  : await this.stepsHelper.conditionalCompare(
                       job.data.event?.payload?.[key],
                       value,
                       comparisonType
@@ -387,7 +396,7 @@ export class EventsProcessor extends ProcessorBase {
                 (el) => el?.order === order
               )?.[filter === ElementConditionFilter.TEXT ? 'text' : 'tag_name'];
               const matches: boolean =
-                await this.audiencesHelper.conditionalCompare(
+                await this.stepsHelper.conditionalCompare(
                   elementToCompare,
                   value,
                   comparisonType
@@ -509,7 +518,7 @@ export class EventsProcessor extends ProcessorBase {
         this.warn(
           `${JSON.stringify({
             warning: 'Customer not in step',
-            customerID: job.data.customer._id,
+            customerID: job.data.customer.id,
             stepToQueue,
           })}`,
           this.process.name,
@@ -520,7 +529,7 @@ export class EventsProcessor extends ProcessorBase {
         // a tracker event
         if (job.data.event.source === AnalyticsProviderTypes.TRACKER) {
           await this.websocketGateway.sendProcessed(
-            job.data.customer._id,
+            job.data.customer.id.toString(),
             job.data.event.event,
             job.data.event.payload.trackerId
           );
@@ -537,7 +546,7 @@ export class EventsProcessor extends ProcessorBase {
       );
       if (job.data.event.source === AnalyticsProviderTypes.TRACKER) {
         await this.websocketGateway.sendProcessed(
-          job.data.customer._id,
+          job.data.customer.id.toString(),
           job.data.event.event,
           job.data.event.payload.trackerId
         );
