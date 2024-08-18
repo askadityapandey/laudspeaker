@@ -33,6 +33,7 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
 import { CacheService } from '@/common/services/cache.service';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { EventsPostProcessor } from './processors/events.postprocessor';
+import { Customer } from '../customers/entities/customer.entity';
 
 function getProvidersList() {
   let providerList: Array<any> = [
@@ -60,6 +61,7 @@ function getProvidersList() {
   imports: [
     TypeOrmModule.forFeature([
       Account,
+      Customer,
       Installation,
       State,
       Template,

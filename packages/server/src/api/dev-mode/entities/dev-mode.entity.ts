@@ -1,5 +1,5 @@
 import { Account } from '@/api/accounts/entities/accounts.entity';
-import { Customer } from '@/api/customers/schemas/customer.schema';
+import { Customer } from '@/api/customers/entities/customer.entity';
 import { Journey } from '@/api/journeys/entities/journey.entity';
 import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
 import {

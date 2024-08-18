@@ -23,6 +23,7 @@ export class ModalsService {
   private tagEngine = new Liquid();
 
   constructor(
+    @Inject(forwardRef(() => AccountsService))
     private accountsService: AccountsService,
     @Inject(forwardRef(() => CustomersService))
     private customersService: CustomersService,

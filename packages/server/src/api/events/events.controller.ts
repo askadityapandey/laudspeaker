@@ -232,21 +232,6 @@ export class EventsController {
     return this.eventsService.getPossibleValues(key, search, session);
   }
 
-  @Get('/possible-posthog-types')
-  @UseGuards(JwtAuthGuard)
-  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  async getPossiblePothogTypes(
-    @Query('search') search: string,
-    @Req() { user }: Request
-  ) {
-    const session = randomUUID();
-    return this.eventsService.getPossiblePosthogTypes(
-      (<Account>user).id,
-      session,
-      search
-    );
-  }
-
   @Get('/custom-events')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
@@ -265,25 +250,6 @@ export class EventsController {
       search,
       anchor,
       cursorEventId
-    );
-  }
-
-  @Get('/posthog-events')
-  @UseGuards(JwtAuthGuard)
-  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  async getPosthogEvents(
-    @Req() { user }: Request,
-    @Query('take') take?: string,
-    @Query('skip') skip?: string,
-    @Query('search') search?: string
-  ) {
-    const session = randomUUID();
-    return this.eventsService.getPosthogEvents(
-      <Account>user,
-      session,
-      take && +take,
-      skip && +skip,
-      search
     );
   }
 

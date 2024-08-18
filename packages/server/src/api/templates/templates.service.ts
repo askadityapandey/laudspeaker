@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  forwardRef,
   HttpException,
   HttpStatus,
   Inject,
@@ -33,7 +34,6 @@ import { format, parseISO } from 'date-fns';
 import { TestWebhookDto } from './dto/test-webhook.dto';
 import wait from '../../utils/wait';
 import { ModalsService } from '../modals/modals.service';
-import { WebsocketGateway } from '../../websockets/websocket.gateway';
 import { CacheService } from '@/common/services/cache.service';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
@@ -49,12 +49,10 @@ export class TemplatesService {
     private readonly logger: Logger,
     @InjectRepository(Template)
     public templatesRepository: Repository<Template>,
-    @Inject(WebsocketGateway)
-    private websocketGateway: WebsocketGateway,
     @Inject(SlackService) private slackService: SlackService,
     @Inject(ModalsService) private modalsService: ModalsService,
     @Inject(CacheService) private cacheService: CacheService,
-    @Inject(CustomersService) private customersService: CustomersService
+    @Inject(forwardRef(()=>CustomersService)) private customersService: CustomersService
   ) {
     this.tagEngine.registerFilter('date', (input, formatString) => {
       const date = input === 'now' ? new Date() : parseISO(input);
@@ -380,14 +378,14 @@ export class TemplatesService {
         }
         break;
       case TemplateType.MODAL:
-        if (template.modalState) {
-          const isSent = await this.websocketGateway.sendModal(
-            customerId.toString(),
-            template
-          );
-          if (!isSent)
-            await this.modalsService.queueModalEvent(customerId.toString(), template);
-        }
+        // if (template.modalState) {
+        //   const isSent = await this.websocketGateway.sendModal(
+        //     customerId.toString(),
+        //     template
+        //   );
+        //   if (!isSent)
+        //     await this.modalsService.queueModalEvent(customerId.toString(), template);
+        // }
         break;
     }
     return Promise.resolve(message ? message?.sid : job?.id);

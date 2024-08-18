@@ -40,6 +40,7 @@ import { SendFCMDto } from './dto/send-fcm.dto';
 import { IdentifyCustomerDTO } from './dto/identify-customer.dto';
 import { SetCustomerPropsDTO } from './dto/set-customer-props.dto';
 import { AttributeType, AttributeTypeName } from './entities/attribute-type.entity';
+import { CustomerKeysService } from './customer-keys.service';
 
 @Controller('customers')
 export class CustomersController {
@@ -48,9 +49,11 @@ export class CustomersController {
     private readonly logger: Logger,
     @Inject(CustomersService)
     private readonly customersService: CustomersService,
+    @Inject(CustomerKeysService)
+    private readonly customerKeysService: CustomerKeysService,
     @Inject(AccountsService)
     private readonly userService: AccountsService
-  ) {}
+  ) { }
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
@@ -148,7 +151,7 @@ export class CustomersController {
     @Query('skip') skip = 0,
     @Query('search') search = ''
   ) {
-    const session=randomUUID();
+    const session = randomUUID();
     return await this.customersService.searchForTest(
       <Account>user,
       session,
@@ -167,8 +170,10 @@ export class CustomersController {
     @Query('skip') skip = 0,
     @Query('search') search = ''
   ) {
+    const session = randomUUID();
     return await this.customersService.searchForTest(
       <Account>user,
+      session,
       take,
       skip,
       search,
@@ -182,7 +187,7 @@ export class CustomersController {
   async updatePrimaryKey(@Req() { user }: Request, @Body() body: UpdatePK_DTO) {
     const session = randomUUID();
 
-    await this.customersService.updatePrimaryKey(<Account>user, body, session);
+    await this.customerKeysService.updatePrimaryKey(<Account>user, body, session);
   }
 
   @Get('/system-attributes')
@@ -204,7 +209,7 @@ export class CustomersController {
   ) {
     const session = randomUUID();
 
-    return await this.customersService.getPossibleAttributes(
+    return await this.customerKeysService.getPossibleAttributes(
       <Account>user,
       session,
       key,
@@ -310,36 +315,6 @@ export class CustomersController {
     );
   }
 
-  @Post('/delete/')
-  @UseGuards(ApiKeyAuthGuard)
-  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  async delete(
-    @Req() { user }: Request,
-    @Body() deleteCustomerDto: DeleteCustomerDto
-  ) {
-    const session = randomUUID();
-    return await this.customersService.delete(
-      <{ account: Account; workspace: Workspaces }>user,
-      deleteCustomerDto,
-      session
-    );
-  }
-
-  @Post('/read/')
-  @UseGuards(ApiKeyAuthGuard)
-  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
-  async read(
-    @Req() { user }: Request,
-    @Body() readCustomerDto: ReadCustomerDto
-  ) {
-    const session = randomUUID();
-    return await this.customersService.read(
-      <{ account: Account; workspace: Workspaces }>user,
-      readCustomerDto,
-      session
-    );
-  }
-
   @Get('/attributes/:resourceId')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
@@ -368,7 +343,7 @@ export class CustomersController {
     }: { name: string; type: AttributeTypeName; dateFormat: unknown }
   ) {
     const session = randomUUID();
-    return this.customersService.createAttribute(
+    return this.customerKeysService.createKey(
       <Account>user,
       name,
       type,
@@ -384,9 +359,11 @@ export class CustomersController {
     @Req() { user }: Request,
     @Body() modifyAttributes: ModifyAttributesDto
   ) {
-    return this.customersService.modifyAttributes(
+    const session = randomUUID();
+    return this.customerKeysService.modifyKeys(
       <Account>user,
-      modifyAttributes
+      modifyAttributes,
+      session
     );
   }
 

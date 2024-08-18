@@ -14,6 +14,7 @@ import { SegmentCustomersService } from './segment-customers.service';
 import { Account } from '../accounts/entities/accounts.entity';
 import { StepsModule } from '../steps/steps.module';
 import { StepsHelper } from '../steps/steps.helper';
+import { Customer } from '../customers/entities/customer.entity';
 
 function getProvidersList() {
   let providerList: Array<any> = [
@@ -47,7 +48,7 @@ function getExportList() {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Segment, SegmentCustomers, Account]),
+    TypeOrmModule.forFeature([Segment, SegmentCustomers, Account, Customer]),
     forwardRef(() => CustomersModule),
     forwardRef(() => JourneysModule),
     forwardRef(() => StepsModule),
@@ -57,4 +58,4 @@ function getExportList() {
   providers: getProvidersList(),
   exports: getExportList(),
 })
-export class SegmentsModule {}
+export class SegmentsModule { }

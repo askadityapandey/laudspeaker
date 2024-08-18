@@ -17,7 +17,9 @@ services:
       - laudspeaker_default
 
   postgres:
-    image: postgres:16.3-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
     hostname: postgres
     container_name: postgres
     environment:

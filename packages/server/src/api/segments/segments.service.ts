@@ -222,35 +222,6 @@ export class SegmentsService {
     });
   }
 
-  /*
-   * Helper function for customers.service getCusotmersFromsegment()
-   */
-  //to do add account filter on records, later
-  async getSegmentCustomers(
-    account: Account,
-    session: string,
-    segmentId: any,
-    collectionName: string
-  ) {
-    const records = await this.segmentCustomersRepository.findBy({
-      segment: segmentId,
-    });
-    const collectionHandle =new Object();//this.connection.db.collection(collectionName);
-
-    for (const record of records) {
-      const customerId = record.customer.id.toString(); // Assuming customerId is a field in record
-      // Update the collection: increment the count for this customerId
-      const objectId = customerId;
-      await collectionHandle.updateOne(
-        { _id: objectId } as unknown as Filter<Document>,
-        { $setOnInsert: { _id: objectId } },
-        { upsert: true }
-      );
-    }
-
-    return collectionName;
-  }
-
   async countSegmentCustomers(account: Account, id: any) {
     account = await this.customersService.accountsRepository.findOne({
       where: {
@@ -304,7 +275,6 @@ export class SegmentsService {
     collectionName: string,
     batchSize: number
   ): Promise<string> {
-    const mongoCollection = this.connection.db.collection(collectionName);
 
     let processedCount = 0;
     //let batchSize = 500; // Or any suitable batch size
@@ -331,9 +301,6 @@ export class SegmentsService {
       });
 
       try {
-        const result = await mongoCollection.insertMany(
-          mongoDocuments as unknown[]
-        );
         mongoDocuments = []; // Reset batch after insertion
       } catch (err) {
         //console.error('Error inserting documents:', err);
@@ -458,20 +425,15 @@ export class SegmentsService {
           return { size: 0, total: 1 };
         }
 
-        const mongoCollection =
-          this.connection.db.collection(customersInSegment);
-
-        const segmentDocuments = await mongoCollection.countDocuments();
         const totalCount = await this.customersService.customersSize(
           account,
           session
         );
         try {
-          await this.deleteCollectionsWithPrefix(collectionPrefix);
         } catch (e) {
           this.error(e, this.size.name, session, account.id);
         }
-        return { size: segmentDocuments, total: totalCount };
+        return { size: 0, total: totalCount };
       } else if (createSegmentDTO.inclusionCriteria.query.type === 'all') {
         const collectionPrefix = this.generateRandomString();
         const customersInSegment =
@@ -488,16 +450,11 @@ export class SegmentsService {
           return { size: 0, total: 1 };
         }
 
-        const mongoCollection =
-          this.connection.db.collection(customersInSegment);
-
-        const segmentDocuments = await mongoCollection.countDocuments();
         const totalCount = await this.customersService.customersSize(
           account,
           session
         );
         try {
-          await this.deleteCollectionsWithPrefix(collectionPrefix);
         } catch (e) {
           this.debug(
             `could not drop: ${collectionPrefix}`,
@@ -507,7 +464,7 @@ export class SegmentsService {
           );
           this.error(e, this.size.name, session);
         }
-        return { size: segmentDocuments, total: totalCount };
+        return { size: 0, total: totalCount };
       } else {
         throw new Error(`Shouldn't be making it here`);
       }
@@ -904,34 +861,8 @@ export class SegmentsService {
       segment: { id: segmentId }, // Assuming segment is identified by segmentId
     });
 
-    const mongoCollection = this.connection.db.collection(collectionName);
 
     let processedCount = 0;
-    const totalDocuments = await mongoCollection.countDocuments();
-
-    while (processedCount < totalDocuments) {
-      // Fetch a batch of documents from MongoDB
-      const mongoDocuments = await mongoCollection
-        .find({})
-        .skip(processedCount)
-        .limit(batchSize)
-        .toArray();
-
-      // Convert MongoDB documents to SegmentCustomers entities
-      const segmentCustomersArray = mongoDocuments.map((doc) => ({
-        segment: segment,
-        customerId: doc._id.toString(), // Assuming _id is the ObjectId
-        workspace,
-      }));
-
-      // Batch save to segmentCustomersRepository
-      await queryRunner.manager
-        .getRepository(SegmentCustomers)
-        .save(segmentCustomersArray);
-
-      // Update processed count
-      processedCount += mongoDocuments.length;
-    }
 
     // Commit transaction
     //await queryRunner.commitTransaction();

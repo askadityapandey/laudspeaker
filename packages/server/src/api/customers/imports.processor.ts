@@ -14,6 +14,7 @@ import { SegmentCustomers } from '../segments/entities/segment-customers.entity'
 import { randomUUID } from 'crypto';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { Customer } from './entities/customer.entity';
 
 @Injectable()
 @Processor('imports')
@@ -24,6 +25,7 @@ export class ImportProcessor extends ProcessorBase {
     @Inject(CustomersService) private customersService: CustomersService,
     @Inject(S3Service) private s3Service: S3Service,
     @InjectRepository(Segment) public segmentRepository: Repository<Segment>,
+    @InjectRepository(Customer) public customersRepository: Repository<Customer>,
     @InjectRepository(SegmentCustomers)
     public segmentCustomersRepository: Repository<SegmentCustomers>
   ) {
@@ -272,13 +274,15 @@ export class ImportProcessor extends ProcessorBase {
 
     const organization = account?.teams?.[0]?.organization;
     const workspace = organization?.workspaces?.[0];
+    
+    const foundExisting = await this.customersRepository
+    .createQueryBuilder("customer")
+    .where("customer.workspaceId = :workspaceId", { workspaceId: workspace.id })
+    .andWhere(`customer.user_attributes.${pkKey} IN (:...keys)`, { keys: withoutDuplicateKeys })
+    .getMany();
+  
 
-    const foundExisting = await this.CustomerModel.find({
-      workspaceId: workspace.id,
-      [pkKey]: { $in: withoutDuplicateKeys },
-    }).exec();
-
-    const existing = foundExisting.map((el) => el.toObject()[pkKey]);
+    const existing = foundExisting.map((el) => el.user_attributes[pkKey]);
 
     const toCreate = withoutDuplicateKeys
       .filter((el) => !existing.includes(el))
@@ -303,9 +307,11 @@ export class ImportProcessor extends ProcessorBase {
 
     if (importOption === ImportOptions.NEW) {
       try {
-        const insertedResults = await this.CustomerModel.insertMany(toCreate, {
-          ordered: false,
-        });
+        const insertedResults = null;
+        // TODO
+        // await this.CustomerModel.insertMany(toCreate, {
+        //   ordered: false,
+        // });
 
         if (segmentId)
           addToSegment.push(
@@ -344,18 +350,20 @@ export class ImportProcessor extends ProcessorBase {
       }));
 
       try {
-        const insertedResults = await this.CustomerModel.insertMany(toCreate, {
-          ordered: false,
-        });
+        const insertedResults = null;
+        // TODO
+        // await this.CustomerModel.insertMany(toCreate, {
+        //   ordered: false,
+        // });
 
         if (segmentId)
           addToSegment.push(
             ...insertedResults.map((doc) => doc._id.toString())
           );
 
-        await this.CustomerModel.bulkWrite(bulk, {
-          ordered: false,
-        });
+        // await this.CustomerModel.bulkWrite(bulk, {
+        //   ordered: false,
+        // });
       } catch (error) {
         this.error(
           error,
@@ -387,9 +395,9 @@ export class ImportProcessor extends ProcessorBase {
         },
       }));
       try {
-        await this.CustomerModel.bulkWrite(bulk, {
-          ordered: false,
-        });
+        // await this.CustomerModel.bulkWrite(bulk, {
+        //   ordered: false,
+        // });
       } catch (error) {
         this.error(
           error,
@@ -406,7 +414,7 @@ export class ImportProcessor extends ProcessorBase {
       (importOption === ImportOptions.NEW_AND_EXISTING ||
         importOption === ImportOptions.EXISTING)
     )
-      addToSegment.push(...foundExisting.map((doc) => doc._id.toString()));
+      addToSegment.push(...foundExisting.map((doc) => doc.id.toString()));
 
     if (segmentId && addToSegment.length !== 0) {
       const segment = await this.segmentRepository.findOne({

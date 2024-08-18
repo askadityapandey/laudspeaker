@@ -27,16 +27,8 @@ import { attributeConditions } from '../../fixtures/attributeConditions';
 import keyTypes from '../../fixtures/keyTypes';
 import { PostHogEventDto } from './dto/posthog-event.dto';
 import defaultEventKeys from '../../fixtures/defaultEventKeys';
-import {
-  PosthogEventType,
-  PosthogEventTypeDocument,
-} from './schemas/posthog-event-type.schema';
 import { DataSource } from 'typeorm';
 import posthogEventMappings from '../../fixtures/posthogEventMappings';
-import {
-  PosthogEvent,
-  PosthogEventDocument,
-} from './schemas/posthog-event.schema';
 import { JourneysService } from '../journeys/journeys.service';
 import admin from 'firebase-admin';
 import { CustomerPushTest } from './dto/customer-push-test.dto';
@@ -81,14 +73,10 @@ export class EventsService {
     private readonly logger: Logger,
     @InjectModel(Event.name)
     private EventModel: Model<EventDocument>,
-    @InjectModel(PosthogEvent.name)
-    private PosthogEventModel: Model<PosthogEventDocument>,
     @InjectModel(EventKeys.name)
     private EventKeysModel: Model<EventKeysDocument>,
     @InjectRepository(Account)
     public accountsRepository: Repository<Account>,
-    @InjectModel(PosthogEventType.name)
-    private PosthogEventTypeModel: Model<PosthogEventTypeDocument>,
     @InjectConnection() private readonly connection: mongoose.Connection,
   ) {
     this.tagEngine.registerTag('api_call', {
@@ -150,21 +138,6 @@ export class EventsService {
             key: name,
             type: property_type,
             providerSpecific: 'posthog',
-            isDefault: true,
-          },
-          { upsert: true }
-        ).exec();
-      }
-    }
-    for (const { name, displayName, type, event } of posthogEventMappings) {
-      if (name && displayName && type && event) {
-        this.PosthogEventTypeModel.updateOne(
-          { name: name },
-          {
-            name: name,
-            displayName: displayName,
-            type: type,
-            event: event,
             isDefault: true,
           },
           { upsert: true }
@@ -433,53 +406,6 @@ export class EventsService {
       { $limit: 5 },
     ]).exec();
     return docs.map((doc) => doc?.['event']?.[key]).filter((item) => item);
-  }
-
-  async getPossiblePosthogTypes(ownerId: string, session: string, search = '') {
-    const searchRegExp = new RegExp(`.*${search}.*`, 'i');
-    // TODO: need to recheck, filtering not working in a correct way
-    const types = await this.PosthogEventTypeModel.find({
-      $and: [
-        { name: searchRegExp },
-        { $or: [{ ownerId }, { isDefault: true }] },
-      ],
-    }).exec();
-    return types.map((type) => type.displayName);
-  }
-
-  async getPosthogEvents(
-    account: Account,
-    session: string,
-    take = 100,
-    skip = 0,
-    search = ''
-  ) {
-    const searchRegExp = new RegExp(`.*${search}.*`, 'i');
-
-    const totalPages =
-      Math.ceil(
-        (await this.PosthogEventModel.count({
-          name: searchRegExp,
-          ownerId: (<Account>account).id,
-        }).exec()) / take
-      ) || 1;
-
-    const posthogEvents = await this.PosthogEventModel.find({
-      name: searchRegExp,
-      ownerId: (<Account>account).id,
-    })
-      .sort({ createdAt: 'desc' })
-      .skip(skip)
-      .limit(take > 100 ? 100 : take)
-      .exec();
-
-    return {
-      data: posthogEvents.map((posthogEvent) => ({
-        ...posthogEvent.toObject(),
-        createdAt: posthogEvent._id.getTimestamp(),
-      })),
-      totalPages,
-    };
   }
 
   /*
@@ -883,7 +809,7 @@ export class EventsService {
       );
     }
 
-    const customer = await this.customersService.findbycustomer(
+    const customer = await this.customersService.findByCustomerId(
       account,
       body.customerId
     );
@@ -1218,7 +1144,14 @@ export class EventsService {
     }
 
     // Step 3: Delete any other customers that have an _id matching the correlation value
-    const deleteResult = await this.customersService.deleteByUUID(account, correlationValue,);
+    if (typeof correlationValue === 'string') {
+      await this.customersService.deleteByUUID(account, correlationValue);
+    }
+    else {
+      for (const id in correlationValue) {
+        await this.customersService.deleteByUUID(account, id);
+      }
+    }
   }
 
   async findOrCreateCustomer(

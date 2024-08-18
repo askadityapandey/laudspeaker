@@ -798,10 +798,6 @@ export class CronService {
                   queryRunner,
                   500
                 );
-                // drop the collections after adding customer segments
-                await this.segmentsService.deleteCollectionsWithPrefix(
-                  collectionPrefix
-                );
               }
             }
             await queryRunner.commitTransaction();
@@ -819,9 +815,6 @@ export class CronService {
               accounts[j].id
             );
             //drop extraneous collections in case of error
-            for (const prefix of segmentPrefixes) {
-              await this.segmentsService.deleteCollectionsWithPrefix(prefix);
-            }
             await queryRunner.rollbackTransaction();
             err = error;
           } finally {
@@ -1239,12 +1232,8 @@ export class CronService {
     if (collectionName.includes('_FullDetails')) {
       // Remove '_FullDetails' from the collection name
       const modifiedCollectionName = collectionName.replace('_FullDetails', '');
-      await this.segmentsService.deleteCollectionsWithPrefix(
-        modifiedCollectionName
-      );
     } else {
       // If '_FullDetails' is not part of the name, use the original collection name
-      await this.segmentsService.deleteCollectionsWithPrefix(collectionName);
     }
   }
 

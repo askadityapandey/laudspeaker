@@ -15,7 +15,7 @@ export class JourneyLocation {
   @PrimaryColumn({ name: 'journeyId' })
   @ManyToOne(() => Journey, (journey) => journey.id, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'journeyId' })
-  public journey!: Journey;
+  public journey!: string;
 
   @PrimaryColumn({ name: 'customer_id' })
   @ManyToOne(() => Customer, (customer) => customer.id, { onDelete: 'CASCADE' })

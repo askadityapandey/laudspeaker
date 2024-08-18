@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import p from '../package.json';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';

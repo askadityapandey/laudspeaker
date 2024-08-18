@@ -391,11 +391,11 @@ export class WebsocketGateway implements OnGatewayConnection {
 
       socket.data.processingDev = true;
 
-      await this.devModeService.moveToNode(
-        socket.data.account,
-        socket.data.devJourney,
-        nodeId
-      );
+      // await this.devModeService.moveToNode(
+      //   socket.data.account,
+      //   socket.data.devJourney,
+      //   nodeId
+      // );
       const devMode = await this.devModeService.getDevModeState(
         socket.data.account.id,
         socket.data.devJourney
@@ -405,12 +405,12 @@ export class WebsocketGateway implements OnGatewayConnection {
         socket.data.relatedDevConnection
       );
 
-      for (const key in devMode.devModeState.customerData.customComponents) {
-        localSocket.emit('custom', {
-          trackerId: key,
-          ...devMode.devModeState.customerData.customComponents[key],
-        });
-      }
+      // for (const key in devMode.devModeState.customerData.customComponents) {
+      //   localSocket.emit('custom', {
+      //     trackerId: key,
+      //     ...devMode.devModeState.customerData.customComponents[key],
+      //   });
+      // }
 
       socket.emit('nodeMovedTo', nodeId);
     } catch (error) {

@@ -180,48 +180,7 @@ export class SegmentUpdateProcessor extends ProcessorBase {
       if (!customersInSegment) return; // The segment definition doesnt have any customers in it...
       const CUSTOMERS_PER_BATCH = 50000;
       let batch = 0;
-      const mongoCollection = this.connection.db.collection(customersInSegment);
-      const totalDocuments = await mongoCollection.countDocuments();
 
-      while (batch * CUSTOMERS_PER_BATCH <= totalDocuments) {
-        const customers = await this.customersService.find(
-          job.data.account,
-          job.data.segment.inclusionCriteria,
-          job.data.session,
-          null,
-          batch * CUSTOMERS_PER_BATCH,
-          CUSTOMERS_PER_BATCH,
-          customersInSegment
-        );
-        this.log(
-          `Skip ${batch * CUSTOMERS_PER_BATCH}, limit: ${CUSTOMERS_PER_BATCH}`,
-          this.handleCreateDynamic.name,
-          job.data.session
-        );
-        batch++;
-
-        await this.segmentCustomersService.addBulk(
-          job.data.segment.id,
-          customers.map((document) => {
-            return document._id.toString();
-          }),
-          job.data.session,
-          job.data.account,
-          client
-        );
-      }
-      try {
-        await this.segmentsService.deleteCollectionsWithPrefix(
-          collectionPrefix
-        );
-      } catch (e) {
-        this.error(
-          e,
-          this.process.name,
-          job.data.session,
-          job.data.account.email
-        );
-      }
       let last = false;
       queryRunner.manager.query('SELECT pg_advisory_lock(12345)');
       const journey = await queryRunner.manager.findOne(Journey, {
@@ -320,48 +279,6 @@ export class SegmentUpdateProcessor extends ProcessorBase {
 
       const CUSTOMERS_PER_BATCH = 50000;
       let batch = 0;
-      const mongoCollection = this.connection.db.collection(customersInSegment);
-      const totalDocuments = await mongoCollection.countDocuments();
-
-      while (batch * CUSTOMERS_PER_BATCH <= totalDocuments) {
-        const customers = await this.customersService.find(
-          job.data.account,
-          job.data.createSegmentDTO.inclusionCriteria,
-          job.data.session,
-          null,
-          batch * CUSTOMERS_PER_BATCH,
-          CUSTOMERS_PER_BATCH,
-          customersInSegment
-        );
-        this.log(
-          `Skip ${batch * CUSTOMERS_PER_BATCH}, limit: ${CUSTOMERS_PER_BATCH}`,
-          this.handleCreateDynamic.name,
-          job.data.session
-        );
-        batch++;
-
-        await this.segmentCustomersService.addBulk(
-          job.data.segment.id,
-          customers.map((document) => {
-            return document._id.toString();
-          }),
-          job.data.session,
-          job.data.account,
-          client
-        );
-      }
-      try {
-        await this.segmentsService.deleteCollectionsWithPrefix(
-          collectionPrefix
-        );
-      } catch (e) {
-        this.error(
-          e,
-          this.process.name,
-          job.data.session,
-          job.data.account.email
-        );
-      }
 
       await queryRunner.manager.save(Segment, {
         ...job.data.segment,
@@ -446,12 +363,7 @@ export class SegmentUpdateProcessor extends ProcessorBase {
       };
 
       while (batchOptions.current < batchOptions.documentsCount) {
-        const batch = await this.customersService.CustomerModel.find({
-          workspaceId: job.data.workspace.id,
-        })
-          .skip(batchOptions.current)
-          .limit(batchOptions.batchSize)
-          .exec();
+        const batch = await this.customersService.get(job.data.workspace.id, job.data.session, batchOptions.current, batchOptions.batchSize)
 
         for (const customer of batch) {
           await this.segmentsService.updateAutomaticSegmentCustomerInclusion(

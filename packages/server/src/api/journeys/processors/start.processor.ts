@@ -161,7 +161,7 @@ export class StartProcessor extends ProcessorBase {
         const locations = await this.journeyLocationsService.findForWriteBulk(
           job.data.journey,
           customers.map((document) => {
-            return document._id.toString();
+            return document.id.toString();
           }),
           queryRunner
         );
@@ -172,7 +172,6 @@ export class StartProcessor extends ProcessorBase {
           locations,
           job.data.session,
           queryRunner,
-          null
         );
         await queryRunner.commitTransaction();
         if (jobsData && jobsData.length)

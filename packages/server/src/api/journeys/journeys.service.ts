@@ -791,7 +791,7 @@ export class JourneysService {
         location: locations.find((location: JourneyLocation) => {
           return (
             location.customer.id.toString() === (customer.id ?? customer.id.toString()) &&
-            location.journey.id === journey.id
+            location.journey === journey.id
           );
         }),
         session: session,
