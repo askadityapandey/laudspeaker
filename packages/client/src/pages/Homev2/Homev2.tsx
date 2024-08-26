@@ -29,9 +29,9 @@ const Homev2 = () => {
     {
       title: "Set Up your User Schema",
       description:
-        "Tell Laudspeaker how to identify users, and define which attributes your users have",
+        "Define the list of user properties that Laudspeaker should track to create segments, and personalize messages. Show Laudspeaker how to identify users",
       image: messageChannelsImage,
-      link: "",
+      link: "/people/setting",
       linkText: "Setup now",
       doneLinkText: "Revisit setup",
       done: messageSetupped,
@@ -83,7 +83,7 @@ const Homev2 = () => {
         <div>{format(new Date(), "MM/dd/yyyy")}</div>
       </div>
 
-      {(
+      {
         <div className="flex justify-between gap-5">
           <div className="flex flex-col gap-5 w-full">
             <div className="p-5 rounded-lg flex flex-col bg-white">
@@ -182,7 +182,7 @@ const Homev2 = () => {
           </div>
           {/* <div className="min-w-[360px] w-[360px]">3</div> */}
         </div>
-      )}
+      }
     </div>
   );
 };
