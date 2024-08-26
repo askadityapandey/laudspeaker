@@ -27,19 +27,9 @@ const Homev2 = () => {
     done: boolean;
   }[] = [
     {
-      title: "Explore journey builder",
+      title: "Set Up your User Schema",
       description:
-        "Create your first journey with guided tutorials. Unleash your creativity and engage your audience with customized journeys.",
-      image: journeyBuilderImage,
-      link: "/onboarding",
-      linkText: "Start",
-      doneLinkText: "Restart",
-      done: onboarded,
-    },
-    {
-      title: "Add message channels",
-      description:
-        "Seamlessly connect your email, SMS, and Slack platforms to reach your customers on their preferred channels.",
+        "Tell Laudspeaker how to identify users, and define which attributes your users have",
       image: messageChannelsImage,
       link: "",
       linkText: "Setup now",
@@ -47,14 +37,34 @@ const Homev2 = () => {
       done: messageSetupped,
     },
     {
-      title: "Setup message service and event provider",
+      title: "Add message channels",
       description:
-        "We'll guide you through connecting your message service and event provider for a comprehensive messaging solution.",
+        "Seamlessly connect your push, SMS, and email platforms to reach your customers on their preferred channels.",
+      image: messageChannelsImage,
+      link: "",
+      linkText: "Setup now",
+      doneLinkText: "Revisit setup",
+      done: messageSetupped,
+    },
+    {
+      title: "Send events to Laudspeaker",
+      description:
+        "We'll guide you through how to send events to Laudspeaker to trigger messages at the right time",
       image: eventProviderImage,
       link: "",
       linkText: "Setup now",
       doneLinkText: "Revisit setup",
       done: eventProviderSetupped,
+    },
+    {
+      title: "Explore our journey builder",
+      description:
+        "Create your first journey with guided tutorials. Unleash your creativity and engage your audience with customized journeys.",
+      image: journeyBuilderImage,
+      link: "/onboarding",
+      linkText: "Start",
+      doneLinkText: "Restart",
+      done: onboarded,
     },
   ];
 
@@ -73,7 +83,7 @@ const Homev2 = () => {
         <div>{format(new Date(), "MM/dd/yyyy")}</div>
       </div>
 
-      {config.get(JOURNEY_ONBOARDING_KEY) === "true" && (
+      {(
         <div className="flex justify-between gap-5">
           <div className="flex flex-col gap-5 w-full">
             <div className="p-5 rounded-lg flex flex-col bg-white">
