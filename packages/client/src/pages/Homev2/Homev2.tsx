@@ -1,9 +1,10 @@
 import { format } from "date-fns";
-import React from "react";
+import React, { ReactNode } from "react";
 import { useAppSelector } from "store/hooks";
 import journeyBuilderImage from "./svg/journey-builder.svg";
 import messageChannelsImage from "./svg/message-channels.svg";
 import eventProviderImage from "./svg/event-provider.svg";
+import userSchemaImage from "./svg/user-schema.svg";
 import { useNavigate } from "react-router-dom";
 import Button, { ButtonType } from "components/Elements/Buttonv2";
 import { AppConfig } from "../../constants";
@@ -13,13 +14,13 @@ const Homev2 = () => {
   const navigate = useNavigate();
 
   const { firstName } = useAppSelector((state) => state.auth.userData);
-  const { onboarded, messageSetupped, eventProviderSetupped } = useAppSelector(
+  const { onboarded, messageSetupped, eventProviderSetupped, userSchemaSetupped } = useAppSelector(
     (state) => state.onboarding
   );
 
   const onboardingFixtures: {
     title: string;
-    description: string;
+    description: string | ReactNode; 
     link: string;
     linkText: string;
     image: string;
@@ -28,20 +29,25 @@ const Homev2 = () => {
   }[] = [
     {
       title: "Set Up your User Schema",
-      description:
-        "Define the list of user properties that Laudspeaker should track to create segments, and personalize messages. Show Laudspeaker how to identify users",
-      image: messageChannelsImage,
+      description: (
+        <>
+          Define the list of user properties that Laudspeaker should track to create segments, and personalize messages.{" "}
+          <strong>You must show Laudspeaker how to identify users by setting the primary key</strong>{" "}
+          before you can send messages to any users, or receive events.
+        </>
+      ),
+      image: userSchemaImage,
       link: "/people/setting",
       linkText: "Setup now",
       doneLinkText: "Revisit setup",
-      done: messageSetupped,
+      done: userSchemaSetupped,
     },
     {
       title: "Add message channels",
       description:
         "Seamlessly connect your push, SMS, and email platforms to reach your customers on their preferred channels.",
       image: messageChannelsImage,
-      link: "",
+      link: "/settings",
       linkText: "Setup now",
       doneLinkText: "Revisit setup",
       done: messageSetupped,

@@ -4,12 +4,14 @@ interface OnboardingState {
   onboarded: boolean;
   messageSetupped: boolean;
   eventProviderSetupped: boolean;
+  userSchemaSetupped: boolean;
 }
 
 const initialState: OnboardingState = {
   onboarded: false,
   messageSetupped: false,
   eventProviderSetupped: false,
+  userSchemaSetupped: false,
 };
 
 const onboardingSlice = createSlice({
@@ -20,10 +22,20 @@ const onboardingSlice = createSlice({
       state.onboarded = false;
       state.messageSetupped = false;
       state.eventProviderSetupped = false;
+      state.userSchemaSetupped = false;
+    },
+    setUserSchemaSetupped(state, action) {
+      state.userSchemaSetupped = action.payload;
+    },
+    setMessageSetupped(state, action) {
+      state.messageSetupped = action.payload;
+    },
+    setEventProviderSetupped(state, action) {
+      state.eventProviderSetupped = action.payload;
     },
   },
 });
 
-export const { restoreOnboardingState } = onboardingSlice.actions;
+export const { restoreOnboardingState, setUserSchemaSetupped, setMessageSetupped } = onboardingSlice.actions;
 
 export default onboardingSlice.reducer;
