@@ -118,7 +118,7 @@ const Homev2 = () => {
     done: boolean;
   }[] = [
     {
-      title: "Set Up your User Schema",
+      title: "Set up your user schema",
       description: (
         <>
           Define the list of user properties that Laudspeaker should track to
