@@ -10,7 +10,7 @@ export const createSnippet = (
 ) => {
   const firstUUID = uuid();
   const secondUUID = uuid();
-  const distinctId = uuid();
+  const distinctId = "an_example";
   const correlationValue = uuid();
   const timestamp = "2024-03-15T02:31:05.295Z";
   switch (mode) {
