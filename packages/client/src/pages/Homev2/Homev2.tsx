@@ -18,6 +18,16 @@ import {
   setUserSchemaSetupped,
 } from "reducers/onboarding.reducer";
 
+interface CustomEvent {
+  event: string;
+  source: string;
+  correlationKey: string;
+  correlationValue: string;
+  payload: string;
+  createdAt: string;
+  errorMessage?: string;
+}
+
 const Homev2 = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -31,6 +41,8 @@ const Homev2 = () => {
     eventProviderSetupped,
     userSchemaSetupped,
   } = useAppSelector((state) => state.onboarding);
+  const [customEvents, setCustomEvents] = useState<CustomEvent[]>([]);
+  const itemsPerPage = 3;
 
   useEffect(() => {
     const fetchAccountData = async () => {
@@ -67,6 +79,22 @@ const Homev2 = () => {
         // Check for user schema setup (primary key set)
         if (pk && pk.key) {
           dispatch(setUserSchemaSetupped(true));
+        }
+
+        const { data: customEventsData } = await ApiService.get({
+          url: `/events/custom-events?take=${itemsPerPage}`,
+        });
+        const eventsCondition = customEventsData.data.length > 0;
+
+        /*
+        // Check if any of the connection arrays are not empty
+        const eventsCondition = [customEventsData].some(
+          (arr) => arr && arr.length > 0
+        );
+        */
+
+        if (eventsCondition) {
+          dispatch(setEventProviderSetupped(true));
         }
 
         // Dispatch actions to update the Redux store based on the API response
