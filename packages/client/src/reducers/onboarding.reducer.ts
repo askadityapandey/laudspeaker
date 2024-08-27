@@ -24,6 +24,9 @@ const onboardingSlice = createSlice({
       state.eventProviderSetupped = false;
       state.userSchemaSetupped = false;
     },
+    setOnboarded(state, action) {
+      state.onboarded = action.payload;
+    },
     setUserSchemaSetupped(state, action) {
       state.userSchemaSetupped = action.payload;
     },
@@ -36,6 +39,12 @@ const onboardingSlice = createSlice({
   },
 });
 
-export const { restoreOnboardingState, setUserSchemaSetupped, setMessageSetupped } = onboardingSlice.actions;
+export const {
+  restoreOnboardingState,
+  setUserSchemaSetupped,
+  setMessageSetupped,
+  setEventProviderSetupped,
+  setOnboarded,
+} = onboardingSlice.actions;
 
 export default onboardingSlice.reducer;

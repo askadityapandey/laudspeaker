@@ -1,6 +1,6 @@
 import { format } from "date-fns";
-import React, { ReactNode } from "react";
-import { useAppSelector } from "store/hooks";
+import React, { ReactNode, useEffect, useState } from "react";
+import { useAppSelector, useAppDispatch } from "store/hooks";
 import journeyBuilderImage from "./svg/journey-builder.svg";
 import messageChannelsImage from "./svg/message-channels.svg";
 import eventProviderImage from "./svg/event-provider.svg";
@@ -9,18 +9,80 @@ import { useNavigate } from "react-router-dom";
 import Button, { ButtonType } from "components/Elements/Buttonv2";
 import { AppConfig } from "../../constants";
 import config, { JOURNEY_ONBOARDING_KEY } from "config";
+import ApiService from "services/api.service";
+import Account from "types/Account";
+import {
+  setOnboarded,
+  setMessageSetupped,
+  setEventProviderSetupped,
+  setUserSchemaSetupped,
+} from "reducers/onboarding.reducer";
 
 const Homev2 = () => {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
+
+  const [account, setAccount] = useState<Account>();
 
   const { firstName } = useAppSelector((state) => state.auth.userData);
-  const { onboarded, messageSetupped, eventProviderSetupped, userSchemaSetupped } = useAppSelector(
-    (state) => state.onboarding
-  );
+  const {
+    onboarded,
+    messageSetupped,
+    eventProviderSetupped,
+    userSchemaSetupped,
+  } = useAppSelector((state) => state.onboarding);
+
+  useEffect(() => {
+    const fetchAccountData = async () => {
+      try {
+        const { data } = await ApiService.get<Account>({ url: "/accounts" });
+        setAccount(data);
+
+        const {
+          mailgunConnections,
+          sendgridConnections,
+          resendConnections,
+          twilioConnections,
+          pushConnections,
+          pushPlatforms,
+          pk,
+        } = data.workspace;
+
+        // Check if any of the connection arrays are not empty
+        const messageSetuppedCondition =
+          [
+            mailgunConnections,
+            sendgridConnections,
+            resendConnections,
+            twilioConnections,
+            pushConnections,
+          ].some((arr) => arr && arr.length > 0) ||
+          Object.keys(pushPlatforms).length > 0;
+
+        // Dispatch the actions based on conditions
+        if (messageSetuppedCondition) {
+          dispatch(setMessageSetupped(true));
+        }
+
+        // Check for user schema setup (primary key set)
+        if (pk && pk.key) {
+          dispatch(setUserSchemaSetupped(true));
+        }
+
+        // Dispatch actions to update the Redux store based on the API response
+        //dispatch(setOnboarded(data.workspace.onboarded));
+        //dispatch(setEventProviderSetupped(data.workspace.eventProviderSetupped));
+      } catch (error) {
+        console.error("Error fetching account data:", error);
+      }
+    };
+
+    fetchAccountData();
+  }, [dispatch]);
 
   const onboardingFixtures: {
     title: string;
-    description: string | ReactNode; 
+    description: string | ReactNode;
     link: string;
     linkText: string;
     image: string;
@@ -31,8 +93,12 @@ const Homev2 = () => {
       title: "Set Up your User Schema",
       description: (
         <>
-          Define the list of user properties that Laudspeaker should track to create segments, and personalize messages.{" "}
-          <strong>You must show Laudspeaker how to identify users by setting the primary key</strong>{" "}
+          Define the list of user properties that Laudspeaker should track to
+          create segments, and personalize messages.{" "}
+          <strong>
+            You must show Laudspeaker how to identify users by setting the
+            primary key
+          </strong>{" "}
           before you can send messages to any users, or receive events.
         </>
       ),
@@ -44,8 +110,18 @@ const Homev2 = () => {
     },
     {
       title: "Add message channels",
-      description:
-        "Seamlessly connect your push, SMS, and email platforms to reach your customers on their preferred channels.",
+      description: (
+        <>
+          Seamlessly connect your push, SMS, and email platforms to reach your
+          customers on their preferred channels.{" "}
+          <strong>
+            Head to the Message Channels tab of Settings, and add the channels
+            you want.
+          </strong>{" "}
+          Checkout our documentation for more support:
+          https://laudspeaker.com/docs/getting-started/setting-up-mobile-push
+        </>
+      ),
       image: messageChannelsImage,
       link: "/settings",
       linkText: "Setup now",
@@ -54,20 +130,29 @@ const Homev2 = () => {
     },
     {
       title: "Send events to Laudspeaker",
-      description:
-        "We'll guide you through how to send events to Laudspeaker to trigger messages at the right time",
+      description: (
+        <>
+          We'll guide you through how to send events to Laudspeaker to trigger
+          messages at the right time.{" "}
+          <strong>
+            Head to the API tab of Settings, and copy the snippet, then check
+            out the Event Tracker page
+          </strong>{" "}
+          When you fire the events, they should appear on that page.
+        </>
+      ),
       image: eventProviderImage,
-      link: "",
+      link: "/settings",
       linkText: "Setup now",
       doneLinkText: "Revisit setup",
       done: eventProviderSetupped,
     },
     {
-      title: "Explore our journey builder",
+      title: "Create your first journey!",
       description:
         "Create your first journey with guided tutorials. Unleash your creativity and engage your audience with customized journeys.",
       image: journeyBuilderImage,
-      link: "/onboarding",
+      link: "/flow",
       linkText: "Start",
       doneLinkText: "Restart",
       done: onboarded,
