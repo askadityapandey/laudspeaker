@@ -175,9 +175,14 @@ const MessageChannelTab = () => {
       <div className="text-[#4B5563]">
         Browse the available channels in Laudspeaker, and set up the channels
         you want to use{" "}
-        <button className="text-[#111827] font-bold underline">
+        <a
+          href="https://laudspeaker.com/docs/getting-started/setting-up-mobile-push"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#111827] font-bold underline"
+        >
           Documentation
-        </button>
+        </a>
       </div>
 
       <div className="w-full h-[1px] bg-[#E5E7EB]" />
