@@ -38,6 +38,11 @@ interface MessageChannelCardFixture {
   additionalInfo?: MessageChannelAdditionalInfoFixture[];
 }
 
+interface PushPlatform {
+  fileName: string;
+  isTrackingDisabled: boolean;
+}
+
 // const emailServiceToAdditionalInfoMap: Record<
 //   EmailSendingService,
 //   MessageChannelAdditionalInfoFixture[]
@@ -138,6 +143,14 @@ const MessageChannelTab = () => {
       title: connection.name,
       icon: emailCardIconImage,
     })) || []),
+    ...(Object.entries(account?.workspace.pushPlatforms || {}).map(
+      ([key, connection]: [string, PushPlatform]) => ({
+        id: key, // Using the key as an ID or adjust as needed
+        channel: MessageChannel.PUSH,
+        title: connection.fileName, // Adjust this if you need a different title
+        icon: pushLogoIcon,
+      })
+    ) || []),
   ];
 
   const supportedFixtures = Object.values(supportedMessageChannelCardsFixtures);
