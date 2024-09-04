@@ -12,13 +12,13 @@ import * as Sentry from '@sentry/node';
 import { Account } from '../../accounts/entities/accounts.entity';
 import { Journey } from '../entities/journey.entity';
 import { Step } from '../../steps/entities/step.entity';
-import { StepsService } from '@/api/steps/steps.service';
-import { CustomersService } from '@/api/customers/customers.service';
-import { JourneysService } from '@/api/journeys/journeys.service';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import { StepsService } from '../../steps/steps.service';
+import { CustomersService } from '../../customers/customers.service';
+import { JourneysService } from '../../journeys/journeys.service';
+import { Processor } from '../../../common/services/queue/decorators/processor';
+import { ProcessorBase } from '../../../common/services/queue/classes/processor-base';
+import { QueueType } from '../../../common/services/queue/types/queue-type';
+import { Producer } from '../../../common/services/queue/classes/producer';
 
 @Injectable()
 @Processor(

@@ -12,8 +12,8 @@ import { Customer } from '../../customers/entities/customer.entity';
 
 @Entity()
 export class SegmentCustomers extends BaseEntity {
-  @PrimaryColumn({ name: 'segmentId' })
-  @JoinColumn({ name: 'segmentId' })
+  @PrimaryColumn({ name: 'segment_id' })
+  @JoinColumn({ name: 'segment_id' })
   @ManyToOne(() => Segment, (segment) => segment.id, { onDelete: 'CASCADE' })
   public segment: Segment;
 
@@ -22,7 +22,7 @@ export class SegmentCustomers extends BaseEntity {
   @ManyToOne(() => Customer, (customer) => customer.id, { onDelete: 'CASCADE' })
   public customer: Customer;
 
-  @JoinColumn()
+  @JoinColumn({ name: 'workspace_id' })
   @ManyToOne(() => Workspaces, (workspace) => workspace.id, {
     onDelete: 'CASCADE',
   })

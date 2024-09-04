@@ -129,12 +129,12 @@ export class SegmentsController {
     return this.segmentsService.findOne(<Account>user, id, session);
   }
 
-  @Get('/person/:id')
+  @Get('/person/:uuid')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
   public async findAllSegmentsForPerson(
     @Req() { user }: Request,
-    @Param('id') id: string,
+    @Param('uuid') uuid: string,
     @Query('take') take?: string,
     @Query('skip') skip?: string,
     @Query('search') search?: string
@@ -143,7 +143,7 @@ export class SegmentsController {
 
     return this.segmentsService.findAllSegmentsForCustomer(
       <Account>user,
-      id,
+      uuid,
       take && +take,
       skip && +skip,
       search,

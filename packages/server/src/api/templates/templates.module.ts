@@ -13,7 +13,7 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
 import { ModalsModule } from '../modals/modals.module';
 import { WebsocketsModule } from '../../websockets/websockets.module';
 import { Step } from '../steps/entities/step.entity';
-import { CacheService } from '@/common/services/cache.service';
+import { CacheService } from '../../common/services/cache.service';
 
 @Module({
   imports: [

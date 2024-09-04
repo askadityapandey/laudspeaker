@@ -1,11 +1,14 @@
-import { IsEnum, IsString, MinLength } from 'class-validator';
-import { AttributeTypeName } from '../entities/attribute-type.entity';
+import { IsInstance, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { AttributeType } from '../entities/attribute-type.entity';
+import { Type } from 'class-transformer';
 
 export class UpdatePK_DTO {
   @MinLength(0)
   @IsString()
-  key: string;
+  name: string;
 
-  @IsEnum(AttributeTypeName)
-  type: AttributeTypeName;
+  @Type(() => AttributeType)
+  @IsInstance(AttributeType)
+  @IsNotEmpty()
+  attribute_type: AttributeType;
 }

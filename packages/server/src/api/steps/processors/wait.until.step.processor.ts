@@ -8,20 +8,20 @@ import {
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { StepType } from '../types/step.interface';
 import { Step } from '../entities/step.entity';
-import { Account } from '@/api/accounts/entities/accounts.entity';
+import { Account } from '../../accounts/entities/accounts.entity';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
-import { JourneyLocationsService } from '@/api/journeys/journey-locations.service';
+import { JourneyLocationsService } from '../../journeys/journey-locations.service';
 import { StepsService } from '../steps.service';
-import { Journey } from '@/api/journeys/entities/journey.entity';
-import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
-import { CacheService } from '@/common/services/cache.service';
+import { Journey } from '../../journeys/entities/journey.entity';
+import { JourneyLocation } from '../../journeys/entities/journey-location.entity';
+import { CacheService } from '../../../common/services/cache.service';
 import { Temporal } from '@js-temporal/polyfill';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
-import { Customer } from '@/api/customers/entities/customer.entity';
+import { Processor } from '../../../common/services/queue/decorators/processor';
+import { ProcessorBase } from '../../../common/services/queue/classes/processor-base';
+import { QueueType } from '../../../common/services/queue/types/queue-type';
+import { Producer } from '../../../common/services/queue/classes/producer';
+import { Customer } from '../../customers/entities/customer.entity';
 
 @Injectable()
 @Processor('wait.until.step')

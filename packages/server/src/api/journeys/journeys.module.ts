@@ -16,7 +16,7 @@ import { StepsModule } from '../steps/steps.module';
 import { JourneyLocation } from './entities/journey-location.entity';
 import { JourneyLocationsService } from './journey-locations.service';
 import { JourneyChange } from './entities/journey-change.entity';
-import { CacheService } from '@/common/services/cache.service';
+import { CacheService } from '../../common/services/cache.service';
 
 @Module({
   imports: [

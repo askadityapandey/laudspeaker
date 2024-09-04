@@ -98,86 +98,13 @@ services:
       - "9000:9000"
     networks:
       - laudspeaker_default
-
-  #### START kafka related containers
-  zoo1:
-    image: bitnami/zookeeper:latest
-    hostname: zoo1
-    container_name: zoo1
-    ports:
-      - "2181:2181"
-    environment:
-      ZOO_SERVERS: zoo1:2888:3888
-      ALLOW_ANONYMOUS_LOGIN: yes
-    networks:
-      - laudspeaker_default
-
-  kafka1:
-    image: bitnami/kafka:3.6.0
-    hostname: kafka1
-    container_name: kafka1
-    ports:
-      - "29092:29092"
-      - "9092:9092"
-    healthcheck:
-      test: kafka-cluster.sh cluster-id --bootstrap-server kafka1:19092 || exit 1
-      interval: 1s
-      timeout: 60s
-      retries: 60
-    environment:
-      KAFKA_CFG_LISTENERS: INTERNAL://kafka1:19092,EXTERNAL://kafka1:29092,DEV://kafka1:9092
-      KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://kafka1:19092,EXTERNAL://host.docker.internal:29092,DEV://localhost:9092
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DEV:PLAINTEXT
-      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_ZOOKEEPER_PROTOCOL: PLAINTEXT
-      KAFKA_CFG_ZOOKEEPER_CONNECT: "zoo1:2181"
-      KAFKA_TLS_CLIENT_AUTH: none
-      ALLOW_PLAINTEXT_LISTENER: "yes"
-    depends_on:
-      - zoo1
-    networks:
-      - laudspeaker_default
-
-  #### END kafka related containers
-
-  #### START kafka connect related containers
-  kafka-connect1:
-    image: bitnami/kafka:latest
-    hostname: kafka-connect1
-    container_name: kafka-connect1
-    healthcheck:
-      test: ["CMD", "curl", "localhost:8083"]
-      interval: 5s
-      timeout: 2s
-      retries: 20
-    ports:
-      - "8083:8083"
-    volumes:
-      - ./local-env/kafkaconnect:/opt/bitnami/kafka-connect
-    depends_on:
-      kafka1:
-        condition: service_healthy
-    networks:
-      - laudspeaker_default
-    command:
-      - bash
-      - -c
-      - /opt/bitnami/kafka/bin/connect-distributed.sh /opt/bitnami/kafka-connect/connect.properties
-  #### END kafka connect related containers
-
   init-environment:
     build:
       context: ./local-env/
       dockerfile: Dockerfile.initenv
     container_name: init-environment
     depends_on:
-      mongo:
-        condition: service_healthy
-      kafka1:
-        condition: service_started
       clickhouse:
-        condition: service_healthy
-      kafka-connect1:
         condition: service_healthy
       s3:
         condition: service_healthy
@@ -304,48 +231,6 @@ services:
       - ./local-env/env-docker-compose
     networks:
       - laudspeaker_default
-
-  init-connectors:
-    build:
-      context: ./local-env/
-      dockerfile: Dockerfile.initenv
-    container_name: init-connectors
-    profiles:
-      - testing
-    depends_on:
-      laudspeaker-web:
-        condition: service_healthy
-    networks:
-      - laudspeaker_default
-    command:
-      - "connectors"
-
-  # GUIs for all supporting services.
-  # currently:
-  #   - no gui setup for postgres
-  #   - clickhouse gui is deployed with the clickhouse server
-
-  kafka-gui:
-    container_name: kafka-gui
-    image: provectuslabs/kafka-ui:latest
-    profiles:
-      - gui
-    ports:
-      - 8090:8080
-    depends_on:
-      kafka1:
-        condition: service_started
-      kafka-connect1:
-        condition: service_healthy
-    environment:
-      KAFKA_CLUSTERS_0_NAME: laudspeaker
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka1:29092
-      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect1:8083
-      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: kafka-connect
-      DYNAMIC_CONFIG_ENABLED: "true"
-    networks:
-      - laudspeaker_default
-
   redis-gui:
     container_name: redis-gui
     image: redis/redisinsight:latest

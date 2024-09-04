@@ -23,8 +23,8 @@ import { CountSegmentUsersSizeDTO } from './dto/size-count.dto';
 import { randomUUID } from 'crypto';
 import { Filter, Document } from 'mongodb';
 import * as Sentry from '@sentry/node';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import { QueueType } from '../../common/services/queue/types/queue-type';
+import { Producer } from '../../common/services/queue/classes/producer';
 import { CustomerKeysService } from '../customers/customer-keys.service';
 
 @Injectable()
@@ -167,7 +167,7 @@ export class SegmentsService {
 
   async findAllSegmentsForCustomer(
     account: Account,
-    id: string,
+    uuid: string,
     take = 100,
     skip = 0,
     search = '',
@@ -176,27 +176,23 @@ export class SegmentsService {
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
     const totalPages = Math.ceil(
-      (await this.segmentCustomersRepository.count({
-        where: {
-          workspace: {
-            id: workspace.id,
-          },
-          customer: { id: parseInt(id) },
-        },
-      })) / take || 1
+      (await this.segmentCustomersRepository
+        .createQueryBuilder('segmentCustomers')
+        .innerJoinAndSelect('segmentCustomers.customer', 'customer')
+        .where('segmentCustomers.workspaceId = :workspaceId', { workspaceId: workspace.id })
+        .andWhere('customer.uuid = :uuid', { uuid })
+        .getCount()) / take || 1
     );
 
-    const records = await this.segmentCustomersRepository.find({
-      where: {
-        workspace: {
-          id: workspace.id,
-        },
-        customer: { id: parseInt(id) },
-      },
-      take: take < 100 ? take : 100,
-      skip,
-      relations: ['segment'],
-    });
+    const records = await this.segmentCustomersRepository
+    .createQueryBuilder('segmentCustomers')
+    .innerJoinAndSelect('segmentCustomers.customer', 'customer')
+    .innerJoinAndSelect('segmentCustomers.segment', 'segment')
+    .where('segmentCustomers.workspaceId = :workspaceId', { workspaceId: workspace.id })
+    .andWhere('customer.uuid = :uuid', { uuid })
+    .take(take < 100 ? take : 100)
+    .skip(skip)
+    .getMany();  
 
     const segments = records.map((record) => record.segment);
     return { data: segments, totalPages };

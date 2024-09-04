@@ -1,13 +1,13 @@
 import { MigrationInterface, QueryRunner } from "typeorm"
 
-export class CreateAttributeTypes1724264581178 implements MigrationInterface {
+export class CreateAttributeType1724264581178 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TABLE attribute_types
+      `CREATE TABLE attribute_type
       (
         id                    serial          primary key,
-        name                  varchar(40)     NOT NULL,
+        name                  varchar         NOT NULL,
         can_be_subtype        boolean         NOT NULL      DEFAULT false,
         subtype_required      boolean         NOT NULL      DEFAULT false,
         parameters_required   boolean         NOT NULL      DEFAULT false
@@ -42,7 +42,7 @@ export class CreateAttributeTypes1724264581178 implements MigrationInterface {
         parameters_required = true;
 
       await queryRunner.query(
-        `INSERT INTO attribute_types 
+        `INSERT INTO attribute_type
           (name, can_be_subtype, subtype_required, parameters_required) VALUES
           ('${type}', ${can_be_subtype}, ${subtype_required}, ${parameters_required})`
       );
@@ -50,7 +50,7 @@ export class CreateAttributeTypes1724264581178 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TABLE attribute_types`);
+    await queryRunner.query(`DROP TABLE attribute_type`);
   }
 
 }

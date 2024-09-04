@@ -1,4 +1,4 @@
-import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
+import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -12,26 +12,26 @@ import { AttributeParameter } from './attribute-parameter.entity';
 
 @Entity()
 export class CustomerKey {
-  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
+  @PrimaryGeneratedColumn('increment', { type: 'integer' })
   id: number;
 
-  @Column({ type: 'text', nullable: false })
+  @Column({ type: 'varchar', nullable: false })
   @Index()
   name: string;
 
-  @JoinColumn()
+  @JoinColumn({ name: 'attribute_type_id' })
   @ManyToOne(() => AttributeType, (type) => type.id, {
     onDelete: 'CASCADE',
   })
   attribute_type: AttributeType;
 
-  @JoinColumn()
+  @JoinColumn({ name: 'attribute_subtype_id' })
   @ManyToOne(() => AttributeType, (type) => type.id, {
     onDelete: 'CASCADE',
   })
   attribute_subtype: AttributeType;
 
-  @JoinColumn()
+  @JoinColumn({ name: 'attribute_parameter_id' })
   @ManyToOne(() => AttributeParameter, (parameter) => parameter.id, {
     onDelete: 'CASCADE',
   })
@@ -40,7 +40,7 @@ export class CustomerKey {
   @Column({ type: 'bool', nullable: false })
   is_primary: boolean;
 
-  @JoinColumn()
+  @JoinColumn({ name: 'workspace_id' })
   @ManyToOne(() => Workspaces, (workspace) => workspace.id, {
     onDelete: 'CASCADE',
   })

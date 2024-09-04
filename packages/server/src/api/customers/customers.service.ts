@@ -37,27 +37,27 @@ import { SegmentType } from '../segments/entities/segment.entity';
 import { StepType } from '../steps/types/step.interface';
 import {
   KEYS_TO_SKIP,
-} from '@/utils/customer-key-name-validator';
+} from '../../utils/customer-key-name-validator';
 import { UpsertCustomerDto } from './dto/upsert-customer.dto';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { parseISO, add, sub, formatISO } from 'date-fns';
 import { cloneDeep } from 'lodash';
 import { StatementValueType } from '../journeys/types/visual-layout.interface';
-import { v4 as uuid, v7 as uuidv7 } from 'uuid';
+import * as uuid from 'uuid';
 import { Organization } from '../organizations/entities/organization.entity';
 import * as Sentry from '@sentry/node';
-import { CacheService } from '@/common/services/cache.service';
+import { CacheService } from '../../common/services/cache.service';
 
 import { CustomerSearchOptions } from './interfaces/CustomerSearchOptions.interface';
 import { CustomerSearchOptionResult } from './interfaces/CustomerSearchOptionResult.interface';
 import { FindType } from './enums/FindType.enum';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import { QueueType } from '../../common/services/queue/types/queue-type';
+import { Producer } from '../../common/services/queue/classes/producer';
 import {
   ClickHouseTable,
   ClickHouseClient,
   ClickHouseRow
-} from '@/common/services/clickhouse';
+} from '../../common/services/clickhouse';
 import { StepsHelper } from '../steps/steps.helper';
 import { AttributeTypeName } from './entities/attribute-type.entity';
 import { CustomerKeysService } from './customer-keys.service';
@@ -135,51 +135,6 @@ export interface SystemAttribute {
   isArray: boolean;
   isSystem: true;
 }
-
-export const systemAttributes: SystemAttribute[] = [
-  {
-    id: uuid(),
-    key: 'androidFCMTokens',
-    type: StatementValueType.STRING,
-    isArray: true,
-    isSystem: true,
-  },
-  {
-    id: uuid(),
-    key: 'iosFCMTokens',
-    type: StatementValueType.STRING,
-    isArray: true,
-    isSystem: true,
-  },
-  {
-    id: uuid(),
-    key: 'isAnonymous',
-    type: StatementValueType.BOOLEAN,
-    isArray: false,
-    isSystem: true,
-  },
-  {
-    id: uuid(),
-    key: 'other_ids',
-    type: StatementValueType.STRING,
-    isArray: true,
-    isSystem: true,
-  },
-  {
-    id: uuid(),
-    key: 'createdAt',
-    type: StatementValueType.NUMBER,
-    isArray: false,
-    isSystem: true,
-  },
-  {
-    id: uuid(),
-    key: 'laudspeakerSystemSource',
-    type: StatementValueType.STRING,
-    isArray: false,
-    isSystem: true,
-  },
-];
 
 export interface QueryOptions {
   // ... other properties ...
@@ -317,7 +272,7 @@ export class CustomersService {
     await this.checkCustomerLimit(organization);
 
     const createdCustomer = new Customer();
-    createdCustomer.uuid = uuidv7();
+    createdCustomer.uuid = uuid.v7();
     createdCustomer.workspace = workspace;
     createdCustomer.created_at = new Date();
     createdCustomer.updated_at = new Date();
@@ -336,7 +291,7 @@ export class CustomersService {
     await this.checkCustomerLimit(organization);
 
     const createdCustomer = new Customer();
-    createdCustomer.uuid = uuidv7();
+    createdCustomer.uuid = uuid.v7();
     createdCustomer.workspace = workspace;
     createdCustomer.created_at = new Date();
     createdCustomer.updated_at = new Date();
@@ -613,12 +568,6 @@ export class CustomersService {
     showFreezed?: boolean,
     createdAtSortType?: 'asc' | 'desc'
   ) {
-    this.debug(
-      `in returnAllPeopleInfo`,
-      this.returnAllPeopleInfo.name,
-      session,
-      account.id
-    );
     const { data, totalPages } = await this.findAll(
       <Account>account,
       session,
@@ -635,9 +584,8 @@ export class CustomersService {
 
     const listInfo = await Promise.all(
       data.map(async (person) => {
-        //console.log("person createdAt is", person.createdAt);
         const info: Record<string, any> = {};
-        (info['id'] = person['_id'].toString()),
+        (info['id'] = person['uuid'].toString()),
           (info['salient'] =
             person['phEmail'] ||
             person['email'] ||
@@ -1196,7 +1144,7 @@ export class CustomersService {
 
     // If customer still not found, create a new one
     if (!result.customer) {
-      const newUUID = searchOptions.correlationValue || uuidv7();
+      const newUUID = searchOptions.correlationValue || uuid.v7();
 
       // add source information
       // TODO: need to namespace the user and system attributes
@@ -1638,7 +1586,7 @@ export class CustomersService {
   }
 
   public async getSystemAttributes() {
-    return systemAttributes;
+    return undefined;
   }
 
 
@@ -5683,12 +5631,13 @@ export class CustomersService {
     else
       docsDuplicates = await this.customersRepository
         .createQueryBuilder("customer")
-        .select([`"${key}" AS key`, "COUNT(*) AS count"])
-        .addSelect("array_agg(customer) AS docs")
-        .where("customer.workspaceId = :workspaceId", { workspaceId })
-        .andWhere("customer.isAnonymous = false")
-        .groupBy(`customer.${key}`)
-        .having("COUNT(*) > 1")
+        .select([`customer.user_attributes ->> :key AS key`])//, "COUNT(*) AS count"])
+        .addSelect("array_agg(customer.id) AS docs")  // Aggregate by customer IDs instead of the full customer object
+        .where("customer.workspace = :workspaceId", { workspaceId })
+        .andWhere("(customer.system_attributes ->> 'is_anonymous')::boolean = false")
+        .groupBy(`1`)//customer.user_attributes ->> :key`)
+        // .having("COUNT(*) > 1")
+        .setParameter("key", key)
         .limit(2)
         .getRawMany();
     return docsDuplicates.length > 1;
@@ -5702,7 +5651,7 @@ export class CustomersService {
         user_attributes: () =>
           `user_attributes - '${key}'`, // This removes the key from the JSON field
       })
-      .where("workspaceId = :workspaceId", { workspaceId })
+      .where("workspace_id = :workspaceId", { workspaceId })
       .execute();
   }
 

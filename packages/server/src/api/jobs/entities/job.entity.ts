@@ -7,8 +7,8 @@ import {
 } from 'typeorm';
 import { IsDate, IsDefined, ValidateIf } from 'class-validator';
 import { Account } from '../../accounts/entities/accounts.entity';
-import { Step } from '@/api/steps/entities/step.entity';
-import { Journey } from '@/api/journeys/entities/journey.entity';
+import { Step } from '../../steps/entities/step.entity';
+import { Journey } from '../../journeys/entities/journey.entity';
 
 export enum TimeJobType {
   DELAY,

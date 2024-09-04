@@ -1,20 +1,21 @@
 /* eslint-disable no-case-declarations */
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, QueryRunner, Repository } from 'typeorm';
+import { Brackets, DataSource, QueryBuilder, QueryRunner, Repository } from 'typeorm';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import * as _ from 'lodash';
-import { CacheService } from '@/common/services/cache.service';
+import { CacheService } from '../../common/services/cache.service';
 import { BadRequestException, forwardRef, HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { CustomerKey } from './entities/customer-keys.entity';
 import { ModifyAttributesDto, UpdateAttributeDto } from './dto/modify-attributes.dto';
 import {
   KEYS_TO_SKIP,
   validateKeyForMutations,
-} from '@/utils/customer-key-name-validator';
+} from '../../utils/customer-key-name-validator';
 import { Account } from '../accounts/entities/accounts.entity';
 import { UpdatePK_DTO } from './dto/update-pk.dto';
 import { CustomersService } from './customers.service';
-import { AttributeTypeName } from './entities/attribute-type.entity';
+import { AttributeType, AttributeTypeName } from './entities/attribute-type.entity';
+import { AttributeParameter } from './entities/attribute-parameter.entity';
 
 @Injectable()
 export class CustomerKeysService {
@@ -22,6 +23,10 @@ export class CustomerKeysService {
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
     private dataSource: DataSource,
+    @InjectRepository(AttributeParameter)
+    public attributeParameterRepository: Repository<AttributeParameter>,
+    @InjectRepository(AttributeType)
+    public attributeTypeRepository: Repository<AttributeType>,
     @InjectRepository(CustomerKey)
     public customerKeysRepository: Repository<CustomerKey>,
     @Inject(CacheService) private cacheService: CacheService,
@@ -165,28 +170,37 @@ export class CustomerKeysService {
   async createKey(
     account: Account,
     key: string,
-    type: AttributeTypeName,
-    dateFormat: unknown,
+    type_id: string,
     session: string,
-    isArray?: boolean
+    attribute_subtype_id?: string,
+    attribute_parameter_id?: string,
+    queryRunner?: QueryRunner
   ) {
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    let runner;
+    if (queryRunner) runner = await queryRunner.manager.getRepository(CustomerKey);
+    else runner = await this.customerKeysRepository;
 
-    if (!Object.values(AttributeTypeName).includes(type)) {
-      throw new BadRequestException(
-        `Type: ${type} can't be used for attribute creation.`
-      );
-    }
+    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
     validateKeyForMutations(key);
 
-    const previousKey = await this.customerKeysRepository.findOne({
+    const findKeyQuery = {
       where: {
         name: key.trim(),
         workspace: { id: workspace.id },
-        attribute_type: { name: type, },
+        attribute_type: { id: parseInt(type_id) },
       }
-    });
+    };
+    const createKeyQuery = {
+      name: key.trim(),
+      attribute_type: { id: parseInt(type_id) },
+      workspace: { id: workspace.id },
+      attribute_subtype_id: attribute_subtype_id ? { id: parseInt(attribute_subtype_id) } : undefined,
+      attribute_parameter_id: attribute_parameter_id ? { id: parseInt(attribute_parameter_id) } : undefined,
+      is_primary: false,
+    };
+
+    const previousKey = await runner.findOne(findKeyQuery);
 
     if (previousKey) {
       throw new HttpException(
@@ -195,71 +209,96 @@ export class CustomerKeysService {
       );
     }
 
-    const newKey = await this.customerKeysRepository.save({
-      name: key.trim(),
-      attribute_type: { name: type },
-      workspace: { id: workspace.id },
-    });
+    const newKey = await runner.save(createKeyQuery);
+
     return newKey;
   }
 
-  async deleteKey(account: Account, id: string, session: string, queryRunner: QueryRunner) {
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+  async deleteKey(account: Account, id: number, session: string, queryRunner: QueryRunner) {
+    if (queryRunner) {
+      const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-    const attributeInDb = await this.customerKeysRepository.findOne({
-      where: {
-        id: parseInt(id),
-        workspace: { id: workspace.id },
+      const attributeInDb = await queryRunner.manager.findOne(CustomerKey, {
+        where: {
+          id: id,
+          workspace: { id: workspace.id },
+        }
+      });
+
+      if (!attributeInDb) {
+        throw new HttpException('Attribute not found', 404);
       }
-    });
 
-    if (!attributeInDb) {
-      throw new HttpException('Attribute not found', 404);
+      await this.customersService.deleteAllKeys(workspace.id, attributeInDb.name, session, queryRunner)
+      await queryRunner.manager.delete(CustomerKey, { id: attributeInDb.id });
+    } else {
+      const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+
+      const attributeInDb = await this.customerKeysRepository.findOne({
+        where: {
+          id: id,
+          workspace: { id: workspace.id },
+        }
+      });
+
+      if (!attributeInDb) {
+        throw new HttpException('Attribute not found', 404);
+      }
+
+      await this.customersService.deleteAllKeys(workspace.id, attributeInDb.name, session, queryRunner)
+      await this.customerKeysRepository.delete({ id: attributeInDb.id });
     }
-
-    await this.customersService.deleteAllKeys(workspace.id, attributeInDb.name, session, queryRunner)
-    await this.customerKeysRepository.delete({ id: attributeInDb.id });
   }
 
+  /**
+   * Modify cutomer attrubites
+   * 
+   * Note: Creates query runner automatically
+   * @param account 
+   * @param modifyAttributes 
+   * @param session 
+   */
   async modifyKeys(
     account: Account,
     modifyAttributes: ModifyAttributesDto,
     session: string,
-    queryRunner?: QueryRunner
   ) {
+    let err;
     const { created, updated, deleted } = modifyAttributes;
 
-    for (const createdAttribute of created) {
-      try {
-        const { key, type, isArray, dateFormat } = createdAttribute; // TODO: arrays handling
+    const queryRunner = await this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
+    try {
+      for (const createdAttribute of created) {
+        const { name, attribute_type, attribute_subtype, attribute_parameter } = createdAttribute;
         await this.createKey(
           account,
-          key,
-          type,
-          dateFormat,
-          undefined,
-          isArray
+          name,
+          attribute_type.id.toString(),
+          session,
+          attribute_subtype,
+          attribute_parameter,
+          queryRunner
         );
-      } catch (e) {
-        console.error(e);
       }
-    }
 
-    for (const updateAttributeDto of updated) {
-      try {
+      for (const updateAttributeDto of updated) {
         await this.updateKey(account, updateAttributeDto, session, queryRunner);
-      } catch (e) {
-        console.error(e);
       }
-    }
 
-    for (const deleteAttirubuteDto of deleted) {
-      try {
+      for (const deleteAttirubuteDto of deleted) {
         await this.deleteKey(account, deleteAttirubuteDto.id, session, queryRunner);
-      } catch (e) {
-        console.error(e);
       }
+      await queryRunner.commitTransaction();
+    } catch (e) {
+      err = e;
+      await queryRunner.rollbackTransaction();
+    }
+    finally {
+      await queryRunner.release();
+      if (err) throw err;
     }
   }
 
@@ -333,98 +372,55 @@ export class CustomerKeysService {
     session: string,
     queryRunner?: QueryRunner
   ) {
+
+    let runner;
+    if (queryRunner) runner = await queryRunner.manager.getRepository(CustomerKey);
+    else runner = await this.customerKeysRepository;
+
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-    if (queryRunner) {
-      const pk = await queryRunner.manager.findOne(CustomerKey, {
-        where: {
-          workspace: { id: workspace.id },
-          is_primary: true,
-        }
-      });
-
-      const keyDuplicates = await this.customersService.getDuplicates(updateDTO.key, workspace.id, queryRunner)
-
-      if (keyDuplicates) {
-        throw new HttpException(
-          "Selected primary key can't be used because of duplicated or missing values. Primary key values must exist and be unique",
-          HttpStatus.BAD_REQUEST
-        );
+    const pk = await runner.manager.findOne(CustomerKey, {
+      where: {
+        workspace: { id: workspace.id },
+        is_primary: true,
       }
+    });
 
-      const newPK = await queryRunner.manager.findOne(CustomerKey, {
-        where: {
-          workspace: { id: workspace.id },
-          is_primary: false,
-          name: updateDTO.key
-        }
-      });
+    const keyDuplicates = await this.customersService.getDuplicates(updateDTO.name, workspace.id, queryRunner)
 
-      if (!newPK) {
-        throw new HttpException(
-          'Passed attribute for new PK not exist, please check again or select another one.',
-          HttpStatus.BAD_REQUEST
-        );
-      }
-
-      if (pk && pk.id === newPK.id) {
-        pk.is_primary = true;
-      } else {
-        if (pk) {
-          pk.is_primary = false;
-          await queryRunner.manager.save(CustomerKey, pk);
-        }
-
-        newPK.is_primary = true;
-        await queryRunner.manager.save(CustomerKey, newPK);
-        //TODO: Create index on PK
-      }
-
-    } else {
-      const pk = await this.customerKeysRepository.findOne({
-        where: {
-          workspace: { id: workspace.id },
-          is_primary: true,
-        }
-      });
-
-      const keyDuplicates = await this.customersService.getDuplicates(updateDTO.key, workspace.id, queryRunner)
-
-      if (keyDuplicates) {
-        throw new HttpException(
-          "Selected primary key can't be used because of duplicated or missing values. Primary key values must exist and be unique",
-          HttpStatus.BAD_REQUEST
-        );
-      }
-
-      const newPK = await this.customerKeysRepository.findOne({
-        where: {
-          workspace: { id: workspace.id },
-          is_primary: false,
-          name: updateDTO.key
-        }
-      });
-
-      if (!newPK) {
-        throw new HttpException(
-          'Passed attribute for new PK not exist, please check again or select another one.',
-          HttpStatus.BAD_REQUEST
-        );
-      }
-
-      if (pk && pk.id === newPK.id) {
-        pk.is_primary = true;
-      } else {
-        if (pk) {
-          pk.is_primary = false;
-          await this.customerKeysRepository.save(pk);
-        }
-
-        newPK.is_primary = true;
-        await this.customerKeysRepository.save(newPK);
-        //TODO: Create index on PK
-      }
+    if (keyDuplicates) {
+      throw new HttpException(
+        "Selected primary key can't be used because of duplicated or missing values. Primary key values must exist and be unique",
+        HttpStatus.BAD_REQUEST
+      );
     }
+
+    const newPK = await runner.manager.findOne(CustomerKey, {
+      where: {
+        workspace: { id: workspace.id },
+        name: updateDTO.name
+      }
+    });
+
+    // Case: Specified attribute doesnt exist
+    if (!newPK) {
+      throw new HttpException(
+        'The specified customer attribute does not exist, please try a different attribute.',
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    // Case: Specified attribute is already the primary key
+    if (newPK.is_primary) return;
+
+    // Case: there was previously a primary key
+    if (pk) {
+      pk.is_primary = false;
+      await runner.manager.save(CustomerKey, pk);
+    }
+
+    newPK.is_primary = true;
+    await runner.manager.save(CustomerKey, newPK);
   }
 
 
@@ -433,40 +429,97 @@ export class CustomerKeysService {
     session: string,
     key = '',
     type?: string | string[],
-    isArray?: boolean,
-    removeLimit?: boolean
+    removeLimit?: boolean,
+    queryRunner?: QueryRunner
   ) {
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
-    const queryBuilder = this.customerKeysRepository.createQueryBuilder("customerKeys")
-      .where("customerKeys.workspaceId = :workspaceId", { workspaceId: workspace.id })
-      .andWhere("customerKeys.name ILIKE :key", { key: `%${key}%` }); // Case-insensitive search
+    if (queryRunner) {
+      const queryBuilder = queryRunner.manager.createQueryBuilder(CustomerKey, "customerKeys")
+        .leftJoinAndSelect("customerKeys.attribute_type", "attributeType") // Join the attribute_type relation
+        .where("customerKeys.workspaceId = :workspaceId", { workspaceId: workspace.id })
+        .andWhere("customerKeys.name ILIKE :key", { key: `%${key}%` }); // Case-insensitive search
 
-    if (type !== null && !(type instanceof Array)) {
-      queryBuilder.andWhere("customerKeys.attribute_type.name = :type", { type });
-    } else if (type instanceof Array) {
-      queryBuilder.andWhere(
-        new Brackets(qb => {
-          type.forEach((el, index) => {
-            qb.orWhere(`customerKeys.attribute_type.name = :type${index}`, { [`type${index}`]: el });
-          });
-        })
+      if (type !== null && !(type instanceof Array)) {
+        queryBuilder.andWhere("attributeType.name = :type", { type });
+      } else if (type instanceof Array) {
+        queryBuilder.andWhere(
+          new Brackets(qb => {
+            type.forEach((el, index) => {
+              qb.orWhere(`attributeType.name = :type${index}`, { [`type${index}`]: el });
+            });
+          })
+        );
+      }
+
+      const attributes = await queryBuilder.getMany();
+
+
+      return (
+        [...attributes]
+          .map((el) => ({
+            id: el.id,
+            key: el.name,
+            type: el.attribute_type?.name,
+            dateFormat: `${el.attribute_parameter?.display_value}, (${el.attribute_parameter.example})`,
+            isArray: el.attribute_type?.name === AttributeTypeName.ARRAY,
+            isPrimary: el.is_primary,
+          }))
+          // @ts-ignore
+          .filter((el) => el.type !== 'undefined')
+      );
+    } else {
+      const queryBuilder = this.customerKeysRepository.createQueryBuilder("customerKeys")
+        .leftJoinAndSelect("customerKeys.attribute_type", "attributeType")
+        .where("customerKeys.workspace_id = :workspaceId", { workspaceId: workspace.id })
+        .andWhere("customerKeys.name ILIKE :key", { key: `%${key}%` });
+
+      if (type !== null && !(type instanceof Array)) {
+        queryBuilder.andWhere("attributeType.name = :type", { type });
+      } else if (type instanceof Array) {
+        queryBuilder.andWhere(
+          new Brackets(qb => {
+            type.forEach((el, index) => {
+              qb.orWhere(`attributeType.name = :type${index}`, { [`type${index}`]: el });
+            });
+          })
+        );
+      }
+
+      const attributes = await queryBuilder.getMany();
+
+      return (
+        [...attributes]
+          .map((el) => ({
+            id: el.id,
+            name: el.name,
+            attribute_type: el.attribute_type,
+            // dateFormat: `${el.attribute_parameter?.display_value}, (${el.attribute_parameter?.example})`,
+            // isArray: el.attribute_type?.name === AttributeTypeName.ARRAY,
+            is_primary: el.is_primary,
+          }))
+          // @ts-ignore
+          .filter((el) => el.type !== 'undefined')
       );
     }
+  }
 
-    const attributes = await queryBuilder.getMany();
+  /**
+   * 
+   * @param account 
+   * @param session 
+   * @returns 
+   */
+  async getPossibleAttributeTypes(account: Account, session: string): Promise<AttributeType[]> {
+    return await this.attributeTypeRepository.find();
+  }
 
-    return (
-      [...attributes]
-        .map((el) => ({
-          id: el.id,
-          key: el.name,
-          type: el.attribute_type.name,
-          dateFormat: el.attribute_parameter,
-          isArray: el.attribute_parameter,
-          isPrimary: el.is_primary,
-        }))
-        // @ts-ignore
-        .filter((el) => el.type !== 'undefined')
-    );
+  /**
+   * 
+   * @param account 
+   * @param session 
+   * @returns 
+   */
+  async getPossibleAttributeParameters(account: Account, session: string): Promise<AttributeParameter[]> {
+    return await this.attributeParameterRepository.find();
   }
 }

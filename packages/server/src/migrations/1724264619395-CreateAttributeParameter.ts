@@ -1,18 +1,20 @@
 import { MigrationInterface, QueryRunner } from "typeorm"
 
-export class CreateAttributeParameters1724264619395 implements MigrationInterface {
+export class CreateAttributeParameter1724264619395 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TABLE attribute_parameters
+      `CREATE TABLE attribute_parameter
       (
-        id                    serial          primary key,
+        id                    serial,
         key                   varchar         NOT NULL,
         display_value         varchar         NOT NULL,
-        example               text,
-        attribute_type_id     bigserial       NOT NULL
+        example               varchar,
+        attribute_type_id     serial,
+        CONSTRAINT "PK_de37782d784dbddbfaee836c0d7" PRIMARY KEY ("id")
       )`
     );
+    await queryRunner.query(`ALTER TABLE "attribute_parameter" ADD CONSTRAINT "FK_b92459b51f429a402b2812378b0" FOREIGN KEY ("attribute_type_id") REFERENCES "attribute_type"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
 
     const dateFormats = [
       { key: "dd MMM yyyy", title: "DD MMM yyyy", example: "15 Jan 1990" },
@@ -99,15 +101,15 @@ export class CreateAttributeParameters1724264619395 implements MigrationInterfac
       },
     ];
 
-    const dateRecordID = await queryRunner.query(`SELECT id from attribute_types WHERE name = 'Date' LIMIT 1`);
-    const dateTimeRecordID = await queryRunner.query(`SELECT id from attribute_types WHERE name = 'DateTime' LIMIT 1`);
+    const dateRecordID = await queryRunner.query(`SELECT id from attribute_type WHERE name = 'Date' LIMIT 1`);
+    const dateTimeRecordID = await queryRunner.query(`SELECT id from attribute_type WHERE name = 'DateTime' LIMIT 1`);
     let escaped_key;
 
     for(let format of dateFormats) {
       escaped_key = format.key.replace(/'/g, "''");
 
       await queryRunner.query(
-        `INSERT INTO attribute_parameters 
+        `INSERT INTO attribute_parameter 
           (key, display_value, example, attribute_type_id) VALUES
           ('${escaped_key}', '${format.title}', '${format.example}', ${dateRecordID[0].id})`
       );
@@ -117,7 +119,7 @@ export class CreateAttributeParameters1724264619395 implements MigrationInterfac
       escaped_key = format.key.replace(/'/g, "''");
 
       await queryRunner.query(
-        `INSERT INTO attribute_parameters 
+        `INSERT INTO attribute_parameter 
           (key, display_value, example, attribute_type_id) VALUES
           ('${escaped_key}', '${format.title}', '${format.example}', ${dateTimeRecordID[0].id})`
       );
@@ -125,7 +127,7 @@ export class CreateAttributeParameters1724264619395 implements MigrationInterfac
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TABLE attribute_parameters`);
+    await queryRunner.query(`DROP TABLE attribute_parameter`);
   }
 
 }

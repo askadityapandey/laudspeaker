@@ -17,11 +17,11 @@ import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import { EventsService } from '../events.service';
 import { CacheService } from '../../../common/services/cache.service';
 import { FindType } from '../../customers/enums/FindType.enum';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
-import { Customer } from '@/api/customers/entities/customer.entity';
+import { Processor } from '../../../common/services/queue/decorators/processor';
+import { ProcessorBase } from '../../../common/services/queue/classes/processor-base';
+import { QueueType } from '../../../common/services/queue/types/queue-type';
+import { Producer } from '../../../common/services/queue/classes/producer';
+import { Customer } from '../../customers/entities/customer.entity';
 
 export enum ProviderType {
   LAUDSPEAKER = 'laudspeaker',

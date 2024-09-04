@@ -9,8 +9,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { EventsModule } from '../events/events.module';
 import { StepsModule } from '../steps/steps.module';
-import { CustomersConsumerService } from './customers.consumer';
-import { KafkaModule } from '../kafka/kafka.module';
 import { JourneysModule } from '../journeys/journeys.module';
 import { S3Service } from '../s3/s3.service';
 import { Imports } from './entities/imports.entity';
@@ -21,9 +19,11 @@ import { SegmentsService } from '../segments/segments.service';
 import { Segment } from '../segments/entities/segment.entity';
 import { SegmentCustomers } from '../segments/entities/segment-customers.entity';
 import { CustomerChangeProcessor } from './processors/customers.processor';
-import { CacheService } from '@/common/services/cache.service';
+import { CacheService } from '../../common/services/cache.service';
 import { CustomerKeysService } from './customer-keys.service';
 import { CustomerKey } from './entities/customer-keys.entity';
+import { AttributeType } from './entities/attribute-type.entity';
+import { AttributeParameter } from './entities/attribute-parameter.entity';
 
 function getProvidersList() {
   let providerList: Array<any> = [
@@ -38,7 +38,6 @@ function getProvidersList() {
     providerList = [
       ...providerList,
       ImportProcessor,
-      CustomersConsumerService,
       CustomerChangeProcessor,
     ];
   }
@@ -52,7 +51,6 @@ function getExportsList() {
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
     exportList = [
       ...exportList,
-      CustomersConsumerService,
       CustomerChangeProcessor,
     ];
   }
@@ -65,7 +63,6 @@ function getExportsList() {
     forwardRef(() => AccountsModule),
     forwardRef(() => SegmentsModule),
     forwardRef(() => StepsModule),
-    forwardRef(() => KafkaModule),
     forwardRef(() => JourneysModule),
     forwardRef(() => EventsModule),
     TypeOrmModule.forFeature([
@@ -76,6 +73,8 @@ function getExportsList() {
       JourneyLocation,
       Segment,
       SegmentCustomers,
+      AttributeType,
+      AttributeParameter
     ]),
   ],
   controllers: [CustomersController],

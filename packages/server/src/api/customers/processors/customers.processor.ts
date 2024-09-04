@@ -1,21 +1,19 @@
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { KEYS_TO_SKIP } from '@/utils/customer-key-name-validator';
+import { KEYS_TO_SKIP } from '../../../utils/customer-key-name-validator';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { EachMessagePayload } from 'kafkajs';
 import { CustomersService } from '../customers.service';
-import { JourneysService } from '@/api/journeys/journeys.service';
+import { JourneysService } from '../../journeys/journeys.service';
 import { ChangeStreamDocument, DataSource } from 'typeorm';
-import { AccountsService } from '@/api/accounts/accounts.service';
-import { SegmentsService } from '@/api/segments/segments.service';
+import { AccountsService } from '../../accounts/accounts.service';
+import { SegmentsService } from '../../segments/segments.service';
 import { InjectConnection } from '@nestjs/mongoose';
 import mongoose from 'mongoose';
 import { Account } from '../../accounts/entities/accounts.entity';
 import { ProviderType } from '../../events/processors/events.preprocessor';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import { Processor } from '../../../common/services/queue/decorators/processor';
+import { ProcessorBase } from '../../../common/services/queue/classes/processor-base';
 
 const containsUnskippedKeys = (updateDescription) => {
   // Combine keys from updatedFields, removedFields, and the fields of truncatedArrays

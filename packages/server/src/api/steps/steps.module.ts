@@ -26,7 +26,7 @@ import { Requeue } from './entities/requeue.entity';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
-import { CacheService } from '@/common/services/cache.service';
+import { CacheService } from '../../common/services/cache.service';
 import { ExitStepProcessor } from './processors/exit.step.processor';
 import { ExperimentStepProcessor } from './processors/experiment.step.processor';
 import { JumpToStepProcessor } from './processors/jump.to.step.processor';

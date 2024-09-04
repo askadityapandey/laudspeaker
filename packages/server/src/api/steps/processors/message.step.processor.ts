@@ -10,34 +10,34 @@ import {
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { StepType } from '../types/step.interface';
 import { Step } from '../entities/step.entity';
-import { Account } from '@/api/accounts/entities/accounts.entity';
+import { Account } from '../../accounts/entities/accounts.entity';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
-import { JourneyLocationsService } from '@/api/journeys/journey-locations.service';
+import { JourneyLocationsService } from '../../journeys/journey-locations.service';
 import { StepsService } from '../steps.service';
-import { Journey } from '@/api/journeys/entities/journey.entity';
-import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
-import { CacheService } from '@/common/services/cache.service';
-import { JourneysService } from '@/api/journeys/journeys.service';
-import { convertTimeToUTC, isWithinInterval } from '@/common/helper/timing';
-import { JourneySettingsQuietFallbackBehavior } from '@/api/journeys/types/additional-journey-settings.interface';
+import { Journey } from '../../journeys/entities/journey.entity';
+import { JourneyLocation } from '../../journeys/entities/journey-location.entity';
+import { CacheService } from '../../../common/services/cache.service';
+import { JourneysService } from '../../journeys/journeys.service';
+import { convertTimeToUTC, isWithinInterval } from '../../../common/helper/timing';
+import { JourneySettingsQuietFallbackBehavior } from '../../journeys/types/additional-journey-settings.interface';
 import {
   Template,
   TemplateType,
-} from '@/api/templates/entities/template.entity';
-import { TemplatesService } from '@/api/templates/templates.service';
+} from '../../templates/entities/template.entity';
+import { TemplatesService } from '../../templates/templates.service';
 import { cleanTagsForSending } from '../../../shared/utils/helpers';
 import { MessageSender } from '../types/messagesender.class';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { WebhooksService } from '@/api/webhooks/webhooks.service';
-import { OrganizationService } from '@/api/organizations/organizations.service';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
-import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
-import { Customer } from '@/api/customers/entities/customer.entity';
+import { WebhooksService } from '../../webhooks/webhooks.service';
+import { OrganizationService } from '../../organizations/organizations.service';
+import { Processor } from '../../../common/services/queue/decorators/processor';
+import { ProcessorBase } from '../../../common/services/queue/classes/processor-base';
+import { QueueType } from '../../../common/services/queue/types/queue-type';
+import { Producer } from '../../../common/services/queue/classes/producer';
+import { ClickHouseEventProvider } from '../../../common/services/clickhouse/types/clickhouse-event-provider';
+import { Customer } from '../../customers/entities/customer.entity';
 
 @Injectable()
 @Processor(

@@ -12,9 +12,9 @@ import { Customer } from '../../customers/entities/customer.entity';
 
 @Entity()
 export class JourneyLocation {
-  @PrimaryColumn({ name: 'journeyId' })
+  @PrimaryColumn({ name: 'journey_id' })
   @ManyToOne(() => Journey, (journey) => journey.id, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'journeyId' })
+  @JoinColumn({ name: 'journey_id' })
   public journey!: string;
 
   @PrimaryColumn({ name: 'customer_id' })
@@ -22,11 +22,11 @@ export class JourneyLocation {
   @JoinColumn({ name: 'customer_id' })
   public customer!: Customer;
 
-  @JoinColumn()
+  @JoinColumn({ name: 'step_id' })
   @ManyToOne(() => Step, (step) => step.id, { onDelete: 'CASCADE' })
   step!: Step;
 
-  @JoinColumn()
+  @JoinColumn({ name: 'workspace_id' })
   @ManyToOne(() => Workspaces, (workspace) => workspace.id, {
     onDelete: 'CASCADE',
   })

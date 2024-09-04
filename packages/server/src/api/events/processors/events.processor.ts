@@ -15,18 +15,18 @@ import {
 } from '../../steps/types/step.interface';
 import { Journey } from '../../journeys/entities/journey.entity';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { WebsocketGateway } from '@/websockets/websocket.gateway';
+import { WebsocketGateway } from '../../../websockets/websocket.gateway';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
 import { JourneyLocationsService } from '../../journeys/journey-locations.service';
 import { InjectRepository } from '@nestjs/typeorm';
-import { CacheService } from '@/common/services/cache.service';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
-import { StepsHelper } from '@/api/steps/steps.helper';
-import { Customer } from '@/api/customers/entities/customer.entity';
+import { CacheService } from '../../../common/services/cache.service';
+import { Processor } from '../../../common/services/queue/decorators/processor';
+import { ProcessorBase } from '../../../common/services/queue/classes/processor-base';
+import { QueueType } from '../../../common/services/queue/types/queue-type';
+import { Producer } from '../../../common/services/queue/classes/producer';
+import { StepsHelper } from '../../../api/steps/steps.helper';
+import { Customer } from '../../../api/customers/entities/customer.entity';
 
 export enum EventType {
   EVENT = 'event',

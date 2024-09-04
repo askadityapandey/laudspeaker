@@ -20,8 +20,8 @@ import { State } from './entities/state.entity';
 import { platform, release } from 'os';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import { QueueType } from '../../common/services/queue/types/queue-type';
+import { Producer } from '../../common/services/queue/classes/producer';
 import { Customer } from '../customers/entities/customer.entity';
 
 interface ResponseError extends Error {

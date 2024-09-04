@@ -12,8 +12,8 @@ import { Segment } from '../segments/entities/segment.entity';
 import { Repository } from 'typeorm';
 import { SegmentCustomers } from '../segments/entities/segment-customers.entity';
 import { randomUUID } from 'crypto';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { Processor } from '../../common/services/queue/decorators/processor';
+import { ProcessorBase } from '../../common/services/queue/classes/processor-base';
 import { Customer } from './entities/customer.entity';
 
 @Injectable()

@@ -44,7 +44,6 @@ import { JourneysModule } from './api/journeys/journeys.module';
 import { RedlockModule } from './api/redlock/redlock.module';
 import { RedlockService } from './api/redlock/redlock.service';
 import { RavenModule } from 'nest-raven';
-import { KafkaModule } from './api/kafka/kafka.module';
 import { JourneyLocation } from './api/journeys/entities/journey-location.entity';
 import { JourneyLocationsService } from './api/journeys/journey-locations.service';
 import { SegmentsModule } from './api/segments/segments.module';
@@ -53,8 +52,8 @@ import { OrganizationInvites } from './api/organizations/entities/organization-i
 import { redisStore } from 'cache-manager-redis-yet';
 import { CacheModule } from '@nestjs/cache-manager';
 import { HealthCheckService } from './app.healthcheck.service';
-import { QueueModule } from '@/common/services/queue/queue.module';
-import { ClickHouseModule } from '@/common/services/clickhouse/clickhouse.module';
+import { QueueModule } from './common/services/queue/queue.module';
+import { ClickHouseModule } from './common/services/clickhouse/clickhouse.module';
 
 const sensitiveKeys = [
   /cookie/i,
@@ -255,7 +254,6 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
     SegmentsModule,
     RedlockModule,
     RavenModule,
-    KafkaModule,
     OrganizationsModule,
   ],
   controllers: [AppController],

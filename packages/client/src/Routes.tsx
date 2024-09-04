@@ -492,7 +492,7 @@ const RouteComponent: React.FC = () => {
             </Protected>
           }
         />
-        <Route
+        {<Route
           path="/person/:id"
           element={
             <Protected>
@@ -503,7 +503,7 @@ const RouteComponent: React.FC = () => {
               </VerificationProtected>
             </Protected>
           }
-        />
+        />}
         <Route
           path="/segment"
           element={
@@ -755,7 +755,7 @@ const RouteComponent: React.FC = () => {
             </Protected>
           }
         />
-        <Route
+        {<Route
           path="/data-transfer/:id"
           element={
             <Protected>
@@ -766,7 +766,7 @@ const RouteComponent: React.FC = () => {
               </VerificationProtected>
             </Protected>
           }
-        />
+        />}
 
         {/* Removed for version 1 release
         <Route

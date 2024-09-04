@@ -204,7 +204,6 @@ export class CustomersController {
     @Req() { user }: Request,
     @Query('key') key = '',
     @Query('type') type = null,
-    @Query('isArray') isArray = null,
     @Query('removeLimit') removeLimit = null
   ) {
     const session = randomUUID();
@@ -214,8 +213,35 @@ export class CustomersController {
       session,
       key,
       type,
-      isArray,
       removeLimit
+    );
+  }
+
+  @Get('/possible-attribute-types')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
+  async getPossibleAttributeTypes(
+    @Req() { user }: Request,
+  ) {
+    const session = randomUUID();
+
+    return await this.customerKeysService.getPossibleAttributeTypes(
+      <Account>user,
+      session,
+    );
+  }
+
+  @Get('/possible-attribute-parameters')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
+  async getPossibleAttributeParameters(
+    @Req() { user }: Request,
+  ) {
+    const session = randomUUID();
+
+    return await this.customerKeysService.getPossibleAttributeParameters(
+      <Account>user,
+      session,
     );
   }
 
@@ -347,7 +373,6 @@ export class CustomersController {
       <Account>user,
       name,
       type,
-      dateFormat,
       session
     );
   }

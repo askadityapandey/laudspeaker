@@ -1,4 +1,4 @@
-import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
+import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -9,14 +9,13 @@ import {
   ManyToOne,
   Index,
 } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
 
 @Entity({ name: 'customer' })
 export class Customer {
   @PrimaryGeneratedColumn('increment', { type: 'bigint' })
   id: number;
 
-  @Column({ type: 'uuid', default: () => 'uuid_generate_v7()', unique: true })
+  @Column({ type: 'uuid', default: () => 'uuid_generate_v7()', unique: true, nullable: false })
   @Index()
   uuid: string;
 
@@ -34,7 +33,7 @@ export class Customer {
   @Index()
   updated_at: Date;
 
-  @JoinColumn()
+  @JoinColumn({ name: 'workspace_id' })
   @ManyToOne(() => Workspaces, (workspace) => workspace.id, {
     onDelete: 'CASCADE',
   })

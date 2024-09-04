@@ -1,8 +1,8 @@
 import {
-    Entity,
-    PrimaryGeneratedColumn,
-    Column,
-    Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  Index,
 } from 'typeorm';
 
 
@@ -19,13 +19,18 @@ export enum AttributeTypeName {
 
 @Entity()
 export class AttributeType {
-    @PrimaryGeneratedColumn('increment', { type: 'bigint' })
-    id: number;
+  @PrimaryGeneratedColumn('increment', { type: 'integer' })
+  public id: number;
 
-    @Column({ type: 'text', nullable: false })
-    @Index()
-    name: AttributeTypeName;
+  @Column({ type: 'varchar', nullable: false })
+  public name: string;
 
-    @Column({ type: 'bool', nullable: false })
-    can_be_subtype: boolean;
+  @Column({ type: 'bool', nullable: false, default: false })
+  public can_be_subtype: boolean;
+
+  @Column({ type: 'bool', nullable: false, default: false })
+  public subtype_required: boolean;
+
+  @Column({ type: 'bool', nullable: false, default: false })
+  public parameters_required: boolean;
 }

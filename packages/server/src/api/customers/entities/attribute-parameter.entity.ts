@@ -5,20 +5,26 @@ import {
   Index,
   OneToOne,
   JoinColumn,
+  ManyToOne,
 } from 'typeorm';
 import { AttributeType } from './attribute-type.entity';
 
 @Entity()
 export class AttributeParameter {
-  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
+  @PrimaryGeneratedColumn('increment', { type: 'integer' })
   id: number;
 
-  @Column({ type: 'text', nullable: false })
-  @Index()
-  parameter: string;
+  @Column({ type: 'varchar', nullable: false })
+  key: string;
 
-  @JoinColumn()
-  @OneToOne(() => AttributeType, (type) => type.id, {
+  @Column({ type: 'varchar', nullable: false })
+  display_value: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  example: string;
+
+  @JoinColumn({ name: 'attribute_type_id' })
+  @ManyToOne(() => AttributeType, (type) => type.id, {
     onDelete: 'CASCADE',
   })
   attribute_type: AttributeType;

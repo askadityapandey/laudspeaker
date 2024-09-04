@@ -143,7 +143,7 @@ export class AccountsController {
           await this.customerKeysService.getPrimaryKey(workspace.id, session)
         );
         if (pk) {
-          pk._id = pk._id.toString();
+          pk._id = pk.id.toString();
           delete pk?.workspaceId;
           delete pk?.__v;
         }

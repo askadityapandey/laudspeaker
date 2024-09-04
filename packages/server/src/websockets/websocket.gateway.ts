@@ -23,14 +23,11 @@ import { AccountsService } from '../api/accounts/accounts.service';
 import { Account } from '../api/accounts/entities/accounts.entity';
 import { CustomersService } from '../api/customers/customers.service';
 import { EventsService } from '../api/events/events.service';
-import { WebhooksService } from '@/api/webhooks/webhooks.service';
-import { JourneysService } from '@/api/journeys/journeys.service';
-import { DevModeService } from '@/api/dev-mode/dev-mode.service';
+import { WebhooksService } from '../api/webhooks/webhooks.service';
+import { JourneysService } from '../api/journeys/journeys.service';
+import { DevModeService } from '../api/dev-mode/dev-mode.service';
 import { RavenInterceptor } from 'nest-raven';
-import { AnalyticsProviderTypes } from '@/api/steps/types/step.interface';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { EventDto } from '@/api/events/dto/event.dto';
-import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 interface SocketData {
   account: Account & { apiKey: string };
   customerId: string;

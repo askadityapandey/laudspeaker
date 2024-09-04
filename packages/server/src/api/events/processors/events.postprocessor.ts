@@ -4,14 +4,13 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { CustomersService } from '../../customers/customers.service';
 import { JourneysService } from '../../journeys/journeys.service';
 import { DataSource } from 'typeorm';
-import { AccountsService } from '@/api/accounts/accounts.service';
-import { SegmentsService } from '@/api/segments/segments.service';
+import { SegmentsService } from '../../segments/segments.service';
 import { Account } from '../../accounts/entities/accounts.entity';
 import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import * as Sentry from '@sentry/node';
-import { Processor } from '@/common/services/queue/decorators/processor';
-import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { Customer } from '@/api/customers/entities/customer.entity';
+import { Processor } from '../../../common/services/queue/decorators/processor';
+import { ProcessorBase } from '../../../common/services/queue/classes/processor-base';
+import { Customer } from '../../customers/entities/customer.entity';
 
 @Injectable()
 @Processor('events_post')

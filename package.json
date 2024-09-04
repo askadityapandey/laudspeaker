@@ -42,7 +42,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@types/uuid": "^10.0.0",
     "concurrently": "^7.4.0",
     "foreman": "^3.0.1",
     "logform": "^2.4.2",
@@ -50,5 +49,11 @@
     "p-map": "^5.5.0",
     "taskforce-connector": "^1.24.3",
     "uuid": "^10.0.0"
+  },
+  "overrides": {
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/uuid": "^10.0.0"
   }
 }

@@ -17,8 +17,8 @@ import * as Sentry from '@sentry/node';
 import {
   ClickHouseTable,
   ClickHouseClient
-} from '@/common/services/clickhouse';
-import { CacheService } from '@/common/services/cache.service';
+} from '../../common/services/clickhouse';
+import { CacheService } from '../../common/services/cache.service';
 
 @Injectable()
 export class StepsService {

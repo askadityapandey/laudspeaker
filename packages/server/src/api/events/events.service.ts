@@ -45,14 +45,14 @@ import { MobileBatchDto } from './dto/mobile-batch.dto';
 import e from 'express';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { Liquid } from 'liquidjs';
-import { cleanTagsForSending } from '@/shared/utils/helpers';
+import { cleanTagsForSending } from '../../shared/utils/helpers';
 import { randomUUID } from 'crypto';
 import * as Sentry from '@sentry/node';
 import { FindType } from '../customers/enums/FindType.enum';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
-import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
-import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
+import { QueueType } from '../../common/services/queue/types/queue-type';
+import { Producer } from '../../common/services/queue/classes/producer';
+import { ClickHouseEventProvider } from '../../common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseMessage } from '../../common/services/clickhouse/interfaces/clickhouse-message';
 import { Customer } from '../customers/entities/customer.entity';
 import { CustomerKeysService } from '../customers/customer-keys.service';
 import { AttributeTypeName } from '../customers/entities/attribute-type.entity';
@@ -1382,22 +1382,22 @@ export class EventsService {
     return updatedCustomer;
   }
 
-  isValidType(value: any, type: AttributeTypeName): boolean {
+  isValidType(value: any, type: string): boolean {
     switch (type) {
-      case AttributeTypeName.STRING:
+      case "String":
         return typeof value === 'string';
-      case AttributeTypeName.NUMBER:
+      case "Number":
         return typeof value === 'number';
-      case AttributeTypeName.BOOLEAN:
+      case "Boolean":
         return typeof value === 'boolean';
-      case AttributeTypeName.EMAIL:
+      case "Email":
         return typeof value === 'string' && /^\S+@\S+\.\S+$/.test(value);
-      case AttributeTypeName.DATE:
-      case AttributeTypeName.DATE_TIME:
+      case "Date":
+      case "DateTime":
         return !isNaN(Date.parse(value));
-      case AttributeTypeName.ARRAY:
+      case "Array":
         return Array.isArray(value);
-      case AttributeTypeName.OBJECT:
+      case "Object":
         return (
           typeof value === 'object' && !Array.isArray(value) && value !== null
         );

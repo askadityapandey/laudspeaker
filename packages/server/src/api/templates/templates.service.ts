@@ -34,9 +34,9 @@ import { format, parseISO } from 'date-fns';
 import { TestWebhookDto } from './dto/test-webhook.dto';
 import wait from '../../utils/wait';
 import { ModalsService } from '../modals/modals.service';
-import { CacheService } from '@/common/services/cache.service';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
+import { CacheService } from '../../common/services/cache.service';
+import { QueueType } from '../../common/services/queue/types/queue-type';
+import { Producer } from '../../common/services/queue/classes/producer';
 import { Customer } from '../customers/entities/customer.entity';
 import { CustomersService } from '../customers/customers.service';
 

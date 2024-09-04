@@ -30,7 +30,7 @@ import { S3Service } from '../s3/s3.service';
 import { Step } from '../steps/entities/step.entity';
 import { Journey } from '../journeys/entities/journey.entity';
 import { WebhooksModule } from '../webhooks/webhooks.module';
-import { CacheService } from '@/common/services/cache.service';
+import { CacheService } from '../../common/services/cache.service';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { EventsPostProcessor } from './processors/events.postprocessor';
 import { Customer } from '../customers/entities/customer.entity';
