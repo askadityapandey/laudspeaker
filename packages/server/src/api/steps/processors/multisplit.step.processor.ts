@@ -134,7 +134,8 @@ export class MultisplitStepProcessor extends ProcessorBase {
             await this.segmentCustomersService.isCustomerInSegment(
               job.data.owner,
               job.data.step.metadata.branches[branchIndex].systemSegment,
-              job.data.customer.id.toString()
+              job.data.customer.id.toString(),
+              job.data.session
             )
           ) {
             matches = true;

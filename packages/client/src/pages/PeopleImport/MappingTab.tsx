@@ -7,12 +7,8 @@ import { toast } from "react-toastify";
 import { StatementValueType } from "reducers/flow-builder.reducer";
 import ApiService from "services/api.service";
 import AddAttributeModal from "./Modals/AddAttributeModal";
-import {
-  AttributeType,
-  ImportAttribute,
-  ImportParams,
-  MappingParams,
-} from "./PeopleImport";
+import { ImportAttribute, ImportParams, MappingParams } from "./PeopleImport";
+import { AttributeType } from "pages/PeopleSettings/PeopleSettings";
 
 interface MappingTabProps {
   fileData?: ImportParams;
@@ -35,6 +31,9 @@ const MappingTab = ({
   const [activeHead, setActiveHead] = useState<string>();
   const [possibleKeys, setPossibleKeys] = useState<
     { key: string; type: AttributeType; dateFormat?: string }[]
+  >([]);
+  const [possibleAttributeTypes, setPossibleAttributeTypes] = useState<
+    AttributeType[]
   >([]);
 
   const handleSearchUpdate = (head: string) => (value: string) => {
@@ -92,6 +91,14 @@ const MappingTab = ({
     setPossibleKeys(data);
   };
 
+  const loadKeyTypes = async () => {
+    const { data } = await ApiService.get<any[]>({
+      url: `/customers/possible-attribute-types`,
+    });
+
+    setPossibleAttributeTypes(data);
+  };
+
   const handleSelectChange = (head: string) => (selectKey: string) => {
     if (selectKey === "_NEW_RECORD_;-;_NEW_RECORD_") {
       setActiveHead(head);
@@ -104,7 +111,8 @@ const MappingTab = ({
 
     if (
       Object.values(mappingSettings).some(
-        (el) => el.asAttribute?.key === key && el.asAttribute?.type === type
+        (el) =>
+          el.asAttribute?.key === key && el.asAttribute?.type.name === type
       ) &&
       type !== "_SKIP_RECORD_"
     ) {
@@ -117,7 +125,10 @@ const MappingTab = ({
         ...mappingSettings[head],
         asAttribute: {
           key: key,
-          type: type as AttributeType,
+          type:
+            possibleAttributeTypes.find((possibleType) => {
+              return possibleType.name === type;
+            }) || possibleAttributeTypes[0],
           dateFormat,
           skip: selectKey === "_SKIP_RECORD_;-;_SKIP_RECORD_",
         },
@@ -125,11 +136,11 @@ const MappingTab = ({
           selectKey === "_SKIP_RECORD_;-;_SKIP_RECORD_" ||
           (fileData?.primaryAttribute &&
             fileData?.primaryAttribute.key !== key &&
-            fileData?.primaryAttribute.type !== type)
+            fileData?.primaryAttribute.type.name !== type)
             ? false
             : fileData?.primaryAttribute &&
               fileData?.primaryAttribute.key === key &&
-              fileData?.primaryAttribute.type === type
+              fileData?.primaryAttribute.type.name === type
             ? true
             : mappingSettings[head].isPrimary,
       },
@@ -152,7 +163,7 @@ const MappingTab = ({
     Object.keys(mappingSettings).forEach((el) => {
       if (
         newSettings[el].asAttribute?.key === key &&
-        newSettings[el].asAttribute?.type === type
+        newSettings[el].asAttribute?.type.name === type
       ) {
         newSettings[el].isPrimary = true;
         newSettings[el].doNotOverwrite = true;

@@ -32,11 +32,13 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { RavenInterceptor } from 'nest-raven';
 import { CountSegmentUsersSizeDTO } from './dto/size-count.dto';
 import { DeleteBatchedCustomersDto } from './dto/delete-batched-customers.dto';
+import { SegmentCustomersService } from './segment-customers.service';
 
 @Controller('segments')
 export class SegmentsController {
   constructor(
-    private segmentsService: SegmentsService,
+    @Inject(SegmentsService) private segmentsService: SegmentsService,
+    @Inject(SegmentCustomersService) private segmentCustomersService: SegmentCustomersService,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger
   ) {}
@@ -141,7 +143,7 @@ export class SegmentsController {
   ) {
     const session = randomUUID();
 
-    return this.segmentsService.findAllSegmentsForCustomer(
+    return this.segmentCustomersService.getSegmentsForCustomer(
       <Account>user,
       uuid,
       take && +take,

@@ -329,28 +329,27 @@ export class CustomersService {
 
     const fieldType = await this.getFieldType(key, workspace.id, session);
 
-    let queryCondition;
+    let queryCondition = { workspace: { id: workspace.id } };
     switch (fieldType) {
       case 'String':
-        queryCondition = { [key]: new RegExp(`.*${search}.*`, 'i') };
+        queryCondition[key] = new RegExp(`.*${search}.*`, 'i');
         break;
       case 'Email':
-        queryCondition = { [key]: new RegExp(`.*${search}.*`, 'i') };
+        queryCondition[key] = new RegExp(`.*${search}.*`, 'i');
         break;
       case 'Number':
         // Convert search to a number and search for equality (you can extend this to range queries)
         const searchNumber = Number(search);
         if (!isNaN(searchNumber)) {
-          queryCondition = { [key]: searchNumber };
+          queryCondition[key] = searchNumber;
         }
         break;
       case 'Boolean':
         // Convert search to a boolean
-        queryCondition = { [key]: search === 'true' };
+        queryCondition[key] = search === 'true';
         break;
       // Handle other types as needed
       default:
-        queryCondition = {};
         break;
     }
 

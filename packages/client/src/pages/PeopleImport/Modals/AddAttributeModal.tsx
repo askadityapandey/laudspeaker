@@ -6,8 +6,11 @@ import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { StatementValueType } from "reducers/flow-builder.reducer";
 import ApiService from "services/api.service";
-import { AttributeType } from "../PeopleImport";
 import DateFormatPicker from "../DateFormatPicker";
+import {
+  AttributeParameter,
+  AttributeType,
+} from "pages/PeopleSettings/PeopleSettings";
 
 interface FormatData {
   key: string;
@@ -116,9 +119,33 @@ const AddAttributeModal = ({
   onAdded,
 }: AddAttributeModalProps) => {
   const [newName, setNewName] = useState("");
-  const [type, setType] = useState<StatementValueType>();
+  const [type, setType] = useState<AttributeType>();
   const [dateFormat, setDateFormat] = useState<string>();
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const [possibleAttributeTypes, setPossibleAttributeTypes] = useState<
+    AttributeType[]
+  >([]);
+  const [possibleAttributeParameters, setPossibleAttributeParameters] =
+    useState<AttributeParameter[]>([]);
+
+  const loadKeyTypes = async () => {
+    const { data } = await ApiService.get<any[]>({
+      url: `/customers/possible-attribute-types`,
+    });
+
+    setPossibleAttributeTypes(data);
+  };
+
+  const loadKeyParameters = async () => {
+    const { data } = await ApiService.get<any[]>({
+      url: `/customers/possible-attribute-parameters/`,
+    });
+
+    const nonSystemAttributes = data.filter((item) => !item.isSystem);
+
+    setPossibleAttributeParameters(nonSystemAttributes);
+  };
 
   useEffect(() => {
     if (isOpen) return;
@@ -136,7 +163,9 @@ const AddAttributeModal = ({
     if (
       !type ||
       !newName ||
-      ([StatementValueType.DATE, StatementValueType.DATE_TIME].includes(type) &&
+      ([StatementValueType.DATE, StatementValueType.DATE_TIME].includes(
+        type.name as StatementValueType
+      ) &&
         !dateFormat) ||
       isLoading
     )
@@ -174,18 +203,18 @@ const AddAttributeModal = ({
       >
         <div className="font-roboto">
           <div className="font-inter text-xl text-[#111827] font-semibold">
-            Add filed
+            Add an Attribute
           </div>
           <hr className="border-[#E5E7EB] my-3" />
           <div>
             <div className="flex justify-between items-center mb-3">
               <span className="text-sm text-[#111827] font-inter">
-                Field name
+                Attribute Name
               </span>
               <Input
                 wrapperClassName="!max-w-[300px] !w-full"
                 className="!max-w-[300px] !w-full"
-                placeholder="field name you want to import"
+                placeholder="my-attribute-name"
                 value={newName}
                 onChange={setNewName}
                 id="fieldNameInput"
@@ -194,37 +223,38 @@ const AddAttributeModal = ({
             <div className="flex justify-between items-center">
               <span className="text-sm text-[#111827] font-inter">Type</span>
               <Select
-                value={type}
+                value={type?.name}
                 placeholder="Select type"
                 id="selectTypeInput"
                 className="max-w-[300px] w-full"
-                options={Object.values(StatementValueType)
-                  .slice(0, 6)
-                  .map((el) => ({
-                    key: el,
-                    title: el,
-                  }))}
-                onChange={setType}
+                options={Object.values(possibleAttributeTypes).map((type) => ({
+                  key: type.name,
+                  title: type.name,
+                }))}
+                onChange={(type) =>
+                  setType(
+                    possibleAttributeTypes.find((possibleType) => {
+                      return possibleType.name === type;
+                    })
+                  )
+                }
               />
             </div>
-            {type &&
-              (type === StatementValueType.DATE ||
-                type === StatementValueType.DATE_TIME) && (
-                <div
-                  className="flex justify-between items-center mt-3"
-                  id="dateFormatPicker"
-                >
-                  <span className="text-sm text-[#111827] font-inter">
-                    {type === StatementValueType.DATE ? "Date" : "Date-time"}{" "}
-                    format
-                  </span>
-                  <DateFormatPicker
-                    value={dateFormat || ""}
-                    type={type}
-                    onChange={setDateFormat}
-                  />
-                </div>
-              )}
+            {type && type.parameters_required && (
+              <div
+                className="flex justify-between items-center mt-3"
+                id="dateFormatPicker"
+              >
+                <span className="text-sm text-[#111827] font-inter">
+                  {type.name === "Date" ? "Date" : "Date-time"} format
+                </span>
+                <DateFormatPicker
+                  value={dateFormat || ""}
+                  type={StatementValueType.DATE}
+                  onChange={setDateFormat}
+                />
+              </div>
+            )}
           </div>
           <div className="flex justify-end items-center mt-6 gap-2">
             <Button
@@ -242,7 +272,7 @@ const AddAttributeModal = ({
                 ([
                   StatementValueType.DATE,
                   StatementValueType.DATE_TIME,
-                ].includes(type) &&
+                ].includes(type.name as StatementValueType) &&
                   !dateFormat) ||
                 isLoading
               }

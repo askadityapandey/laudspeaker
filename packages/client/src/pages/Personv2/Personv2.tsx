@@ -1,15 +1,8 @@
 import Button, { ButtonType } from "components/Elements/Buttonv2";
-import React, {
-  Fragment,
-  ReactNode,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import ApiService from "services/api.service";
 import UserIcon from "./icons/UserIcon";
-import Input from "components/Elements/Inputv2";
 import TrashIcon from "../../assets/icons/TrashIcon";
 import Progress from "components/Progress";
 import { AxiosError } from "axios";
@@ -26,15 +19,12 @@ import { Attribute } from "pages/PeopleSettings/PeopleSettings";
 import Select from "components/Elements/Selectv2";
 import { StatementValueType } from "reducers/flow-builder.reducer";
 import DynamicInput from "pages/FlowBuilderv2/Elements/DynamicInput";
-import { Segment, SegmentType } from "types/Segment";
+import { Segment } from "types/Segment";
 import Table from "components/Tablev2";
 import sortAscChevronsImage from "./svg/sort-asc-chevrons.svg";
 import sortDescChevronsImage from "./svg/sort-desc-chevrons.svg";
 import sortNoneChevronsImage from "./svg/sort-none-chevrons.svg";
-import { Menu, Transition } from "@headlessui/react";
-import threeDotsIconImage from "./svg/three-dots-icon.svg";
-import { AttributeType } from "pages/PeopleImport/PeopleImport";
-import { v4 as uuid } from "uuid";
+import { AttributeType } from "pages/PeopleSettings/PeopleSettings";
 
 export interface EventObject {
   event: string;
@@ -106,7 +96,7 @@ function validateType(value: any, type: any) {
 }
 
 function enforceType(value: any, type: AttributeType) {
-  switch (type) {
+  switch (type.name as StatementValueType) {
     case StatementValueType.NUMBER:
       return Number(value);
     case StatementValueType.STRING:
@@ -133,7 +123,7 @@ export const generateAttributeView = (
       .join(", ");
   }
 
-  switch (type) {
+  switch (type.name as StatementValueType) {
     case StatementValueType.BOOLEAN:
       return value ? "true" : "false";
       break;
@@ -143,8 +133,6 @@ export const generateAttributeView = (
     default:
       return value;
   }
-
-  return value;
 };
 
 const Personv2 = () => {
@@ -193,6 +181,9 @@ const Personv2 = () => {
 
   const [possibleAttributes, setPossibleAttributes] = useState<Attribute[]>([]);
   const [attributeSearch, setAttributeSearch] = useState("");
+  const [possibleAttributeTypes, setPossibleAttributeTypes] = useState<
+    AttributeType[]
+  >([]);
 
   const attributesToShow = useMemo(
     () => [...possibleAttributes],
@@ -205,6 +196,14 @@ const Personv2 = () => {
     });
 
     setPossibleAttributes(data);
+  };
+
+  const loadKeyTypes = async () => {
+    const { data } = await ApiService.get<any[]>({
+      url: `/customers/possible-attribute-types`,
+    });
+
+    setPossibleAttributeTypes(data);
   };
 
   const uploadEvents = async () => {
@@ -316,16 +315,19 @@ const Personv2 = () => {
       if (skipValidationFor.includes(key)) {
         return; // Skip validation for specified keys
       }
-      const foundAttribute = attributesToShow.find((attr) => attr.key === key);
-      const isValid = foundAttribute?.isArray
-        ? (value as any[]).every((item) =>
-            validateType(item, foundAttribute?.type)
-          )
-        : validateType(value, foundAttribute?.type);
+      const foundAttribute = attributesToShow.find((attr) => attr.name === key);
+      const isValid =
+        foundAttribute?.attribute_type.name === "Array"
+          ? (value as any[]).every((item) =>
+              validateType(item, foundAttribute?.attribute_subtype?.name)
+            )
+          : validateType(value, foundAttribute?.attribute_type.name);
       if (!isValid) {
-        console.error(`${foundAttribute?.key} is invalid`);
+        console.error(`${foundAttribute?.name} is invalid`);
         allValid = false;
-        newValidationErrors[key] = `Value must be a ${foundAttribute?.type}`;
+        newValidationErrors[
+          key
+        ] = `Value must be a ${foundAttribute?.attribute_type.name}`;
       }
     });
 
@@ -351,23 +353,25 @@ const Personv2 = () => {
         acc[key] = value; // Skip enforcing and keep 'createdAt' as is
       } else {
         const foundAttribute = attributesToShow.find(
-          (attr) => attr.key === key
+          (attr) => attr.name === key
         );
         if (foundAttribute) {
-          acc[key] = foundAttribute.isArray
-            ? (value as any[]).map((item) =>
-                enforceType(item, foundAttribute.type)
-              )
-            : enforceType(value, foundAttribute.type);
+          acc[key] =
+            foundAttribute.attribute_type.name === "Array"
+              ? (value as any[]).map((item) =>
+                  enforceType(
+                    item,
+                    foundAttribute?.attribute_subtype ||
+                      possibleAttributeTypes[0]
+                  )
+                )
+              : enforceType(value, foundAttribute.attribute_type);
         } else {
           acc[key] = value; // Keep as is if no specific type is found
         }
       }
       return acc;
     }, {});
-
-    //console.log("old cust is", JSON.stringify(editingPersonInfo, null, 2));
-    //console.log("enforced cust is",JSON.stringify(enforcedData, null, 2));
 
     setIsSaving(true);
     try {
@@ -423,12 +427,9 @@ const Personv2 = () => {
 
   const personInfoToShow = isEditing ? editingPersonInfo : personInfo;
 
-  const notPosthogKeys = Object.keys(personInfoToShow).filter(
-    (key) => !attributesToShow.find((attr) => attr.key === key)?.isPosthog
-  );
-
-  const posthogKeys = Object.keys(personInfoToShow).filter(
-    (key) => !!attributesToShow.find((attr) => attr.key === key)?.isPosthog
+  const user_attributes = Object.keys(personInfoToShow?.user_attributes || {});
+  const system_attributes = Object.keys(
+    personInfoToShow?.system_attributes || {}
   );
 
   if (isLoading) return <Progress />;
@@ -511,25 +512,30 @@ const Personv2 = () => {
                     isEditing ? "gap-y-[20px] gap-x-[60px]" : "gap-y-[10px]"
                   }`}
                 >
-                  {notPosthogKeys
+                  {user_attributes
                     .map((key) => {
                       const foundAttribute = attributesToShow.find(
-                        (attr) => attr.key === key
+                        (attr) => attr.name === key
                       );
                       return {
                         key,
-                        type: foundAttribute?.type || StatementValueType.STRING,
-                        isArray: foundAttribute?.isArray || false,
+                        type:
+                          foundAttribute?.attribute_type.name ||
+                          StatementValueType.STRING,
+                        isArray:
+                          foundAttribute?.attribute_type.subtype_required ||
+                          false,
                         dateFormat: [
                           StatementValueType.DATE,
                           StatementValueType.DATE_TIME,
-                        ].includes(foundAttribute?.type as StatementValueType)
-                          ? foundAttribute?.dateFormat
+                        ].includes(
+                          foundAttribute?.attribute_type
+                            .name as StatementValueType
+                        )
+                          ? foundAttribute?.attribute_parameter
                           : undefined,
-                        isSystem: foundAttribute?.isSystem,
                       };
                     })
-                    .filter(({ isSystem }) => !isSystem)
                     .map(({ key, type, isArray, dateFormat }) =>
                       isEditing ? (
                         <div className="flex flex-col gap-[10px]" key={key}>
@@ -540,9 +546,13 @@ const Personv2 = () => {
                           </div>
                           <div className="flex gap-4 items-center">
                             <DynamicInput
-                              type={type}
+                              type={
+                                possibleAttributeTypes.find((possibleType) => {
+                                  return possibleType.name === type;
+                                }) || possibleAttributeTypes[0]
+                              }
                               isArray={isArray}
-                              value={personInfoToShow[key]}
+                              value={personInfoToShow.user_attributes[key]}
                               onChange={(value) => {
                                 setEditingPersonInfo({
                                   ...editingPersonInfo,
@@ -550,7 +560,7 @@ const Personv2 = () => {
                                 });
                               }}
                               placeholder="Input value"
-                              dateFormat={dateFormat}
+                              dateFormat={dateFormat as unknown as string}
                             />
                             <button
                               onClick={() => {
@@ -574,10 +584,12 @@ const Personv2 = () => {
                           </div>
                           <div>
                             {generateAttributeView(
-                              personInfoToShow[key],
-                              type,
+                              personInfoToShow.user_attributes[key],
+                              possibleAttributeTypes.find((possibleType) => {
+                                return possibleType.name === type;
+                              }) || possibleAttributeTypes[0],
                               isArray,
-                              dateFormat
+                              dateFormat as unknown as string
                             )}
                           </div>
                         </div>
@@ -592,19 +604,20 @@ const Personv2 = () => {
                       if (!attr) return;
                       setEditingPersonInfo({
                         ...editingPersonInfo,
-                        [attr.key]: attr.isArray ? [] : "",
+                        [attr.name]: attr.attribute_type.subtype_required
+                          ? []
+                          : "",
                       });
                     }}
                     options={possibleAttributes
                       .filter(
                         (attr) =>
-                          !Object.keys(editingPersonInfo).includes(attr.key) &&
-                          !attr.isSystem &&
-                          attr.key.includes(attributeSearch)
+                          !Object.keys(editingPersonInfo).includes(attr.name) &&
+                          attr.name.includes(attributeSearch)
                       )
                       .map((attr) => ({
                         key: attr,
-                        title: attr.key,
+                        title: attr.name,
                       }))}
                     customBTN={
                       <Button type={ButtonType.SECONDARY} onClick={() => {}}>
@@ -647,106 +660,6 @@ const Personv2 = () => {
                     </div>
                   </>
                 )}
-
-                {posthogKeys.length > 0 && (
-                  <>
-                    <div className="h-[1px] w-full bg-[#E5E7EB]" />
-
-                    <div className="flex flex-col gap-2.5">
-                      <div className="flex gap-2 items-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="12"
-                          height="12"
-                          viewBox="0 0 12 12"
-                          fill="none"
-                        >
-                          <g clipPath="url(#clip0_17_1386)">
-                            <path
-                              d="M11.0395 9.28498H10.319C10.2627 9.28498 10.2159 9.33185 10.2159 9.3881V10.2158H1.78238V1.78096H10.2172V2.60864C10.2172 2.66489 10.2641 2.71176 10.3203 2.71176H11.0409C11.0971 2.71176 11.144 2.66623 11.144 2.60864V1.26668C11.144 1.039 10.9605 0.855515 10.7328 0.855515H1.26809C1.04042 0.855515 0.856934 1.039 0.856934 1.26668V10.7301C0.856934 10.9577 1.04042 11.1412 1.26809 11.1412H10.7315C10.9592 11.1412 11.1426 10.9577 11.1426 10.7301V9.3881C11.1426 9.33052 11.0958 9.28498 11.0395 9.28498ZM11.223 5.51623H7.01765V4.49837C7.01765 4.40864 6.91318 4.35775 6.84354 4.414L4.9431 5.914C4.93029 5.92402 4.91993 5.93683 4.91281 5.95144C4.90569 5.96606 4.90199 5.98211 4.90199 5.99837C4.90199 6.01463 4.90569 6.03068 4.91281 6.0453C4.91993 6.05992 4.93029 6.07273 4.9431 6.08275L6.84354 7.58275C6.91452 7.639 7.01765 7.5881 7.01765 7.49837V6.48052H11.223C11.2819 6.48052 11.3301 6.4323 11.3301 6.37337V5.62337C11.3301 5.56444 11.2819 5.51623 11.223 5.51623Z"
-                              fill="#111827"
-                            />
-                          </g>
-                          <defs>
-                            <clipPath id="clip0_17_1386">
-                              <rect width="12" height="12" fill="white" />
-                            </clipPath>
-                          </defs>
-                        </svg>
-                        <div className="text-[16px] font-semibold leading-[24px]">
-                          From Posthog
-                        </div>
-
-                        {posthogKeys
-                          .map((key) => {
-                            const foundAttribute = attributesToShow.find(
-                              (attr) => attr.key === key
-                            );
-
-                            return {
-                              key,
-                              type:
-                                foundAttribute?.type ||
-                                StatementValueType.STRING,
-                              isArray: foundAttribute?.isArray || false,
-                              dateFormat: [
-                                StatementValueType.DATE,
-                                StatementValueType.DATE_TIME,
-                              ].includes(
-                                foundAttribute?.type as StatementValueType
-                              )
-                                ? foundAttribute?.dateFormat
-                                : undefined,
-                            };
-                          })
-                          .map(({ key, type, isArray, dateFormat }) =>
-                            isEditing ? (
-                              <div
-                                className="flex flex-col gap-[10px]"
-                                key={key}
-                              >
-                                <div className="text-[#18181B]">
-                                  {key} ({type}
-                                  {isArray ? "[]" : ""}){" "}
-                                  {dateFormat ? <>[{dateFormat}]</> : <></>}
-                                </div>
-                                <div className="flex gap-4 items-center">
-                                  <DynamicInput
-                                    type={type}
-                                    isArray={isArray}
-                                    value={personInfoToShow[key]}
-                                    onChange={(value) => {
-                                      setEditingPersonInfo({
-                                        ...editingPersonInfo,
-                                        [key]: value,
-                                      });
-                                    }}
-                                    placeholder="Input value"
-                                    dateFormat={dateFormat}
-                                  />
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="" key={key}>
-                                <div className="text-[#6B7280] text-[12px] leading-[20px]">
-                                  {key} ({type}
-                                  {isArray ? "[]" : ""}){" "}
-                                  {dateFormat ? <>[{dateFormat}]</> : <></>}
-                                </div>
-                                <div>
-                                  {generateAttributeView(
-                                    personInfoToShow[key],
-                                    type,
-                                    isArray
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          )}
-                      </div>
-                    </div>
-                  </>
-                )}
               </div>
               <div className="w-full h-fit bg-white rounded-lg p-5 flex flex-col gap-5">
                 <div className="text-[20px] font-semibold leading-[28px]">
@@ -754,25 +667,30 @@ const Personv2 = () => {
                 </div>
 
                 <div className="w-full grid grid-cols-2">
-                  {notPosthogKeys
+                  {system_attributes
                     .map((key) => {
                       const foundAttribute = attributesToShow.find(
-                        (attr) => attr.key === key
+                        (attr) => attr.name === key
                       );
                       return {
                         key,
-                        type: foundAttribute?.type || StatementValueType.STRING,
-                        isArray: foundAttribute?.isArray || false,
+                        type:
+                          foundAttribute?.attribute_type.name ||
+                          StatementValueType.STRING,
+                        isArray:
+                          foundAttribute?.attribute_type.parameters_required ||
+                          false,
                         dateFormat: [
                           StatementValueType.DATE,
                           StatementValueType.DATE_TIME,
-                        ].includes(foundAttribute?.type as StatementValueType)
-                          ? foundAttribute?.dateFormat
+                        ].includes(
+                          foundAttribute?.attribute_type
+                            .name as StatementValueType
+                        )
+                          ? foundAttribute?.attribute_parameter
                           : undefined,
-                        isSystem: foundAttribute?.isSystem,
                       };
                     })
-                    .filter(({ isSystem }) => isSystem)
                     .map(({ key, type, isArray, dateFormat }, i) => (
                       <div className="" key={key}>
                         <div className="text-[#6B7280] text-[12px] leading-[20px]">
@@ -782,10 +700,12 @@ const Personv2 = () => {
                         </div>
                         <div>
                           {generateAttributeView(
-                            personInfoToShow[key],
-                            type,
+                            personInfoToShow.system_attributes[key],
+                            possibleAttributeTypes.find((possibleType) => {
+                              return possibleType.name === type;
+                            }) || possibleAttributeTypes[0],
                             isArray,
-                            dateFormat
+                            dateFormat as unknown as string
                           )}
                         </div>
                       </div>

@@ -5,6 +5,8 @@ import Select from "components/Elements/Selectv2";
 import React, { FC, ReactNode, useEffect, useMemo, useState } from "react";
 import { StatementValueType } from "reducers/flow-builder.reducer";
 import { ArrayComponent } from "./ArrayComponent";
+import { AttributeType } from "pages/PeopleSettings/PeopleSettings";
+import { Statement } from "../Nodes/NodeData";
 
 export interface ValueChanger {
   value: any;
@@ -184,7 +186,7 @@ const StringComponent: FC<ValueChanger> = ({
 };
 
 interface DynamicInputProps extends ValueChanger {
-  type: StatementValueType;
+  type: AttributeType;
   isArray?: boolean;
   isRelativeDate?: boolean;
   dateFormat?: string;
@@ -285,10 +287,11 @@ const DynamicInput: FC<DynamicInputProps> = ({
       return;
     }
 
-    onChange(defaultValuesMap[type]);
+    onChange(defaultValuesMap[type.name as StatementValueType]);
   }, [type]);
 
-  const dynamicComponent = valueTypeToComponentMap[type];
+  const dynamicComponent =
+    valueTypeToComponentMap[type.name as StatementValueType];
 
   return (
     <>

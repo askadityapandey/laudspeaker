@@ -913,8 +913,8 @@ export class JourneyLocationsService {
     const resultSet = await this.journeyLocationsRepository
       .createQueryBuilder('journeyLocation')
       .where({ journey: In(journeyIds) })
-      .groupBy("journeyLocation.journeyId")
-      .select("journeyLocation.journeyId, COUNT(*) as count")
+      .groupBy("journeyLocation.journey_id")
+      .select("journeyLocation.journey_id, COUNT(*) as count")
       .getRawMany();
 
     for (const row of resultSet) {

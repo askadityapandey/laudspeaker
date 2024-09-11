@@ -17,17 +17,13 @@ import ImportCompletion, {
 import ImportTabOne, { ImportOptions } from "./ImportTabOne";
 import MappingTab from "./MappingTab";
 import MapValidationErrors from "./Modals/MapValidationErrors";
+import { AttributeType } from "pages/PeopleSettings/PeopleSettings";
 
 const tabs = [
   { title: "Upload CSV File" },
   { title: "Map data attributes" },
   { title: "Import Completion" },
 ];
-
-export type AttributeType = Exclude<
-  StatementValueType,
-  StatementValueType.ARRAY & StatementValueType.OBJECT
->;
 
 export interface ImportAttribute {
   key: string;

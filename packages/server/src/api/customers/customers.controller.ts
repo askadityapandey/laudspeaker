@@ -35,7 +35,7 @@ import { UpsertCustomerDto } from './dto/upsert-customer.dto';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { DeleteCustomerDto } from './dto/delete-customer.dto';
 import { ReadCustomerDto } from './dto/read-customer.dto';
-import { ModifyAttributesDto } from './dto/modify-attributes.dto';
+import { CreateAttributeDto, ModifyAttributesDto } from './dto/modify-attributes.dto';
 import { SendFCMDto } from './dto/send-fcm.dto';
 import { IdentifyCustomerDTO } from './dto/identify-customer.dto';
 import { SetCustomerPropsDTO } from './dto/set-customer-props.dto';
@@ -361,19 +361,16 @@ export class CustomersController {
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
   async createAttribute(
     @Req() { user }: Request,
-    @Body()
-    {
-      name,
-      type,
-      dateFormat,
-    }: { name: string; type: AttributeTypeName; dateFormat: unknown }
+    @Body() createAttributeDTO: CreateAttributeDto
   ) {
     const session = randomUUID();
     return this.customerKeysService.createKey(
       <Account>user,
-      name,
-      type,
-      session
+      createAttributeDTO.name,
+      createAttributeDTO.attribute_type,
+      session,
+      createAttributeDTO.attribute_subtype,
+      createAttributeDTO.attribute_parameter,
     );
   }
 

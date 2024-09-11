@@ -165,39 +165,6 @@ export class SegmentsService {
     return { data: segments, totalPages };
   }
 
-  async findAllSegmentsForCustomer(
-    account: Account,
-    uuid: string,
-    take = 100,
-    skip = 0,
-    search = '',
-    session: string
-  ) {
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
-
-    const totalPages = Math.ceil(
-      (await this.segmentCustomersRepository
-        .createQueryBuilder('segmentCustomers')
-        .innerJoinAndSelect('segmentCustomers.customer', 'customer')
-        .where('segmentCustomers.workspaceId = :workspaceId', { workspaceId: workspace.id })
-        .andWhere('customer.uuid = :uuid', { uuid })
-        .getCount()) / take || 1
-    );
-
-    const records = await this.segmentCustomersRepository
-    .createQueryBuilder('segmentCustomers')
-    .innerJoinAndSelect('segmentCustomers.customer', 'customer')
-    .innerJoinAndSelect('segmentCustomers.segment', 'segment')
-    .where('segmentCustomers.workspaceId = :workspaceId', { workspaceId: workspace.id })
-    .andWhere('customer.uuid = :uuid', { uuid })
-    .take(take < 100 ? take : 100)
-    .skip(skip)
-    .getMany();  
-
-    const segments = records.map((record) => record.segment);
-    return { data: segments, totalPages };
-  }
-
   /**
    * Get all segements for an account. Optionally filter by type
    * If @param type is undefined, return all types.

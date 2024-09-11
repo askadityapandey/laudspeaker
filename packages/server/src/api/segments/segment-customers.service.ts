@@ -369,108 +369,123 @@ export class SegmentCustomersService {
   }
 
   /**
-   * Get the number of unique customers enrolled in a specific segment
-   *
-   * @param account
-   * @param journey
-   * @param runner
-   * @returns number of unique customers enrolled in a specific segment
+   * Returns a number indicating the number of customers enrolled in a segment
+   * 
+   * @param {Account} account Account associated with this customer/segment pair
+   * @param {string | Segment} segment Either the segment UUID or Segment object
+   * @param {string }session HTTP session identifier
+   * @param {QueryRunner} [queryRunner] Optional query runner for transactions
+   * @returns {Promise<number>} A promise resolving to a number, indicating the
+   * number of customers enrolled in a segment.
    */
-  async getNumberOfCustomersInSegment(
+  async getSegmentSize(
     account: Account,
-    segment: Segment,
-    runner?: QueryRunner
-  ) {
-    const queryCriteria: FindManyOptions<SegmentCustomers> = {
+    segment: string | Segment,
+    session: string,
+    queryRunner?: QueryRunner
+  ): Promise<number> {
+
+    let repository: Repository<SegmentCustomers>;
+    if (queryRunner) repository = queryRunner.manager.getRepository(SegmentCustomers);
+    else repository = this.segmentCustomersRepository;
+
+    const query: FindManyOptions<SegmentCustomers> = {
       where: {
         workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
-        segment: { id: segment.id },
+        segment: typeof segment === 'string' ? { id: segment } : { id: segment.id },
       },
     };
-    let count: number;
-    if (runner) {
-      count = await runner.manager.count(SegmentCustomers, queryCriteria);
-    } else {
-      count = await this.segmentCustomersRepository.count(queryCriteria);
-    }
+    let count: number = await repository.count(query);
     return count;
   }
 
-  /**
-   * Get the number of unique customers enrolled in a specific segment
-   *
-   * @param account
-   * @param journey
-   * @param runner
-   * @returns number of unique customers enrolled in a specific segment
-   */
+
   async getSegmentsForCustomer(
     account: Account,
-    segment: Segment,
-    runner?: QueryRunner
+    customer: string | Customer,
+    take = 100,
+    skip = 0,
+    search = '',
+    session: string,
+    queryRunner?: QueryRunner
   ) {
-    const queryCriteria: FindManyOptions<SegmentCustomers> = {
-      where: {
-        workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
-        segment: { id: segment.id },
-      },
-    };
-    let count: number;
-    if (runner) {
-      count = await runner.manager.count(SegmentCustomers, queryCriteria);
-    } else {
-      count = await this.segmentCustomersRepository.count(queryCriteria);
-    }
-    return count;
+    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+
+    const totalPages = Math.ceil(
+      (await this.segmentCustomersRepository
+        .createQueryBuilder('segmentCustomers')
+        .innerJoinAndSelect('segmentCustomers.customer', 'customer')
+        .where('segmentCustomers.workspace_id = :workspaceId', { workspaceId: workspace.id })
+        .andWhere('customer.uuid = :uuid', typeof customer === 'string' ? { uuid: customer } : { uuid: customer.uuid })
+        .getCount()) / take || 1
+    );
+
+    const records = await this.segmentCustomersRepository
+    .createQueryBuilder('segmentCustomers')
+    .innerJoinAndSelect('segmentCustomers.customer', 'customer')
+    .innerJoinAndSelect('segmentCustomers.segment', 'segment')
+    .where('segmentCustomers.workspace_id = :workspaceId', { workspaceId: workspace.id })
+    .andWhere('customer.uuid = :uuid', typeof customer === 'string' ? { uuid: customer } : { uuid: customer.uuid })
+    .take(take < 100 ? take : 100)
+    .skip(skip)
+    .getMany();  
+
+    const segments = records.map((record) => record.segment);
+    return { data: segments, totalPages };
   }
 
   /**
-   * Get the number of unique customers enrolled in a specific segment
-   *
-   * @param account
-   * @param journey
-   * @param runner
-   * @returns number of unique customers enrolled in a specific segment
+   * 
+   * 
+   * @param {Account} account Account associated with this customer/segment pair
+   * @param {string | Segment} segment Either the segment UUID or Segment object
+   * @param {string }session HTTP session identifier
+   * @param {QueryRunner} [queryRunner] Optional query runner for transactions
+   * @returns 
    */
   async getCustomersInSegment(
     account: Account,
-    segment: Segment,
-    runner?: QueryRunner
+    segment: string | Segment,
+    session: string,
+    queryRunner?: QueryRunner
   ) {
-    const queryCriteria: FindManyOptions<SegmentCustomers> = {
-      where: {
-        workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
-        segment: { id: segment.id },
-      },
-    };
-    let count: number;
-    if (runner) {
-      count = await runner.manager.count(SegmentCustomers, queryCriteria);
-    } else {
-      count = await this.segmentCustomersRepository.count(queryCriteria);
-    }
-    return count;
+
   }
 
+  /**
+   * Returns a boolean value indicating whether or not the specified customer is
+   * in the specified segment.
+   * 
+   * @param {Account} account Account associated with this customer/segment pair
+   * @param {string | Segment} segment Either the segment UUID or Segment object
+   * @param {string | Customer} customer Either the customer UUID or Customer object
+   * @param {string }session HTTP session identifier
+   * @param {QueryRunner} [queryRunner] Optional query runner for transactions
+   * @returns {Promise<boolean>} A promise resolving to a boolean, indicating whether or not
+   * the specified customer was found in the specified segment. Uses a findOne query under
+   * the hood.
+   */
   async isCustomerInSegment(
     account: Account,
-    segment: any,
-    customer: string,
-    runner?: QueryRunner
-  ) {
-    const queryCriteria: FindManyOptions<SegmentCustomers> = {
+    segment: string | Segment,
+    customer: string | Customer,
+    session: string,
+    queryRunner?: QueryRunner
+  ): Promise<boolean> {
+
+    let repository: Repository<SegmentCustomers>;
+    if (queryRunner) repository = queryRunner.manager.getRepository(SegmentCustomers);
+    else repository = this.segmentCustomersRepository;
+
+    const query: FindManyOptions<SegmentCustomers> = {
       where: {
-        // workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
-        segment: segment,
-        customer: { id: parseInt(customer) },
+        workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
+        segment: typeof segment === 'string' ? { id: segment } : { id: segment.id },
+        customer: typeof customer === 'string' ? { id: parseInt(customer) } : { id: customer.id },
       },
     };
-    let found: SegmentCustomers;
-    if (runner) {
-      found = await runner.manager.findOne(SegmentCustomers, queryCriteria);
-    } else {
-      found = await this.segmentCustomersRepository.findOne(queryCriteria);
-    }
+    const found: SegmentCustomers = await repository.findOne(query);
+
     return found ? true : false;
   }
 }
