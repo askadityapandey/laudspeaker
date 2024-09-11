@@ -1,6 +1,6 @@
 /* eslint-disable no-case-declarations */
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, QueryBuilder, QueryRunner, Repository } from 'typeorm';
+import { Brackets, DataSource, DeepPartial, FindOneOptions, QueryBuilder, QueryRunner, Repository } from 'typeorm';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import * as _ from 'lodash';
 import { CacheService } from '../../common/services/cache.service';
@@ -16,6 +16,7 @@ import { UpdatePK_DTO } from './dto/update-pk.dto';
 import { CustomersService } from './customers.service';
 import { AttributeType, AttributeTypeName } from './entities/attribute-type.entity';
 import { AttributeParameter } from './entities/attribute-parameter.entity';
+import { Workspaces } from '../workspaces/entities/workspaces.entity';
 
 @Injectable()
 export class CustomerKeysService {
@@ -167,40 +168,79 @@ export class CustomerKeysService {
   }
 
 
+
+  /**
+   * Creates and returns a customer attribute.
+   * 
+   * Method checklist:
+   * 1. Comment describing what the function does and the correct method params
+   * 2. Has a return type in the method header: Promise<boolean>
+   * 3. Accepts an optional queryRunner and a required session (change to context object later)
+   * 4. All possible types for all params are present and checked
+   * 5. Uses a generic runner in case query runner is defined
+   * 6. All variables have a type annotation when they are defined
+   * 7. All database queries are workspace-scoped
+   * 8. Access to a postgres table is restricted to a service for that table.
+   * 9. Argument checking for all passed parameters is done; null/undefined checks, database checks, etc
+   * 10. Add caching for database reads and invalidate cache before database writes
+   * 11. Prefer Set<T> to Array and Map<T,T> to Object
+   * 12. Async await over .then
+   * 13. Default function parameters whenever possible
+   * 14. Use const and let instead of var
+   * 
+   * @param {Account} account Account associated with key creation
+   * @param {string} key Name of the key
+   * @param {string | Customer} customer Either the customer UUID or Customer object
+   * @param {string | Customer} customer Either the customer UUID or Customer object
+   * @param {string | Customer} customer Either the customer UUID or Customer object
+   * @param {string | Customer} customer Either the customer UUID or Customer object
+   * @param {string | Customer} customer Either the customer UUID or Customer object
+   * @param {string }session HTTP session identifier
+   * @param {QueryRunner} [queryRunner] Optional query runner for transactions
+   * @returns {Promise<CustomerKey>} A promise resolving to a boolean, indicating whether or not
+   * the specified customer was found in the specified segment. Uses a findOne query under
+   * the hood.
+   */
   async createKey(
     account: Account,
     key: string,
-    type_id: string,
+    type: string | AttributeType,
     session: string,
-    attribute_subtype_id?: string,
-    attribute_parameter_id?: string,
+    attribute_subtype?: string | AttributeType,
+    attribute_parameter?: string | AttributeParameter,
     queryRunner?: QueryRunner
-  ) {
-    let runner;
-    if (queryRunner) runner = await queryRunner.manager.getRepository(CustomerKey);
-    else runner = await this.customerKeysRepository;
+  ): Promise<CustomerKey> {
+    if (!key) {
+      throw new HttpException(
+        'Key must be at least one character long',
+        503
+      );
+    }
 
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    let repository: Repository<CustomerKey>;
+    if (queryRunner) repository = queryRunner.manager.getRepository(CustomerKey);
+    else repository = this.customerKeysRepository;
 
-    validateKeyForMutations(key);
+    const workspace: Workspaces = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-    const findKeyQuery = {
+    const findKeyQuery: FindOneOptions<CustomerKey> = {
       where: {
         name: key.trim(),
         workspace: { id: workspace.id },
-        attribute_type: { id: parseInt(type_id) },
+        attribute_type: typeof type === 'string' ? { id: parseInt(type) } : { id: type.id },
       }
     };
-    const createKeyQuery = {
+
+    const createKeyQuery: DeepPartial<CustomerKey> = {
       name: key.trim(),
-      attribute_type: { id: parseInt(type_id) },
+      attribute_type: typeof type === 'string' ? { id: parseInt(type) } : { id: type.id },
       workspace: { id: workspace.id },
-      attribute_subtype_id: attribute_subtype_id ? { id: parseInt(attribute_subtype_id) } : undefined,
-      attribute_parameter_id: attribute_parameter_id ? { id: parseInt(attribute_parameter_id) } : undefined,
+      attribute_subtype: attribute_subtype ? (typeof attribute_subtype === 'string' ? { id: parseInt(attribute_subtype) } : { id: attribute_subtype.id }) : undefined,
+      attribute_parameter: attribute_parameter ? (typeof attribute_parameter === 'string' ? { id: parseInt(attribute_parameter) } : { id: attribute_parameter.id }) : undefined,
       is_primary: false,
     };
 
-    const previousKey = await runner.findOne(findKeyQuery);
+    const previousKey: CustomerKey = await repository.findOne(findKeyQuery);
 
     if (previousKey) {
       throw new HttpException(
@@ -209,7 +249,7 @@ export class CustomerKeysService {
       );
     }
 
-    const newKey = await runner.save(createKeyQuery);
+    const newKey: CustomerKey = await repository.save(createKeyQuery);
 
     return newKey;
   }
