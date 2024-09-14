@@ -359,57 +359,7 @@ export class MessageSender {
         ];
         break;
       case 'resend':
-        const resend = new Resend(key);
-        const resendMessage = await resend.emails.send({
-          from: `${from} <${email}@${domain}>`,
-          to: to,
-          cc: cc,
-          subject: subjectWithInsertedTags,
-          html: textWithInsertedTags,
-          tags: [
-            {
-              name: 'stepId',
-              value: stepID,
-            },
-            {
-              name: 'customerId',
-              value: customerID,
-            },
-            {
-              name: 'templateId',
-              value: String(templateID),
-            },
-            {
-              name: 'accountId',
-              value: accountID,
-            },
-          ],
-        });
-        this.log(
-          `${JSON.stringify({
-            message: 'Email sent via: ' + eventProvider,
-            result: resendMessage,
-            to,
-            subjectWithInsertedTags,
-          })}}`,
-          this.handleEmail.name,
-          session,
-          account.email
-        );
-        msg = resendMessage;
-        ret = [
-          {
-            stepId: stepID,
-            createdAt: new Date(),
-            customerId: customerID,
-            event: 'sent',
-            eventProvider: ClickHouseEventProvider.RESEND,
-            messageId: resendMessage.data ? resendMessage.data.id : '',
-            templateId: String(templateID),
-            workspaceId: workspace.id,
-            processed: false,
-          },
-        ];
+        
         break;
       case 'mailgun':
       default:
