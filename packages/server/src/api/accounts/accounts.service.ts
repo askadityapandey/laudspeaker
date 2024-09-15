@@ -41,7 +41,7 @@ import {
   OrganizationPlan,
 } from '../organizations/entities/organization-plan.entity';
 import Stripe from 'stripe';
-import { MailgunProvider } from '@/common/channels/email/providers/mailgun.provider';
+import { MailgunProvider } from '@/api/channels/email/providers/mailgun.provider';
 
 @Injectable()
 export class AccountsService extends BaseJwtHelper {

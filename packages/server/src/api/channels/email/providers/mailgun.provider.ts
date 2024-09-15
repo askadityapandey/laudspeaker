@@ -3,7 +3,7 @@ import { EmailCallbackData, EmailCredentials, EmailProviderData, EmailSendingDat
 import Mailgun from 'mailgun.js';
 import formData from 'form-data';
 import FormData from 'form-data';
-import { ClickHouseMessage } from '../../../services/clickhouse/interfaces/clickhouse-message';
+import { ClickHouseMessage } from '../../../../common/services/clickhouse/interfaces/clickhouse-message';
 import { ClickHouseEventProvider } from '@/common/services/clickhouse';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { createHmac } from 'crypto';

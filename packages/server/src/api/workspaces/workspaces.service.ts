@@ -18,7 +18,7 @@ import { UpdateSendgridChannelDto } from './dto/sendgrid/update-sendgrid-channel
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { MailService } from '@sendgrid/mail';
 import { Client } from '@sendgrid/client';
-import { MailgunProvider } from '@/common/channels/email/providers/mailgun.provider';
+import { MailgunProvider } from '@/api/channels/email/providers/mailgun.provider';
 
 export type WorkspaceConnection =
   | WorkspaceMailgunConnection

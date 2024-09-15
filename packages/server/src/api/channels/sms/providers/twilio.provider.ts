@@ -1,6 +1,6 @@
 import { SMSProvider } from '../interfaces/sms.provider';
 import { SMSCallbackData, SMSCredentials, SMSProviderData, SMSSendingData, SMSSetupData } from '../interfaces/sms.data';
-import { ClickHouseMessage } from '../../../services/clickhouse/interfaces/clickhouse-message';
+import { ClickHouseMessage } from '../../../../common/services/clickhouse/interfaces/clickhouse-message';
 import { ClickHouseEventProvider } from '@/common/services/clickhouse';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHmac } from 'crypto';
