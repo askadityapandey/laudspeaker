@@ -41,7 +41,7 @@ import {
   OrganizationPlan,
 } from '../organizations/entities/organization-plan.entity';
 import Stripe from 'stripe';
-import { WorkspaceMailgunConnection } from '../workspaces/entities/workspace-mailgun-connection.entity';
+import { MailgunProvider } from '@/common/channels/email/providers/mailgun.provider';
 
 @Injectable()
 export class AccountsService extends BaseJwtHelper {
@@ -73,7 +73,8 @@ export class AccountsService extends BaseJwtHelper {
     private stepsService: StepsService,
     @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(forwardRef(() => WebhooksService))
-    private webhookService: WebhooksService
+    private webhookService: WebhooksService,
+    @Inject(MailgunProvider) private mailgunProvider: MailgunProvider,
   ) {
     super();
     if (
@@ -251,9 +252,8 @@ export class AccountsService extends BaseJwtHelper {
 
     if (updateUserDto.emailProvider === 'mailgun') {
       try {
-        await this.webhookService.setupMailgunWebhook(
-          updateUserDto.mailgunAPIKey,
-          updateUserDto.sendingDomain
+        await this.mailgunProvider.setup(
+          { credentials: { apiKey: updateUserDto.mailgunAPIKey } }, { data: { domain: updateUserDto.sendingDomain } }
         );
       } catch (e) {
         this.error(e, this.update.name, session);
@@ -782,15 +782,15 @@ export class AccountsService extends BaseJwtHelper {
                     )?.id ||
                     (node.data.type
                       ? (
-                          await this.stepsService.insert(
-                            account,
-                            {
-                              journeyID: journey.id,
-                              type: node.data.type as StepType,
-                            },
-                            session
-                          )
-                        ).id
+                        await this.stepsService.insert(
+                          account,
+                          {
+                            journeyID: journey.id,
+                            type: node.data.type as StepType,
+                          },
+                          session
+                        )
+                      ).id
                       : undefined),
                 },
               })

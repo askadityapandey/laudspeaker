@@ -1,34 +1,19 @@
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PublicKey, Signature, Ecdsa } from 'starkbank-ecdsa';
-import { Audience } from '../audiences/entities/audience.entity';
 import { Account } from '../accounts/entities/accounts.entity';
 import {
   BadRequestException,
-  NotFoundException,
 } from '@nestjs/common/exceptions';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import Mailgun from 'mailgun.js';
-import formData from 'form-data';
-import axios from 'axios';
-import FormData from 'form-data';
-import { randomUUID } from 'crypto';
 import { Step } from '../steps/entities/step.entity';
 import { EventWebhook } from '@sendgrid/eventwebhook';
-import { Queue } from 'bullmq';
-import { Webhook } from 'svix';
-import fetch from 'node-fetch'; // Ensure you have node-fetch if you're using Node.js
-import { ProviderType } from '../events/processors/events.preprocessor';
 import { Organization } from '../organizations/entities/organization.entity';
 import {
-  DEFAULT_PLAN,
   OrganizationPlan,
 } from '../organizations/entities/organization-plan.entity';
 import * as Sentry from '@sentry/node';
 import Stripe from 'stripe';
-import { QueueType } from '@/common/services/queue/types/queue-type';
-import { Producer } from '@/common/services/queue/classes/producer';
 import {
   ClickHouseTable,
   ClickHouseEventProvider,
@@ -60,18 +45,6 @@ export class WebhooksService {
     @Inject(ClickHouseClient)
     private clickhouseClient: ClickHouseClient,
   ) {
-    const session = randomUUID();
-    (async () => {
-      try {
-        if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_TEST_DOMAIN)
-          await this.setupMailgunWebhook(
-            process.env.MAILGUN_API_KEY,
-            process.env.MAILGUN_TEST_DOMAIN
-          );
-      } catch (e) {
-        this.error(e, WebhooksService.name, session);
-      }
-    })();
   }
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -214,42 +187,6 @@ export class WebhooksService {
       messagesToInsert.push(clickHouseRecord);
     }
     await this.insertMessageStatusToClickhouse(messagesToInsert, session);
-  }
-
-  public async processTwilioData(
-    {
-      stepId,
-      customerId,
-      templateId,
-      SmsStatus,
-      MessageSid,
-    }: {
-      stepId: string;
-      customerId: string;
-      templateId: string;
-      SmsStatus: string;
-      MessageSid: string;
-    },
-    session: string
-  ) {
-    const step = await this.stepRepository.findOne({
-      where: {
-        id: stepId,
-      },
-      relations: ['workspace'],
-    });
-    const clickHouseRecord: ClickHouseMessage = {
-      workspaceId: step.workspace.id,
-      stepId,
-      customerId,
-      templateId: String(templateId),
-      messageId: MessageSid,
-      event: SmsStatus,
-      eventProvider: ClickHouseEventProvider.TWILIO,
-      processed: false,
-      createdAt: new Date(),
-    };
-    await this.insertMessageStatusToClickhouse([clickHouseRecord], session);
   }
 
   public async insertMessageStatusToClickhouse(

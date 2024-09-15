@@ -105,53 +105,6 @@ export class WebhooksController {
     );
   }
 
-  @Post('twilio')
-  @UseInterceptors(new RavenInterceptor())
-  public async processTwilioData(
-    @Body()
-    body: {
-      SmsSid: string;
-      SmsStatus: string;
-      MessageStatus: string;
-      To: string;
-      MessageSid: string;
-      AccountSid: string;
-      From: string;
-      ApiVersion: string;
-    },
-    @Query('stepId') stepId: string,
-    @Query('customerId') customerId: string,
-    @Query('templateId') templateId: string
-  ) {
-    const session = randomUUID();
-    await this.webhooksService.processTwilioData(
-      {
-        ...body,
-        stepId,
-        customerId,
-        templateId,
-      },
-      session
-    );
-  }
-
-  @Post('mailgun')
-  @UseInterceptors(new RavenInterceptor())
-  public async processMailgunData(@Body() body: any) {
-    const session = randomUUID();
-    await this.webhooksService.processMailgunData(body, session);
-  }
-
-  @Post('resend')
-  @UseInterceptors(new RavenInterceptor())
-  public async processResendData(
-    @Req() request: RawBodyRequest<Request>,
-    @Body() body: any
-  ) {
-    const session = randomUUID();
-    await this.webhooksService.processResendData(request, body, session);
-  }
-
   @Post('stripe')
   @HttpCode(HttpStatus.OK) // Always respond quickly to webhook events
   @UseInterceptors(new RavenInterceptor())

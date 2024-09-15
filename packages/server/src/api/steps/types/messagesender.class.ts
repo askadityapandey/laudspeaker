@@ -18,7 +18,6 @@ import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clic
 import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
 
 export enum MessageType {
-  SMS = 'sms',
   EMAIL = 'email',
   PUSH = 'PUSH',
   IOS = 'ios',
@@ -57,22 +56,6 @@ export class MessageSender {
         job.domain,
         job.trackingEmail,
         job.cc,
-        job.session
-      );
-    },
-    [MessageType.SMS]: async (job) => {
-      return await this.handleSMS(
-        job.from,
-        job.sid,
-        job.token,
-        job.to,
-        job.text,
-        job.tags,
-        job.stepID,
-        job.customerID,
-        job.templateID,
-        job.accountID,
-        job.trackingEmail,
         job.session
       );
     },
@@ -421,117 +404,6 @@ export class MessageSender {
       }
     }
 
-    return ret;
-  }
-
-  /**
-   * Handle sending sms.
-   * @param from
-   * @param sid
-   * @param token
-   * @param to
-   * @param text
-   * @param tags
-   * @param stepID
-   * @param customerID
-   * @param templateID
-   * @param accountID
-   * @param trackingEmail
-   * @returns
-   */
-  async handleSMS(
-    from: string,
-    sid: string,
-    token: string,
-    to: string,
-    text: string,
-    tags: any,
-    stepID: string,
-    customerID: string,
-    templateID: string,
-    accountID: string,
-    trackingEmail: string,
-    session: string
-  ): Promise<ClickHouseMessage[]> {
-    if (!to) {
-      return;
-    }
-    let textWithInsertedTags: string | undefined;
-    const account = await this.accountRepository.findOne({
-      where: { id: accountID },
-      relations: ['teams.organization.workspaces'],
-    });
-    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
-    let ret: ClickHouseMessage[];
-    try {
-      if (text) {
-        textWithInsertedTags = await this.tagEngine.parseAndRender(
-          text,
-          tags || {},
-          { strictVariables: true }
-        );
-      }
-    } catch (err) {
-      return [
-        {
-          stepId: stepID,
-          createdAt: new Date(),
-          customerId: customerID,
-          event: 'error',
-          eventProvider: ClickHouseEventProvider.TWILIO,
-          messageId: null,
-          templateId: String(templateID),
-          workspaceId: workspace.id,
-          processed: false,
-        },
-      ];
-    }
-    const twilioClient = twilio(sid, token);
-    const message = await twilioClient.messages.create({
-      body: textWithInsertedTags?.slice(0, this.MAXIMUM_SMS_LENGTH),
-      from: from,
-      to: to,
-      statusCallback: `${process.env.TWILIO_WEBHOOK_ENDPOINT}?stepId=${stepID}&customerId=${customerID}&templateId=${templateID}`,
-    });
-    this.log(
-      `${JSON.stringify({
-        message: 'SMS sent via: Twilio',
-        result: message,
-        from,
-        to,
-        body: textWithInsertedTags?.slice(0, this.MAXIMUM_SMS_LENGTH),
-      })}}`,
-      this.handleSMS.name,
-      session,
-      account.email
-    );
-    ret = [
-      {
-        stepId: stepID,
-        createdAt: new Date(),
-        customerId: customerID,
-        event: 'sent',
-        eventProvider: ClickHouseEventProvider.TWILIO,
-        messageId: message.sid,
-        templateId: String(templateID),
-        workspaceId: workspace.id,
-        processed: false,
-      },
-    ];
-    if (trackingEmail) {
-      if (process.env.POSTHOG_MESSAGE_COUNT !== 'false') {
-        this.phClient.capture({
-          distinctId: trackingEmail,
-          event: 'message_sent',
-          properties: {
-            type: 'sms',
-            step: stepID,
-            customer: customerID,
-            template: templateID,
-          },
-        });
-      }
-    }
     return ret;
   }
 
