@@ -267,13 +267,12 @@ export class WebhooksService {
       where: {
         id: body.data.tags.stepId,
       },
-      relations: ['workspace'],
+      relations: ['workspace.resendConnections'],
     });
 
     const payload = req.rawBody.toString('utf8');
     const headers = req.headers;
-
-    const webhook = new Webhook(step.workspace.resendSigningSecret);
+    const webhook = new Webhook(step.workspace.resendConnections[0].signingSecret);
 
     try {
       const event: any = webhook.verify(payload, headers);
