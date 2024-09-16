@@ -12,13 +12,13 @@ import { toast } from "react-toastify";
 import { EmailSendingService } from "pages/EmailSettings/EmailSettings";
 
 export enum MessageChannel {
+  PUSH,
   MAILGUN,
   SENDGRID,
   RESEND,
   TWILIO,
   CUSTOM_MODAL,
   SLACK,
-  PUSH,
 }
 
 interface MessageChannelAdditionalInfoFixture {
@@ -63,6 +63,7 @@ interface PushPlatform {
 // };
 
 const messageChannelToLinkMap: Record<MessageChannel, string> = {
+  [MessageChannel.PUSH]: "/settings/push",
   [MessageChannel.MAILGUN]: "/settings/email/mailgun",
   [MessageChannel.SENDGRID]: "/settings/email/sendgrid",
   [MessageChannel.RESEND]: "/settings/email/resend",
@@ -76,6 +77,12 @@ const supportedMessageChannelCardsFixtures: Record<
   MessageChannel,
   MessageChannelCardFixture
 > = {
+  [MessageChannel.PUSH]: {
+    id: "create",
+    channel: MessageChannel.PUSH,
+    title: "Push",
+    icon: pushLogoIcon,
+  },
   [MessageChannel.MAILGUN]: {
     id: "create",
     channel: MessageChannel.MAILGUN,
@@ -107,12 +114,6 @@ const supportedMessageChannelCardsFixtures: Record<
     icon: customModalCardIconImage,
     commingSoon: true,
     disabled: true,
-  },
-  [MessageChannel.PUSH]: {
-    id: "create",
-    channel: MessageChannel.PUSH,
-    title: "Push",
-    icon: pushLogoIcon,
   },
   [MessageChannel.SLACK]: {
     id: "create",
