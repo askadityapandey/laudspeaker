@@ -150,7 +150,7 @@ export class MailgunProvider extends BaseLiquidEngineProvider implements EmailPr
       };
 
       const updateWebhook = async (type: string) => {
-        const url = `${MailgunProvider.MAILGUN_API_BASE_URL}/domains/${data.domain.name}/webhooks/${type}`;
+        const url = `${MailgunProvider.MAILGUN_API_BASE_URL}/domains/${data.domain}/webhooks/${type}`;
         try {
           const response = await fetch(url, {
             method: 'PUT',
@@ -179,12 +179,12 @@ export class MailgunProvider extends BaseLiquidEngineProvider implements EmailPr
             this.log(
               `Webhook ${MailgunProvider.MAILGUN_HOOKS_TO_INSTALL[index]} updated successfully`,
               this.setup.name,
-              result.value.body // Using the response body for logging
+              ''
             );
           } else {
-            console.error(
+            this.log(
               `Failed to update webhook ${MailgunProvider.MAILGUN_HOOKS_TO_INSTALL[index]
-              }: ${JSON.stringify(result)}`
+              }: ${JSON.stringify(result)}`, this.setup.name, ''
             );
           }
         });

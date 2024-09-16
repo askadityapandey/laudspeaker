@@ -24,7 +24,9 @@ const MailgunSettings: FC<SendingServiceSettingsProps> = ({
       const response = await dispatch(setDomainsList(formData.apiKey));
       if (response?.data) {
         setPossibleDomains(
-          response?.data?.map((item: { name: string }) => item.name) || []
+          response?.data?.data?.domains?.map(
+            (item: { name: string }) => item.name
+          ) || []
         );
       }
     }

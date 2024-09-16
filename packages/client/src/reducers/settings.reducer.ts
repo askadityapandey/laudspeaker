@@ -200,8 +200,11 @@ export const setResendSettingsPrivateApiKey = (payload: any): any => {
 export const setDomainsList = (body: any): any => {
   return async (dispatch: Dispatch<SettingsAction>) => {
     try {
-      const { data, status } = await ApiService.get({
-        url: `${ApiConfig.domains}/${body}`,
+      const { data, status } = await ApiService.post({
+        url: `channels/email/mailgun/fetch-info`,
+        options: {
+          apiKey: body,
+        },
       });
       dispatch({
         type: SettingsActionType.SET_DOMAINS_LIST,
