@@ -60,6 +60,26 @@ export class EmailController {
   }
 
   @UseInterceptors(new RavenInterceptor())
+  @Get('domains/:key')
+  @UseGuards(JwtAuthGuard)
+  async domains(@Param('key') key: string) {
+    const mailgun = new Mailgun(FormData);
+    const mg = mailgun.client({ username: 'api', key: key });
+    return _.filter(await mg.domains.list(), ['state', 'active']);
+  }
+
+  @UseInterceptors(new RavenInterceptor())
+  @Get('resend/domains/:key')
+  @UseGuards(JwtAuthGuard)
+  async resendDomains(@Param('key') key: string) {
+    const resend = new Resend(key);
+    const response: any = await resend.domains.list();
+    const domains = response['data']['data'];
+    const verified = _.filter(domains, ['status', 'verified']);
+    return verified;
+  }
+
+  @UseInterceptors(new RavenInterceptor())
   @Post('send/:audienceName')
   @UseGuards(JwtAuthGuard)
   async sendBatch(

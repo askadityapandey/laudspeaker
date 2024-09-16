@@ -1,19 +1,35 @@
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { PublicKey, Signature, Ecdsa } from 'starkbank-ecdsa';
+import { Audience } from '../audiences/entities/audience.entity';
 import { Account } from '../accounts/entities/accounts.entity';
+import { createHmac } from 'crypto';
 import {
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common/exceptions';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import Mailgun from 'mailgun.js';
+import formData from 'form-data';
+import axios from 'axios';
+import FormData from 'form-data';
+import { randomUUID } from 'crypto';
 import { Step } from '../steps/entities/step.entity';
 import { EventWebhook } from '@sendgrid/eventwebhook';
+import { Queue } from 'bullmq';
+import { Webhook } from 'svix';
+import fetch from 'node-fetch'; // Ensure you have node-fetch if you're using Node.js
+import { ProviderType } from '../events/processors/events.preprocessor';
 import { Organization } from '../organizations/entities/organization.entity';
 import {
+  DEFAULT_PLAN,
   OrganizationPlan,
 } from '../organizations/entities/organization-plan.entity';
 import * as Sentry from '@sentry/node';
 import Stripe from 'stripe';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
 import {
   ClickHouseTable,
   ClickHouseEventProvider,
@@ -23,6 +39,15 @@ import {
 
 @Injectable()
 export class WebhooksService {
+  private MAILGUN_HOOKS_TO_INSTALL = [
+    'clicked',
+    'complained',
+    'delivered',
+    'opened',
+    'permanent_fail',
+    'temporary_fail',
+    'unsubscribed',
+  ];
 
   private sendgridEventsMap = {
     click: 'clicked',
@@ -45,6 +70,18 @@ export class WebhooksService {
     @Inject(ClickHouseClient)
     private clickhouseClient: ClickHouseClient,
   ) {
+    const session = randomUUID();
+    (async () => {
+      try {
+        if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_TEST_DOMAIN)
+          await this.setupMailgunWebhook(
+            process.env.MAILGUN_API_KEY,
+            process.env.MAILGUN_TEST_DOMAIN
+          );
+      } catch (e) {
+        this.error(e, WebhooksService.name, session);
+      }
+    })();
   }
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -187,6 +224,209 @@ export class WebhooksService {
       messagesToInsert.push(clickHouseRecord);
     }
     await this.insertMessageStatusToClickhouse(messagesToInsert, session);
+  }
+
+  public async processTwilioData(
+    {
+      stepId,
+      customerId,
+      templateId,
+      SmsStatus,
+      MessageSid,
+    }: {
+      stepId: string;
+      customerId: string;
+      templateId: string;
+      SmsStatus: string;
+      MessageSid: string;
+    },
+    session: string
+  ) {
+    const step = await this.stepRepository.findOne({
+      where: {
+        id: stepId,
+      },
+      relations: ['workspace'],
+    });
+    const clickHouseRecord: ClickHouseMessage = {
+      workspaceId: step.workspace.id,
+      stepId,
+      customerId,
+      templateId: String(templateId),
+      messageId: MessageSid,
+      event: SmsStatus,
+      eventProvider: ClickHouseEventProvider.TWILIO,
+      processed: false,
+      createdAt: new Date(),
+    };
+    await this.insertMessageStatusToClickhouse([clickHouseRecord], session);
+  }
+
+  public async processResendData(req: any, body: any, session: string) {
+    const step = await this.stepRepository.findOne({
+      where: {
+        id: body.data.tags.stepId,
+      },
+      relations: ['workspace'],
+    });
+
+    const payload = req.rawBody.toString('utf8');
+    const headers = req.headers;
+
+    const webhook = new Webhook(step.workspace.resendSigningSecret);
+
+    try {
+      const event: any = webhook.verify(payload, headers);
+      const clickHouseRecord: ClickHouseMessage = {
+        workspaceId: step.workspace.id,
+        stepId: event.data.tags.stepId,
+        customerId: event.data.tags.customerId,
+        templateId: String(event.data.tags.templateId),
+        messageId: event.data.email_id,
+        event: event.type.replace('email.', ''),
+        eventProvider: ClickHouseEventProvider.RESEND,
+        processed: false,
+        createdAt: new Date(),
+      };
+      await this.insertMessageStatusToClickhouse([clickHouseRecord], session);
+    } catch (e) {
+      throw new ForbiddenException(e, 'Invalid signature');
+    }
+  }
+
+  public async processMailgunData(
+    body: {
+      signature: { token: string; timestamp: string; signature: string };
+      'event-data': {
+        event: string;
+        message: { headers: { 'message-id': string } };
+        'user-variables': {
+          stepId: string;
+          customerId: string;
+          templateId: string;
+          accountId: string;
+        };
+      };
+    },
+    session: string
+  ) {
+    const {
+      timestamp: signatureTimestamp,
+      token: signatureToken,
+      signature,
+    } = body.signature;
+
+    const {
+      event,
+      message: {
+        headers: { 'message-id': id },
+      },
+      'user-variables': { stepId, customerId, templateId, accountId },
+    } = body['event-data'];
+
+    const account = await this.accountRepository.findOne({
+      where: { id: accountId },
+      relations: ['teams.organization.workspaces'],
+    });
+    if (!account) throw new NotFoundException('Account not found');
+
+    const value = signatureTimestamp + signatureToken;
+
+    const hash = createHmac(
+      'sha256',
+      account?.teams?.[0]?.organization?.workspaces?.[0]?.mailgunAPIKey ||
+        process.env.MAILGUN_API_KEY
+    )
+      .update(value)
+      .digest('hex');
+
+    if (hash !== signature) {
+      throw new ForbiddenException('Invalid signature');
+    }
+
+    this.debug(
+      `${JSON.stringify({ webhook: body })}`,
+      this.processMailgunData.name,
+      session
+    );
+
+    if (!stepId || !customerId || !templateId || !id) return;
+
+    const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    const clickHouseRecord: ClickHouseMessage = {
+      workspaceId: workspace.id,
+      stepId,
+      customerId,
+      templateId: String(templateId),
+      messageId: id,
+      event: event,
+      eventProvider: ClickHouseEventProvider.MAILGUN,
+      processed: false,
+      createdAt: new Date(),
+    };
+
+    this.debug(
+      `${JSON.stringify({ ClickHouseMessage: clickHouseRecord })}`,
+      this.processMailgunData.name,
+      session
+    );
+
+    await this.insertMessageStatusToClickhouse([clickHouseRecord], session);
+  }
+
+  public async setupMailgunWebhook(
+    mailgunAPIKey: string,
+    sendingDomain: string
+  ) {
+    const base64ApiKey = Buffer.from(`api:${mailgunAPIKey}`).toString('base64');
+    const headers = {
+      Authorization: `Basic ${base64ApiKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    };
+
+    const updateWebhook = (type) => {
+      const url = `https://api.mailgun.net/v3/domains/${sendingDomain}/webhooks/${type}`;
+      return fetch(url, {
+        method: 'PUT',
+        headers: headers,
+        body: new URLSearchParams({
+          url: process.env.MAILGUN_WEBHOOK_ENDPOINT,
+        }),
+      })
+        .then((response) =>
+          response
+            .json()
+            .then((data) => ({ status: response.status, body: data }))
+        )
+        .catch((error) => ({ error }));
+    };
+
+    const updateAllWebhooks = () => {
+      const updatePromises = this.MAILGUN_HOOKS_TO_INSTALL.map((type) =>
+        updateWebhook(type)
+      );
+      Promise.allSettled(updatePromises).then((results) => {
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled' && result.value.status === 200) {
+            this.log(
+              `Webhook ${this.MAILGUN_HOOKS_TO_INSTALL[index]} updated successfully`,
+              this.setupMailgunWebhook.name,
+              randomUUID()
+            );
+          } else {
+            this.error(
+              `Failed to update webhook ${
+                this.MAILGUN_HOOKS_TO_INSTALL[index]
+              }:${JSON.stringify(result)}`,
+              this.setupMailgunWebhook.name,
+              randomUUID()
+            );
+          }
+        });
+      });
+    };
+
+    updateAllWebhooks();
   }
 
   public async insertMessageStatusToClickhouse(

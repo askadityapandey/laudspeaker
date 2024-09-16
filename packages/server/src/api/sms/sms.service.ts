@@ -1,31 +1,19 @@
-import {
-  ClassSerializerInterceptor,
-  Controller,
-  Get,
-  Inject,
-  Logger,
-  Query,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { SmsService } from './sms.service';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { randomUUID } from 'crypto';
+import twilio from 'twilio';
 
-@Controller('sms')
-export class SmsController {
+@Injectable()
+export class SmsService {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
-    private readonly logger: Logger,
-    private smsService: SmsService
+    private readonly logger: Logger
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
       message,
       JSON.stringify({
-        class: SmsController.name,
+        class: SmsService.name,
         method: method,
         session: session,
         user: user,
@@ -36,7 +24,7 @@ export class SmsController {
     this.logger.debug(
       message,
       JSON.stringify({
-        class: SmsController.name,
+        class: SmsService.name,
         method: method,
         session: session,
         user: user,
@@ -47,7 +35,7 @@ export class SmsController {
     this.logger.warn(
       message,
       JSON.stringify({
-        class: SmsController.name,
+        class: SmsService.name,
         method: method,
         session: session,
         user: user,
@@ -59,7 +47,7 @@ export class SmsController {
       error.message,
       error.stack,
       JSON.stringify({
-        class: SmsController.name,
+        class: SmsService.name,
         method: method,
         session: session,
         cause: error.cause,
@@ -72,7 +60,7 @@ export class SmsController {
     this.logger.verbose(
       message,
       JSON.stringify({
-        class: SmsController.name,
+        class: SmsService.name,
         method: method,
         session: session,
         user: user,
@@ -80,18 +68,16 @@ export class SmsController {
     );
   }
 
-  @Get('possible-phone-numbers')
-  @UseGuards(JwtAuthGuard)
-  @UseInterceptors(ClassSerializerInterceptor)
   public async getPossiblePhoneNumbers(
-    @Query('smsAccountSid') smsAccountSid: string,
-    @Query('smsAuthToken') smsAuthToken: string
+    smsAccountSid: string,
+    smsAuthToken: string,
+    session: string
   ) {
-    const session = randomUUID();
-    return this.smsService.getPossiblePhoneNumbers(
-      smsAccountSid,
-      smsAuthToken,
-      session
-    );
+    const twilioClient = twilio(smsAccountSid, smsAuthToken);
+    const results = await twilioClient.incomingPhoneNumbers.list({
+      limit: 20,
+    });
+
+    return results.map((item) => item.phoneNumber);
   }
 }

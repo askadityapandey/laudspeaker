@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Account } from '../accounts/entities/accounts.entity';
 import { MessageChannel } from './entities/message-channel.enum';
 import { Workspaces } from './entities/workspaces.entity';
@@ -18,7 +18,6 @@ import { UpdateSendgridChannelDto } from './dto/sendgrid/update-sendgrid-channel
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { MailService } from '@sendgrid/mail';
 import { Client } from '@sendgrid/client';
-import { MailgunProvider } from '@/api/channels/email/providers/mailgun.provider';
 
 export type WorkspaceConnection =
   | WorkspaceMailgunConnection
@@ -37,13 +36,13 @@ export type WorkspaceConnectionsKeys =
 export type WorkspaceConnections = Pick<Workspaces, WorkspaceConnectionsKeys>;
 
 const messageChannelToKeyMap: Record<MessageChannel, WorkspaceConnectionsKeys> =
-{
-  [MessageChannel.MAILGUN]: 'mailgunConnections',
-  [MessageChannel.SENDGRID]: 'sendgridConnections',
-  [MessageChannel.RESEND]: 'resendConnections',
-  [MessageChannel.TWILIO]: 'twilioConnections',
-  [MessageChannel.PUSH]: 'pushConnections',
-};
+  {
+    [MessageChannel.MAILGUN]: 'mailgunConnections',
+    [MessageChannel.SENDGRID]: 'sendgridConnections',
+    [MessageChannel.RESEND]: 'resendConnections',
+    [MessageChannel.TWILIO]: 'twilioConnections',
+    [MessageChannel.PUSH]: 'pushConnections',
+  };
 
 @Injectable()
 export class WorkspacesService {
@@ -59,9 +58,8 @@ export class WorkspacesService {
     @InjectRepository(WorkspaceSendgridConnection)
     private workspaceSendgridConnectionRepository: Repository<WorkspaceSendgridConnection>,
     @InjectRepository(SendgridSendingOption)
-    private sendgridSendingOptionRepository: Repository<SendgridSendingOption>,
-    @Inject(MailgunProvider) private mailgunProvider: MailgunProvider,
-  ) { }
+    private sendgridSendingOptionRepository: Repository<SendgridSendingOption>
+  ) {}
 
   public async getChannels(account: Account): Promise<WorkspaceConnections> {
     const workspace = account.teams[0].organization.workspaces[0];
@@ -111,9 +109,11 @@ export class WorkspacesService {
     const workspace = account.teams[0].organization.workspaces[0];
     const { sendingOptions, ...channelSettings } = createMailgunChannelDto;
 
-    await this.mailgunProvider.setup(
-      { credentials: { apiKey: channelSettings.apiKey } }, { data: { domain: channelSettings.sendingDomain } }
+    await this.webhookService.setupMailgunWebhook(
+      channelSettings.apiKey,
+      channelSettings.sendingDomain
     );
+
     const connection = await this.workspaceMailgunConnectionRepository.save({
       ...channelSettings,
       workspace: { id: workspace.id },
@@ -147,8 +147,9 @@ export class WorkspacesService {
     if (!channel) throw new NotFoundException('Channel not found');
 
     if (channelSettings.apiKey && channelSettings.sendingDomain) {
-      await this.mailgunProvider.setup(
-        { credentials: { apiKey: channelSettings.apiKey } }, { data: { domain: channelSettings.sendingDomain } }
+      await this.webhookService.setupMailgunWebhook(
+        channelSettings.apiKey,
+        channelSettings.sendingDomain
       );
     }
 
