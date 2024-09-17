@@ -185,22 +185,22 @@ interface TagChange {
 
 interface QuietHoursChange {
   type:
-    | SettingsChangeType.ENABLE_QUIETE_HOURS
-    | SettingsChangeType.CHANGE_QUIETE_HOURS;
+  | SettingsChangeType.ENABLE_QUIETE_HOURS
+  | SettingsChangeType.CHANGE_QUIETE_HOURS;
   quietHours: any;
 }
 
 interface MaxUserEntriesChange {
   type:
-    | SettingsChangeType.ENABLE_MAX_USER_ENTRIES
-    | SettingsChangeType.CHANGE_MAX_USER_ENTRIES;
+  | SettingsChangeType.ENABLE_MAX_USER_ENTRIES
+  | SettingsChangeType.CHANGE_MAX_USER_ENTRIES;
   maxUserEntries: any;
 }
 
 interface MaxMessageSendsChange {
   type:
-    | SettingsChangeType.ENABLE_MAX_MESSAGE_SENDS
-    | SettingsChangeType.CHANGE_MAX_MESSAGE_SENDS;
+  | SettingsChangeType.ENABLE_MAX_MESSAGE_SENDS
+  | SettingsChangeType.CHANGE_MAX_MESSAGE_SENDS;
   maxMessageSends: any;
 }
 
@@ -242,7 +242,7 @@ export class JourneysService {
     private readonly journeyLocationsService: JourneyLocationsService,
     @Inject(RedisService) private redisService: RedisService,
     @Inject(CacheService) private cacheService: CacheService
-  ) {}
+  ) { }
 
   log(message, method, session, user = 'ANONYMOUS') {
     this.logger.log(
@@ -691,7 +691,7 @@ export class JourneysService {
           change = 'ADD';
         } else if (
           journeyEntrySettings.enrollmentType ===
-            JourneyEnrollmentType.OnlyFuture &&
+          JourneyEnrollmentType.OnlyFuture &&
           customerUpdateType === 'NEW'
         ) {
           change = 'ADD';
@@ -1002,8 +1002,8 @@ export class JourneysService {
               ...(key === 'isActive'
                 ? { isStopped: false, isPaused: false }
                 : key === 'isPaused'
-                ? { isStopped: false }
-                : {}),
+                  ? { isStopped: false }
+                  : {}),
             });
         }
       } else {
@@ -1037,7 +1037,7 @@ export class JourneysService {
         );
 
       const journeys = await query.getRawAndEntities();
-      const journeyIds = journeys.entities.map( (journey) => journey.id );
+      const journeyIds = journeys.entities.map((journey) => journey.id);
 
       const totalCounts = await this.journeyLocationsService.getJourneyListTotalEnrolled(journeyIds);
 
@@ -1048,7 +1048,7 @@ export class JourneysService {
         computedFieldsList
       );
 
-      for(const i in result)
+      for (const i in result)
         result[i].computed.totalEnrolled = totalCounts[result[i].entity.id];
 
       return { data: result, totalPages };
@@ -1084,10 +1084,10 @@ export class JourneysService {
       frequency === 'daily'
         ? eachDayOfInterval({ start: startTime, end: endTime })
         : // Postgres' week starts on Monday
-          eachWeekOfInterval(
-            { start: startTime, end: endTime },
-            { weekStartsOn: 1 }
-          );
+        eachWeekOfInterval(
+          { start: startTime, end: endTime },
+          { weekStartsOn: 1 }
+        );
 
     const totalPoints = pointDates.length;
 
@@ -1214,18 +1214,16 @@ export class JourneysService {
           LEFT JOIN step ON step.id = journey_location."stepId"
           WHERE journey_location."journeyId" = $1 AND "customer" LIKE $2
         ) as a
-      ${
-        filter === 'all'
-          ? ''
-          : filter === 'in-progress'
+      ${filter === 'all'
+        ? ''
+        : filter === 'in-progress'
           ? `WHERE a."isFinished" = false`
           : filter === 'finished'
-          ? `WHERE a."isFinished" = true`
-          : ''
+            ? `WHERE a."isFinished" = true`
+            : ''
       }
-      ORDER BY a.${sortBy === 'status' ? `"isFinished"` : `"lastUpdate"`} ${
-      sortType === 'asc' ? 'ASC' : 'DESC'
-    }
+      ORDER BY a.${sortBy === 'status' ? `"isFinished"` : `"lastUpdate"`} ${sortType === 'asc' ? 'ASC' : 'DESC'
+      }
     `;
 
     const countQuery = `SELECT COUNT(*) as count FROM (${baseQuery}) as a`;
@@ -1350,8 +1348,8 @@ export class JourneysService {
       ? ActivityEventType.SETTINGS
       : changedKeys.includes('journeyEntrySettings') ||
         changedKeys.includes('inclusionCriteria')
-      ? ActivityEventType.ENTRY
-      : ActivityEventType.JOURNEY;
+        ? ActivityEventType.ENTRY
+        : ActivityEventType.JOURNEY;
 
     const changes: Change[] = [];
 
@@ -2036,7 +2034,7 @@ export class JourneysService {
 
       if (
         JSON.stringify(journey.inclusionCriteria) !==
-          JSON.stringify(inclusionCriteria) &&
+        JSON.stringify(inclusionCriteria) &&
         (journey.isActive || journey.isPaused)
       ) {
         // TODO: add logic of eligable users update on parameters change (using changeSegmentOption)
@@ -2165,7 +2163,7 @@ export class JourneysService {
               if (nodes[i].data['template']['selected']['pushBuilder'])
                 metadata.selectedPlatform =
                   nodes[i].data['template']['selected']['pushBuilder'][
-                    'selectedPlatform'
+                  'selectedPlatform'
                   ];
             }
             this.debug(
@@ -2255,6 +2253,11 @@ export class JourneysService {
                   relevantEdges[i].data['branch'].conditions.length;
                   eventsIndex++
                 ) {
+                  if (relevantEdges[i].data['branch'].conditions[eventsIndex].type === "analytics") {
+
+                  } else {
+
+                  }
                   let event;
                   if (
                     relevantEdges[i].data['branch'].conditions[eventsIndex]
@@ -2346,45 +2349,48 @@ export class JourneysService {
               } else if (
                 relevantEdges[i].data['branch'].type === BranchType.MESSAGE
               ) {
-                const branch = new EventBranch();
-                branch.events = [];
-                branch.relation =
-                  relevantEdges[i].data['branch'].conditions[0].relationToNext;
-                branch.index = i;
-                branch.destination = nodes.filter((node) => {
-                  return node.id === relevantEdges[i].target;
-                })[0].data.stepId;
-                for (
-                  let eventsIndex = 0;
-                  eventsIndex <
-                  relevantEdges[i].data['branch'].conditions.length;
-                  eventsIndex++
-                ) {
-                  const event = new MessageEvent();
-                  event.providerType =
-                    relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'providerType'
-                    ];
-                  event.journey =
-                    relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'from'
-                    ]['key'];
-                  event.step =
-                    relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'fromSpecificMessage'
-                    ]['key'];
-                  event.eventCondition =
-                    relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'eventCondition'
-                    ];
-                  event.happenCondition =
-                    relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'happenCondition'
-                    ];
-                  branch.events.push(event);
-                }
-                metadata.branches.push(branch);
-              } else if (
+              }
+              // {
+              //   const branch = new EventBranch();
+              //   branch.events = [];
+              //   branch.relation =
+              //     relevantEdges[i].data['branch'].conditions[0].relationToNext;
+              //   branch.index = i;
+              //   branch.destination = nodes.filter((node) => {
+              //     return node.id === relevantEdges[i].target;
+              //   })[0].data.stepId;
+              //   for (
+              //     let eventsIndex = 0;
+              //     eventsIndex <
+              //     relevantEdges[i].data['branch'].conditions.length;
+              //     eventsIndex++
+              //   ) {
+              //     const event = new MessageEvent();
+              //     event.providerType =
+              //       relevantEdges[i].data['branch'].conditions[eventsIndex][
+              //       'providerType'
+              //       ];
+              //     event.journey =
+              //       relevantEdges[i].data['branch'].conditions[eventsIndex][
+              //       'from'
+              //       ]['key'];
+              //     event.step =
+              //       relevantEdges[i].data['branch'].conditions[eventsIndex][
+              //       'fromSpecificMessage'
+              //       ]['key'];
+              //     event.eventCondition =
+              //       relevantEdges[i].data['branch'].conditions[eventsIndex][
+              //       'eventCondition'
+              //       ];
+              //     // event.happenCondition =
+              //     //   relevantEdges[i].data['branch'].conditions[eventsIndex][
+              //     //     'happenCondition'
+              //     //   ];
+              //     branch.events.push(event);
+              //   }
+              //   metadata.branches.push(branch);
+              // } 
+              else if (
                 relevantEdges[i].data['branch'].type === BranchType.WU_ATTRIBUTE
               ) {
                 const branch = new EventBranch();
@@ -2408,16 +2414,16 @@ export class JourneysService {
                     ].split(';;')[0];
                   event.happenCondition =
                     relevantEdges[i].data['branch'].conditions[eventsIndex][
-                      'happenCondition'
+                    'happenCondition'
                     ];
                   if (event.happenCondition === 'changed to') {
                     event.value =
                       relevantEdges[i].data['branch'].conditions[eventsIndex][
-                        'value'
+                      'value'
                       ];
                     event.valueType =
                       relevantEdges[i].data['branch'].conditions[eventsIndex][
-                        'valueType'
+                      'valueType'
                       ];
                   }
 

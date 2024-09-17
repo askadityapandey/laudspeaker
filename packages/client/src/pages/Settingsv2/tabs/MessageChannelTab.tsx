@@ -68,7 +68,6 @@ const messageChannelToLinkMap: Record<MessageChannel, string> = {
   [MessageChannel.SENDGRID]: "/settings/email/sendgrid",
   [MessageChannel.RESEND]: "/settings/email/resend",
   [MessageChannel.TWILIO]: "/settings/sms",
-  [MessageChannel.PUSH]: "/settings/push",
   [MessageChannel.CUSTOM_MODAL]: "",
   [MessageChannel.SLACK]: "",
 };
