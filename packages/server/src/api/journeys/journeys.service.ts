@@ -2254,142 +2254,119 @@ export class JourneysService {
                   eventsIndex++
                 ) {
                   if (relevantEdges[i].data['branch'].conditions[eventsIndex].type === "analytics") {
-
-                  } else {
-
-                  }
-                  let event;
-                  if (
-                    relevantEdges[i].data['branch'].conditions[eventsIndex]
-                      .providerType === ProviderType.Tracker
-                  ) {
-                    event = new ComponentEvent();
-                    event.event =
-                      relevantEdges[i].data['branch'].conditions[
-                        eventsIndex
-                      ].event;
-                    event.trackerID =
-                      relevantEdges[i].data['branch'].conditions[
-                        eventsIndex
-                      ].trackerId;
-                  } else {
-                    event = new AnalyticsEvent();
-                    event.conditions = [];
-                    event.event =
-                      relevantEdges[i].data['branch'].conditions[
-                        eventsIndex
-                      ].name;
-                    event.provider =
-                      relevantEdges[i].data['branch'].conditions[
-                        eventsIndex
-                      ].providerType;
-                    event.relation =
-                      relevantEdges[i].data['branch'].conditions[
-                        eventsIndex
-                      ].statements[0]?.relationToNext;
-                    for (
-                      let conditionsIndex = 0;
-                      conditionsIndex <
+                    let event;
+                    if (
                       relevantEdges[i].data['branch'].conditions[eventsIndex]
-                        .statements.length;
-                      conditionsIndex++
+                        .providerType === ProviderType.Tracker
                     ) {
-                      const condition = new AnalyticsEventCondition();
-                      condition.type =
+                      event = new ComponentEvent();
+                      event.event =
                         relevantEdges[i].data['branch'].conditions[
                           eventsIndex
-                        ].statements[conditionsIndex].type;
-                      if (condition.type === FilterByOption.ELEMENTS) {
-                        condition.elementCondition = new ElementCondition();
-                        condition.elementCondition.comparisonType =
+                        ].event;
+                      event.trackerID =
+                        relevantEdges[i].data['branch'].conditions[
+                          eventsIndex
+                        ].trackerId;
+                    } else {
+                      event = new AnalyticsEvent();
+                      event.conditions = [];
+                      event.event =
+                        relevantEdges[i].data['branch'].conditions[
+                          eventsIndex
+                        ].name;
+                      event.provider =
+                        relevantEdges[i].data['branch'].conditions[
+                          eventsIndex
+                        ].providerType;
+                      event.relation =
+                        relevantEdges[i].data['branch'].conditions[
+                          eventsIndex
+                        ].statements[0]?.relationToNext;
+                      for (
+                        let conditionsIndex = 0;
+                        conditionsIndex <
+                        relevantEdges[i].data['branch'].conditions[eventsIndex]
+                          .statements.length;
+                        conditionsIndex++
+                      ) {
+                        const condition = new AnalyticsEventCondition();
+                        condition.type =
                           relevantEdges[i].data['branch'].conditions[
                             eventsIndex
-                          ].statements[conditionsIndex].comparisonType;
-                        condition.elementCondition.filter =
-                          relevantEdges[i].data['branch'].conditions[
-                            eventsIndex
-                          ].statements[conditionsIndex].elementKey;
-                        condition.elementCondition.filterType =
-                          relevantEdges[i].data['branch'].conditions[
-                            eventsIndex
-                          ].statements[conditionsIndex].valueType;
-                        condition.elementCondition.order =
-                          relevantEdges[i].data['branch'].conditions[
-                            eventsIndex
-                          ].statements[conditionsIndex].order;
-                        condition.elementCondition.value =
-                          relevantEdges[i].data['branch'].conditions[
-                            eventsIndex
-                          ].statements[conditionsIndex].value;
-                      } else {
-                        condition.propertyCondition = new PropertyCondition();
-                        condition.propertyCondition.comparisonType =
-                          relevantEdges[i].data['branch'].conditions[
-                            eventsIndex
-                          ].statements[conditionsIndex].comparisonType;
-                        condition.propertyCondition.key =
-                          relevantEdges[i].data['branch'].conditions[
-                            eventsIndex
-                          ].statements[conditionsIndex].key;
-                        condition.propertyCondition.keyType =
-                          relevantEdges[i].data['branch'].conditions[
-                            eventsIndex
-                          ].statements[conditionsIndex].valueType;
-                        condition.propertyCondition.value =
-                          relevantEdges[i].data['branch'].conditions[
-                            eventsIndex
-                          ].statements[conditionsIndex].value;
+                          ].statements[conditionsIndex].type;
+                        if (condition.type === FilterByOption.ELEMENTS) {
+                          condition.elementCondition = new ElementCondition();
+                          condition.elementCondition.comparisonType =
+                            relevantEdges[i].data['branch'].conditions[
+                              eventsIndex
+                            ].statements[conditionsIndex].comparisonType;
+                          condition.elementCondition.filter =
+                            relevantEdges[i].data['branch'].conditions[
+                              eventsIndex
+                            ].statements[conditionsIndex].elementKey;
+                          condition.elementCondition.filterType =
+                            relevantEdges[i].data['branch'].conditions[
+                              eventsIndex
+                            ].statements[conditionsIndex].valueType;
+                          condition.elementCondition.order =
+                            relevantEdges[i].data['branch'].conditions[
+                              eventsIndex
+                            ].statements[conditionsIndex].order;
+                          condition.elementCondition.value =
+                            relevantEdges[i].data['branch'].conditions[
+                              eventsIndex
+                            ].statements[conditionsIndex].value;
+                        } else {
+                          condition.propertyCondition = new PropertyCondition();
+                          condition.propertyCondition.comparisonType =
+                            relevantEdges[i].data['branch'].conditions[
+                              eventsIndex
+                            ].statements[conditionsIndex].comparisonType;
+                          condition.propertyCondition.key =
+                            relevantEdges[i].data['branch'].conditions[
+                              eventsIndex
+                            ].statements[conditionsIndex].key;
+                          condition.propertyCondition.keyType =
+                            relevantEdges[i].data['branch'].conditions[
+                              eventsIndex
+                            ].statements[conditionsIndex].valueType;
+                          condition.propertyCondition.value =
+                            relevantEdges[i].data['branch'].conditions[
+                              eventsIndex
+                            ].statements[conditionsIndex].value;
+                        }
+                        event.conditions.push(condition);
                       }
-                      event.conditions.push(condition);
                     }
+                    branch.events.push(event);
+                  } else {
+                    const event = new MessageEvent();
+                    event.providerType =
+                      relevantEdges[i].data['branch'].conditions[eventsIndex][
+                      'providerType'
+                      ];
+                    event.journey =
+                      relevantEdges[i].data['branch'].conditions[eventsIndex][
+                      'from'
+                      ]['key'];
+                    event.step =
+                      relevantEdges[i].data['branch'].conditions[eventsIndex][
+                      'fromSpecificMessage'
+                      ]['key'];
+                    event.eventCondition =
+                      relevantEdges[i].data['branch'].conditions[eventsIndex][
+                      'eventCondition'
+                      ];
+                    // event.happenCondition =
+                    //   relevantEdges[i].data['branch'].conditions[eventsIndex][
+                    //     'happenCondition'
+                    //   ];
+                    branch.events.push(event);
                   }
-                  branch.events.push(event);
                 }
                 metadata.branches.push(branch);
-              } else if (
-                relevantEdges[i].data['branch'].type === BranchType.MESSAGE
-              ) {
               }
-              // {
-              //   const branch = new EventBranch();
-              //   branch.events = [];
-              //   branch.relation =
-              //     relevantEdges[i].data['branch'].conditions[0].relationToNext;
-              //   branch.index = i;
-              //   branch.destination = nodes.filter((node) => {
-              //     return node.id === relevantEdges[i].target;
-              //   })[0].data.stepId;
-              //   for (
-              //     let eventsIndex = 0;
-              //     eventsIndex <
-              //     relevantEdges[i].data['branch'].conditions.length;
-              //     eventsIndex++
-              //   ) {
-              //     const event = new MessageEvent();
-              //     event.providerType =
-              //       relevantEdges[i].data['branch'].conditions[eventsIndex][
-              //       'providerType'
-              //       ];
-              //     event.journey =
-              //       relevantEdges[i].data['branch'].conditions[eventsIndex][
-              //       'from'
-              //       ]['key'];
-              //     event.step =
-              //       relevantEdges[i].data['branch'].conditions[eventsIndex][
-              //       'fromSpecificMessage'
-              //       ]['key'];
-              //     event.eventCondition =
-              //       relevantEdges[i].data['branch'].conditions[eventsIndex][
-              //       'eventCondition'
-              //       ];
-              //     // event.happenCondition =
-              //     //   relevantEdges[i].data['branch'].conditions[eventsIndex][
-              //     //     'happenCondition'
-              //     //   ];
-              //     branch.events.push(event);
-              //   }
-              //   metadata.branches.push(branch);
-              // } 
               else if (
                 relevantEdges[i].data['branch'].type === BranchType.WU_ATTRIBUTE
               ) {
@@ -2709,92 +2686,117 @@ export class JourneysService {
                 eventsIndex < relevantEdges[i].data['branch'].conditions.length;
                 eventsIndex++
               ) {
-                let event;
-                if (
-                  relevantEdges[i].data['branch'].conditions[eventsIndex]
-                    .providerType === ProviderType.Tracker
-                ) {
-                  event = new ComponentEvent();
-                  event.event =
-                    relevantEdges[i].data['branch'].conditions[
-                      eventsIndex
-                    ].event;
-                  event.trackerID =
-                    relevantEdges[i].data['branch'].conditions[
-                      eventsIndex
-                    ].trackerId;
-                } else {
-                  event = new AnalyticsEvent();
-                  event.conditions = [];
-                  event.event =
-                    relevantEdges[i].data['branch'].conditions[
-                      eventsIndex
-                    ].name;
-                  event.provider =
-                    relevantEdges[i].data['branch'].conditions[
-                      eventsIndex
-                    ].providerType;
-                  event.relation =
-                    relevantEdges[i].data['branch'].conditions[
-                      eventsIndex
-                    ].statements[0]?.relationToNext;
-                  for (
-                    let conditionsIndex = 0;
-                    conditionsIndex <
+                if (relevantEdges[i].data['branch'].conditions[eventsIndex].type === "analytics") {
+                  let event;
+                  if (
                     relevantEdges[i].data['branch'].conditions[eventsIndex]
-                      .statements.length;
-                    conditionsIndex++
+                      .providerType === ProviderType.Tracker
                   ) {
-                    const condition = new AnalyticsEventCondition();
-                    condition.type =
+                    event = new ComponentEvent();
+                    event.event =
                       relevantEdges[i].data['branch'].conditions[
                         eventsIndex
-                      ].statements[conditionsIndex].type;
-                    if (condition.type === FilterByOption.ELEMENTS) {
-                      condition.elementCondition = new ElementCondition();
-                      condition.elementCondition.comparisonType =
+                      ].event;
+                    event.trackerID =
+                      relevantEdges[i].data['branch'].conditions[
+                        eventsIndex
+                      ].trackerId;
+                  } else {
+                    event = new AnalyticsEvent();
+                    event.conditions = [];
+                    event.event =
+                      relevantEdges[i].data['branch'].conditions[
+                        eventsIndex
+                      ].name;
+                    event.provider =
+                      relevantEdges[i].data['branch'].conditions[
+                        eventsIndex
+                      ].providerType;
+                    event.relation =
+                      relevantEdges[i].data['branch'].conditions[
+                        eventsIndex
+                      ].statements[0]?.relationToNext;
+                    for (
+                      let conditionsIndex = 0;
+                      conditionsIndex <
+                      relevantEdges[i].data['branch'].conditions[eventsIndex]
+                        .statements.length;
+                      conditionsIndex++
+                    ) {
+                      const condition = new AnalyticsEventCondition();
+                      condition.type =
                         relevantEdges[i].data['branch'].conditions[
                           eventsIndex
-                        ].statements[conditionsIndex].comparisonType;
-                      condition.elementCondition.filter =
-                        relevantEdges[i].data['branch'].conditions[
-                          eventsIndex
-                        ].statements[conditionsIndex].elementKey;
-                      condition.elementCondition.filterType =
-                        relevantEdges[i].data['branch'].conditions[
-                          eventsIndex
-                        ].statements[conditionsIndex].valueType;
-                      condition.elementCondition.order =
-                        relevantEdges[i].data['branch'].conditions[
-                          eventsIndex
-                        ].statements[conditionsIndex].order;
-                      condition.elementCondition.value =
-                        relevantEdges[i].data['branch'].conditions[
-                          eventsIndex
-                        ].statements[conditionsIndex].value;
-                    } else {
-                      condition.propertyCondition = new PropertyCondition();
-                      condition.propertyCondition.comparisonType =
-                        relevantEdges[i].data['branch'].conditions[
-                          eventsIndex
-                        ].statements[conditionsIndex].comparisonType;
-                      condition.propertyCondition.key =
-                        relevantEdges[i].data['branch'].conditions[
-                          eventsIndex
-                        ].statements[conditionsIndex].key;
-                      condition.propertyCondition.keyType =
-                        relevantEdges[i].data['branch'].conditions[
-                          eventsIndex
-                        ].statements[conditionsIndex].valueType;
-                      condition.propertyCondition.value =
-                        relevantEdges[i].data['branch'].conditions[
-                          eventsIndex
-                        ].statements[conditionsIndex].value;
+                        ].statements[conditionsIndex].type;
+                      if (condition.type === FilterByOption.ELEMENTS) {
+                        condition.elementCondition = new ElementCondition();
+                        condition.elementCondition.comparisonType =
+                          relevantEdges[i].data['branch'].conditions[
+                            eventsIndex
+                          ].statements[conditionsIndex].comparisonType;
+                        condition.elementCondition.filter =
+                          relevantEdges[i].data['branch'].conditions[
+                            eventsIndex
+                          ].statements[conditionsIndex].elementKey;
+                        condition.elementCondition.filterType =
+                          relevantEdges[i].data['branch'].conditions[
+                            eventsIndex
+                          ].statements[conditionsIndex].valueType;
+                        condition.elementCondition.order =
+                          relevantEdges[i].data['branch'].conditions[
+                            eventsIndex
+                          ].statements[conditionsIndex].order;
+                        condition.elementCondition.value =
+                          relevantEdges[i].data['branch'].conditions[
+                            eventsIndex
+                          ].statements[conditionsIndex].value;
+                      } else {
+                        condition.propertyCondition = new PropertyCondition();
+                        condition.propertyCondition.comparisonType =
+                          relevantEdges[i].data['branch'].conditions[
+                            eventsIndex
+                          ].statements[conditionsIndex].comparisonType;
+                        condition.propertyCondition.key =
+                          relevantEdges[i].data['branch'].conditions[
+                            eventsIndex
+                          ].statements[conditionsIndex].key;
+                        condition.propertyCondition.keyType =
+                          relevantEdges[i].data['branch'].conditions[
+                            eventsIndex
+                          ].statements[conditionsIndex].valueType;
+                        condition.propertyCondition.value =
+                          relevantEdges[i].data['branch'].conditions[
+                            eventsIndex
+                          ].statements[conditionsIndex].value;
+                      }
+                      event.conditions.push(condition);
                     }
-                    event.conditions.push(condition);
                   }
+                  branch.events.push(event);
+                } else {
+                  const event = new MessageEvent();
+                  event.providerType =
+                    relevantEdges[i].data['branch'].conditions[eventsIndex][
+                    'providerType'
+                    ];
+                  event.journey =
+                    relevantEdges[i].data['branch'].conditions[eventsIndex][
+                    'from'
+                    ]['key'];
+                  event.step =
+                    relevantEdges[i].data['branch'].conditions[eventsIndex][
+                    'fromSpecificMessage'
+                    ]['key'];
+                  event.eventCondition =
+                    relevantEdges[i].data['branch'].conditions[eventsIndex][
+                    'eventCondition'
+                    ];
+                  // event.happenCondition =
+                  //   relevantEdges[i].data['branch'].conditions[eventsIndex][
+                  //     'happenCondition'
+                  //   ];
+                  branch.events.push(event);
                 }
-                branch.events.push(event);
               }
               metadata.branches.push(branch);
             }

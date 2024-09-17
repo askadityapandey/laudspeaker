@@ -787,32 +787,31 @@ export class EventsProcessor extends ProcessorBase {
         ) {
           const messageEvent: MessageEvent =
             steps[stepIndex].metadata.branches[branchIndex].events[eventIndex];
-          //Skip events that arent 
+          //Skip events that arent message events
           if ((messageEvent.providerType !== "email_message") && (messageEvent.providerType !== "sms_message") && (messageEvent.providerType !== "push_message"))
             continue;
-
+          // Check if the other fields match first
+          if (messageEvent.eventCondition !== job.data.message.event || messageEvent.journey !== job.data.step.journeyId) {
+            eventEvaluation.push(false);
+            continue;
+          }
           //Case 1: any message of a particular type in a journey
           if (messageEvent.step === 'ANY') {
-            if (false) {//job.data.fields?.[messageEvent.attributeName]) {
+            eventEvaluation.push(true);
+            continue;
+          }
+          //Case 2: Particular step
+          else {
+            //Case 2a. Steps match
+            if (messageEvent.step === job.data.message.stepId) {
               eventEvaluation.push(true);
+              continue;
+              //Case 2b. steps dont match
             } else {
               eventEvaluation.push(false);
+              continue;
             }
           }
-          //Case Particular step
-          else {
-            eventEvaluation.push(false);
-          }
-          // else if (messageEvent.happenCondition === 'changed to') {
-          //   if (
-          //     job.data.fields?.[messageEvent.attributeName] ===
-          //     messageEvent.value
-          //   ) {
-          //     eventEvaluation.push(true);
-          //   } else {
-          //     eventEvaluation.push(false);
-          //   }
-          // }
         }
         // If branch events are grouped by or,check if any of the events match
         if (steps[stepIndex].metadata.branches[branchIndex].relation === 'or') {
