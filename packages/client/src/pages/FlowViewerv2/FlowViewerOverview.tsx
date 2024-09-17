@@ -19,11 +19,15 @@ import { toast } from "react-toastify";
 const { RangePicker } = DatePicker;
 
 interface GetJourneyStatisticsDto {
-  enrolledDataPoints: number[];
-  finishedDataPoints: number[];
+  enrollmentData: {
+    enrolledDataPoints: number[];
+    finishedDataPoints: number[];
+    enrolledCount: number;
+    finishedCount: number;
+  },
+  conversionData: {
 
-  enrolledCount: number;
-  finishedCount: number;
+  }
 }
 
 const FlowBuilderOverview = () => {
@@ -54,11 +58,11 @@ const FlowBuilderOverview = () => {
           .getTime()}&frequency=${frequency}`,
       });
 
-      setEnrolledDataPoints(data.enrolledDataPoints);
-      setFinishedDataPoints(data.finishedDataPoints);
+      setEnrolledDataPoints(data.enrollmentData.enrolledDataPoints);
+      setFinishedDataPoints(data.enrollmentData.finishedDataPoints);
 
-      setEnrolledCount(data.enrolledCount);
-      setFinishedCount(data.finishedCount);
+      setEnrolledCount(data.enrollmentData.enrolledCount);
+      setFinishedCount(data.enrollmentData.finishedCount);
     } catch (e) {
       let message = "Unexpected error while loading statistics";
 
