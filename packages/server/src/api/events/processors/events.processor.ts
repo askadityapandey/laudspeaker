@@ -855,7 +855,7 @@ export class EventsProcessor extends ProcessorBase {
           location,
           session: job.data.session,
           journey: job.data.journey,
-          event: job.data.event.event,
+          event: job.data.message.event,
         }, stepToQueue.type);
       } else {
         await this.journeyLocationsService.unlock(location, location.step);
