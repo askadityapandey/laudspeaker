@@ -19,8 +19,11 @@ import {
 } from 'typeorm';
 import {
   parse,
+  format,
   eachDayOfInterval,
-  eachWeekOfInterval
+  eachWeekOfInterval,
+  startOfDay,
+  endOfDay
 } from 'date-fns';
 import { Journey } from './entities/journey.entity';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
@@ -30,76 +33,18 @@ import { JourneyLocation } from './entities/journey-location.entity';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { ClientSession, Model, SortOrder } from 'mongoose';
 import { EventDocument, Event } from '../events/schemas/event.schema';
+import { BaseLaudspeakerService } from '@/common/services/base.laudspeaker.service';
 
 @Injectable()
-export class JourneyStatisticsService {
+export class JourneyStatisticsService extends BaseLaudspeakerService {
   constructor(
-    @Inject(WINSTON_MODULE_NEST_PROVIDER)
-    private readonly logger: Logger,
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @InjectModel(Event.name)
     private EventModel: Model<EventDocument>,
-  ) {}
-
-  log(message, method, session, user = 'ANONYMOUS') {
-    this.logger.log(
-      message,
-      JSON.stringify({
-        class: JourneyStatisticsService.name,
-        method: method,
-        session: session,
-        user: user,
-      })
-    );
-  }
-  debug(message, method, session, user = 'ANONYMOUS') {
-    this.logger.debug(
-      message,
-      JSON.stringify({
-        class: JourneyStatisticsService.name,
-        method: method,
-        session: session,
-        user: user,
-      })
-    );
-  }
-  warn(message, method, session, user = 'ANONYMOUS') {
-    this.logger.warn(
-      message,
-      JSON.stringify({
-        class: JourneyStatisticsService.name,
-        method: method,
-        session: session,
-        user: user,
-      })
-    );
-  }
-  error(error, method, session, user = 'ANONYMOUS') {
-    this.logger.error(
-      error.message,
-      error.stack,
-      JSON.stringify({
-        class: JourneyStatisticsService.name,
-        method: method,
-        session: session,
-        cause: error.cause,
-        name: error.name,
-        user: user,
-      })
-    );
-  }
-  verbose(message, method, session, user = 'ANONYMOUS') {
-    this.logger.verbose(
-      message,
-      JSON.stringify({
-        class: JourneyStatisticsService.name,
-        method: method,
-        session: session,
-        user: user,
-      })
-    );
+  ) {
+    super();
   }
 
   private journey: Journey;
@@ -118,8 +63,10 @@ export class JourneyStatisticsService {
   ) {
 
     this.journey = journey;
-    this.startTime = startTime;
-    this.endTime = endTime;
+    // set start to start of day
+    this.startTime = startOfDay(startTime);
+    // set end to end of day
+    this.endTime = endOfDay(endTime);
     this.frequency = frequency;
     this.session = session;
 
@@ -137,8 +84,6 @@ export class JourneyStatisticsService {
   }
 
   private async processEnrollmentData() {
-    const dbFrequency = this.frequency == 'weekly' ? 'week' : 'day';
-
     const pointDates =
       this.frequency === 'daily'
         ? eachDayOfInterval({ start: this.startTime, end: this.endTime })
@@ -150,54 +95,15 @@ export class JourneyStatisticsService {
 
     const totalPoints = pointDates.length;
 
-    const enrollementGroupedByDate =
-      await this.journeyLocationsService.journeyLocationsRepository
-        .createQueryBuilder('location')
-        .where({
-          journey: this.journey.id,
-          journeyEntryAt: Between(
-            this.startTime.toISOString(),
-            this.endTime.toISOString()
-          ),
-        })
-        .select([
-          `date_trunc('${dbFrequency}', "journeyEntryAt") as "date"`,
-          `count(*)::INTEGER as group_count`,
-        ])
-        .groupBy('date')
-        .orderBy('date', 'ASC')
-        .getRawMany();
+    const {
+      enrollementGroupedByDate,
+      enrolledCount
+    } = await this.getEnrollmentCountsData();
 
-    const terminalSteps = await this.stepsService.findAllTerminalInJourney(
-      this.journey.id,
-      this.session,
-      ['step.id']
-    );
-    const terminalStepIds = terminalSteps.map((step) => step.id);
-
-    const finishedGroupedByDate =
-      await this.journeyLocationsService.journeyLocationsRepository
-        .createQueryBuilder('location')
-        .where({
-          journey: this.journey.id,
-          stepEntryAt: Between(this.startTime.toISOString(), this.endTime.toISOString()),
-          step: In(terminalStepIds),
-        })
-        .select([
-          `date_trunc('${dbFrequency}', "journeyEntryAt") as "date"`,
-          `count(*)::INTEGER as group_count`,
-        ])
-        .groupBy('date')
-        .orderBy('date', 'ASC')
-        .getRawMany();
-
-    const enrolledCount = enrollementGroupedByDate.reduce((acc, group) => {
-      return acc + group['group_count'];
-    }, 0);
-
-    const finishedCount = finishedGroupedByDate.reduce((acc, group) => {
-      return acc + group['group_count'];
-    }, 0);
+    const {
+      finishedGroupedByDate,
+      finishedCount
+    } = await this.getFinishedCountsData();
 
     const enrolledDataPoints: number[] = new Array(totalPoints).fill(
       0,
@@ -251,10 +157,10 @@ export class JourneyStatisticsService {
     
     const events = ["example1", "eventB", "eventX"];
 
-    const docs = await this.EventModel.aggregate([{
+    const query: any[] = [{
       $match: {
         event: { $in: events },
-        createdAt: {
+        timestamp: {
           $gte: isoStart,
           $lte: isoEnd
         }
@@ -287,19 +193,25 @@ export class JourneyStatisticsService {
         "_id.date": 1,
         "_id.event": 1
       }
-    }]).exec();
+    }];
 
-    const totalEvents = docs.reduce((acc, group) => {
+    const result = await this.EventModel.aggregate(query).exec();
+
+    const totalEvents = result.reduce((acc, group) => {
       return acc + group['count'];
     }, 0);
 
-    const conversionDataPoints = new Array(totalPoints).fill(
-      [],
-      0,
-      totalPoints
-    );
+    const conversionDataPoints = new Array(totalPoints);
+    const allEvents = new Set<string>;
+    const allEventsPositions = {};
 
-    for (const group of docs) {
+    for(let i = 0; i < totalPoints; i++)
+      conversionDataPoints[i] = {
+        label: format(pointDates[i], "E LLL d"),
+        data: {}
+      };
+
+    for (const group of result) {
       let groupDate;
 
       if (this.frequency == 'weekly')
@@ -310,19 +222,169 @@ export class JourneyStatisticsService {
       }
 
       for (let i = 0; i < pointDates.length; i++) {
-        if (groupDate.getTime() == pointDates[i].getTime())
-          conversionDataPoints[i].push({
-            event: group._id.event,
-            date: groupDate,
-            count: group.count
-          });
+        if (groupDate.getTime() == pointDates[i].getTime()) {
+          let event = group._id.event;
+
+          conversionDataPoints[i].data[event] = group.count;
+
+          allEvents.add(event);
+
+          if (!Object.hasOwn(allEventsPositions, event))
+            allEventsPositions[event] = { first: totalPoints, last: -1 };
+
+          allEventsPositions[event].first = Math.min(i, allEventsPositions[event].first);
+          allEventsPositions[event].last = Math.max(i, allEventsPositions[event].last);
+        }
       }
+    }
+
+    const { enrolledCount } = await this.getEnrollmentCountsData();
+
+    // explicitly set the count to 0 for events that don't exist
+    // in a particular day/week
+    // also convert all numbers to percentages
+    for (let event of allEvents) {
+      for (let i = 0; i < pointDates.length; i++) {
+        conversionDataPoints[i].data[event] = this.getConversionPercentage(
+          conversionDataPoints[i].data[event],
+          enrolledCount
+        );
+      }
+    }
+
+    // assign colors to events
+    const colors = [
+      "#8ED613",
+      "#966680",
+      "#282828",
+      "#0A0703",
+      "#330D2C",
+      "#353638",
+      "#DDA04F",
+      "#405630",
+      "#C0DBD6",
+      "#AD30A5",
+      "#2532A8",
+      "#5B6B2A",
+      "#6D6E75",
+      "#0C243A",
+      "#F97FB6",
+      "#5C5E5B",
+      "#6294F7",
+      "#931360",
+      "#1C3AFF",
+      "#515E4A",
+    ];
+
+    const lines = [];
+    const defaultColor = "#848470";
+    let colorsPicked = 0;
+
+    let lineColor = defaultColor;
+
+    for (let event of allEvents) {
+      if(colorsPicked < colors.length)
+        lineColor = colors[colorsPicked++];
+      else
+        lineColor = defaultColor;
+
+      lines.push({
+        event,
+        color: lineColor,
+      });
     }
 
     this.result.conversionData = {
       conversionDataPoints,
-      totalEvents
+      totalEvents,
+      lines,
+      allEvents: Array.from(allEvents),
     };
+  }
+
+  private async getEnrollmentCountsData() {
+    const dbFrequency = this.frequency == 'weekly' ? 'week' : 'day';
+
+    const enrollementGroupedByDate =
+      await this.journeyLocationsService.journeyLocationsRepository
+        .createQueryBuilder('location')
+        .where({
+          journey: this.journey.id,
+          journeyEntryAt: Between(
+            this.startTime.toISOString(),
+            this.endTime.toISOString()
+          ),
+        })
+        .select([
+          `date_trunc('${dbFrequency}', "journeyEntryAt") as "date"`,
+          `count(*)::INTEGER as group_count`,
+        ])
+        .groupBy('date')
+        .orderBy('date', 'ASC')
+        .getRawMany();
+
+    const enrolledCount = enrollementGroupedByDate.reduce((acc, group) => {
+      return acc + group['group_count'];
+    }, 0);
+
+    return {
+      enrollementGroupedByDate,
+      enrolledCount
+    }
+  }
+
+  private async getFinishedCountsData() {
+    const dbFrequency = this.frequency == 'weekly' ? 'week' : 'day';
+
+    const terminalSteps = await this.stepsService.findAllTerminalInJourney(
+      this.journey.id,
+      this.session,
+      ['step.id']
+    );
+    const terminalStepIds = terminalSteps.map((step) => step.id);
+
+    const finishedGroupedByDate =
+      await this.journeyLocationsService.journeyLocationsRepository
+        .createQueryBuilder('location')
+        .where({
+          journey: this.journey.id,
+          stepEntryAt: Between(this.startTime.toISOString(), this.endTime.toISOString()),
+          step: In(terminalStepIds),
+        })
+        .select([
+          `date_trunc('${dbFrequency}', "journeyEntryAt") as "date"`,
+          `count(*)::INTEGER as group_count`,
+        ])
+        .groupBy('date')
+        .orderBy('date', 'ASC')
+        .getRawMany();
+
+    const finishedCount = finishedGroupedByDate.reduce((acc, group) => {
+      return acc + group['group_count'];
+    }, 0);
+
+    return {
+      finishedGroupedByDate,
+      finishedCount
+    }
+  }
+
+  private getConversionPercentage(eventCount: number, totalCount: number) {
+    if (eventCount <= 0 ||
+        totalCount <= 0 ||
+        !eventCount ||
+        !totalCount)
+      return 0;
+    else {
+      const formatter = new Intl.NumberFormat('en-US', {
+         minimumFractionDigits: 2,      
+         maximumFractionDigits: 2,
+      });
+
+      const value = eventCount / totalCount * 100.0;
+
+      return parseFloat(formatter.format(value));
+    }
   }
 }
 

@@ -26,7 +26,10 @@ interface GetJourneyStatisticsDto {
     finishedCount: number;
   },
   conversionData: {
-
+    conversionDataPoints: Record<string, any>[];
+    lines: Record<string, any>[];
+    allEvents: string[];
+    totalEvents: number;
   }
 }
 
@@ -48,6 +51,11 @@ const FlowBuilderOverview = () => {
   const [enrolledCount, setEnrolledCount] = useState<number>(0);
   const [finishedCount, setFinishedCount] = useState<number>(0);
 
+  const [conversionDataPoints, setConversionDataPoints] = useState<Record<string, any>[]>([]);
+  const [conversionDataLines, setConversionDataLines] = useState<Record<string, any>[]>([]);
+  const [conversionDataEvents, setConversionDataEvents] = useState<string[]>([]);
+  const [conversionDataPointsEventsCount, setConversionDataPointsEventsCount] = useState<number>(0);
+
   const loadData = async () => {
     try {
       const { data } = await ApiService.get<GetJourneyStatisticsDto>({
@@ -63,6 +71,11 @@ const FlowBuilderOverview = () => {
 
       setEnrolledCount(data.enrollmentData.enrolledCount);
       setFinishedCount(data.enrollmentData.finishedCount);
+
+      setConversionDataPoints(data.conversionData.conversionDataPoints);
+      setConversionDataLines(data.conversionData.lines);
+      setConversionDataEvents(data.conversionData.allEvents);
+      setConversionDataPointsEventsCount(data.conversionData.totalEvents);
     } catch (e) {
       let message = "Unexpected error while loading statistics";
 
@@ -141,9 +154,6 @@ const FlowBuilderOverview = () => {
         <div className="bg-white rounded-lg p-5 flex flex-col gap-5 flex-1">
           <div className="flex gap-4 items-center">
             <span className="text-xl font-semibold">Conversion rate</span>
-            <span className="text-sm font-normal text-[#4B5563]">
-              Coming Soon!
-            </span>
           </div>
 
           <div className="flex gap-16 justify-stretch">
@@ -169,7 +179,10 @@ const FlowBuilderOverview = () => {
             ))} */}
           </div>
 
-          <OverviewConversionChart />
+          <OverviewConversionChart
+            data={conversionDataPoints}
+            lines={conversionDataLines}
+          />
         </div>
       </div>
 
