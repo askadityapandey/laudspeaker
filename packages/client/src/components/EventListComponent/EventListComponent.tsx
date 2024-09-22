@@ -1,6 +1,6 @@
 import TagsInput from "react-tagsinput";
 import CloseIcon from "@heroicons/react/20/solid/XMarkIcon";
-import "./TagComponent.css";
+import "./EventListComponent.css";
 import { useEffect, useRef, useState } from "react";
 import { useClickAway } from "react-use";
 
@@ -9,14 +9,14 @@ import {
   TagComponentChildProps
 } from "../common/TagComponentBase";
 
-interface TagComponentProps extends TagComponentChildProps {
+interface EventListComponentProps extends TagComponentChildProps {
 }
 
-export default function TagComponent(props: TagComponentProps) {
+export default function EventListComponent(props: EventListComponentProps) {
   return TagComponentBase({
     ...props,
-    inputPlaceholder: "Please select or enter keywords to create a new tag",
-    noMatchingMessage: "No matching tags",
-    serverListEmptyMessage: "No tags, enter to create a new tag"
+    inputPlaceholder: "Add events you wish to track",
+    noMatchingMessage: "Press enter to add event",
+    serverListEmptyMessage: "Press enter to add event"
   });
 }

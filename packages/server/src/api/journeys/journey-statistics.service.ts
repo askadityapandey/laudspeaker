@@ -155,7 +155,7 @@ export class JourneyStatisticsService extends BaseLaudspeakerService {
     const isoStart = this.startTime.toISOString();
     const isoEnd = this.endTime.toISOString();
     
-    const events = ["example1", "eventB", "eventX"];
+    const events = this.journey.journeySettings?.conversionTracking?.events || [];
 
     const query: any[] = [{
       $match: {
@@ -202,7 +202,7 @@ export class JourneyStatisticsService extends BaseLaudspeakerService {
     }, 0);
 
     const conversionDataPoints = new Array(totalPoints);
-    const allEvents = new Set<string>;
+    const allEventsInDB = new Set<string>;
     const allEventsPositions = {};
 
     for(let i = 0; i < totalPoints; i++)
@@ -227,7 +227,7 @@ export class JourneyStatisticsService extends BaseLaudspeakerService {
 
           conversionDataPoints[i].data[event] = group.count;
 
-          allEvents.add(event);
+          allEventsInDB.add(event);
 
           if (!Object.hasOwn(allEventsPositions, event))
             allEventsPositions[event] = { first: totalPoints, last: -1 };
@@ -243,7 +243,7 @@ export class JourneyStatisticsService extends BaseLaudspeakerService {
     // explicitly set the count to 0 for events that don't exist
     // in a particular day/week
     // also convert all numbers to percentages
-    for (let event of allEvents) {
+    for (let event of events) {
       for (let i = 0; i < pointDates.length; i++) {
         conversionDataPoints[i].data[event] = this.getConversionPercentage(
           conversionDataPoints[i].data[event],
@@ -254,12 +254,12 @@ export class JourneyStatisticsService extends BaseLaudspeakerService {
 
     // assign colors to events
     const colors = [
+      "#3446EB",
+      "#61197D",
+      "#EB6B34",
       "#8ED613",
-      "#966680",
-      "#282828",
-      "#0A0703",
-      "#330D2C",
-      "#353638",
+      "#B58F12",
+      "#0A4F09",
       "#DDA04F",
       "#405630",
       "#C0DBD6",
@@ -282,7 +282,7 @@ export class JourneyStatisticsService extends BaseLaudspeakerService {
 
     let lineColor = defaultColor;
 
-    for (let event of allEvents) {
+    for (let event of events) {
       if(colorsPicked < colors.length)
         lineColor = colors[colorsPicked++];
       else
@@ -298,7 +298,7 @@ export class JourneyStatisticsService extends BaseLaudspeakerService {
       conversionDataPoints,
       totalEvents,
       lines,
-      allEvents: Array.from(allEvents),
+      allEvents: Array.from(events),
     };
   }
 

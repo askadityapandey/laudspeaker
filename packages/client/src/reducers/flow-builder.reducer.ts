@@ -489,12 +489,28 @@ export interface JourneySettingsEnableFrequencyCapping {
   enabled: boolean;
 }
 
+export enum JourneySettingsConversionTrackingTimeLimitUnit {
+  Days = "Days",
+}
+
+export interface JourneySettingsConversionTrackingTimeLimit {
+  unit: JourneySettingsConversionTrackingTimeLimitUnit,
+  value: number;
+}
+
+export interface JourneySettingsConversionTracking {
+  enabled: boolean;
+  events: string[];
+  timeLimit: JourneySettingsConversionTrackingTimeLimit;
+}
+
 export interface JourneySettings {
   tags: string[];
   quietHours: JourneySettingsQuietHours;
   maxEntries: JourneySettingsMaxUserEntries;
   maxMessageSends: JourneySettingsMaxMessageSends;
   frequencyCapping: JourneySettingsEnableFrequencyCapping;
+  conversionTracking: JourneySettingsConversionTracking;
 }
 
 export interface TemplateInlineEditor {
@@ -600,6 +616,14 @@ export const defaultJourneySettings = {
   frequencyCapping: {
     enabled: false,
   },
+  conversionTracking: {
+    enabled: false,
+    events: [],
+    timeLimit: {
+      unit: JourneySettingsConversionTrackingTimeLimitUnit.Days,
+      value: 3,
+    },
+  }
 };
 
 const initialState: FlowBuilderState = {
@@ -1516,6 +1540,14 @@ const flowBuilderSlice = createSlice({
     setIsStarting(state, action: PayloadAction<boolean>) {
       state.isStarting = action.payload;
     },
+    setJourneySettingsConversionTracking(state, action: PayloadAction<JourneySettingsConversionTracking>) {
+      if (action.payload === undefined)
+        state.journeySettings.conversionTracking = defaultJourneySettings.conversionTracking;
+      else
+        state.journeySettings.conversionTracking = action.payload;
+
+      state.journeySettings.conversionTracking.events = Array.from(new Set(state.journeySettings.conversionTracking.events));
+    },
   },
 });
 
@@ -1572,6 +1604,7 @@ export const {
   setTemplateInlineCreator,
   setJourneyFrequencyCappingRules,
   setIsStarting,
+  setJourneySettingsConversionTracking,
 } = flowBuilderSlice.actions;
 
 export { defaultDevMode };

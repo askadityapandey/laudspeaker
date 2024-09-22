@@ -4,6 +4,7 @@ import Button, { ButtonType } from "components/Elements/Buttonv2";
 import ToggleSwitch from "components/Elements/ToggleSwitch";
 import RadioOption from "components/Radio/RadioOption";
 import TagComponent from "components/TagComponent/TagComponent";
+import EventListComponent from "components/EventListComponent/EventListComponent";
 import { FC, useState } from "react";
 import { useDispatch } from "react-redux";
 import {
@@ -14,6 +15,7 @@ import {
   setMaxMessageSends,
   setJourneySettingsTags,
   setJourneyFrequencyCappingRules,
+  setJourneySettingsConversionTracking,
 } from "reducers/flow-builder.reducer";
 import { useAppSelector } from "store/hooks";
 
@@ -340,6 +342,51 @@ const FlowBuilderSettings: FC<FlowBuilderSettingsProps> = ({
                   </span>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+        <div className="w-[calc(100%+40px)] h-[1px] bg-[#E5E7EB] -translate-x-[20px]" />
+        <div className="flex flex-col gap-[10px]">
+          <div className="flex items-center">
+            <span
+              className="flex cursor-pointer select-none"
+              onClick={() => {
+                dispatch(
+                  setJourneySettingsConversionTracking({
+                    ...journeySettings.conversionTracking!,
+                    enabled: !journeySettings.conversionTracking.enabled,
+                  })
+                );
+              }}
+            >
+              <ToggleSwitch
+                checked={journeySettings.conversionTracking.enabled}
+                iconRequired={false}
+              />
+              <div className="ml-[10px] font-semibold text-base">
+                Conversion Tracking
+              </div>
+            </span>
+          </div>
+          <div className="text-[#4B5563] font-inter text-[12px] leading-5 font-normal">
+            Select the events you wish to track to show conversion
+          </div>
+          {journeySettings.conversionTracking.enabled && (
+            <div className="p-[10px] border border-[#E5E7EB] bg-[#F3F4F6] rounded max-w-[800px] flex flex-col gap-[10px]">
+              <EventListComponent
+                tags={journeySettings.conversionTracking.events}
+                // TODO: auto-complete list of events
+                possibleTags={[]}
+                onTagChange={(events) => {
+                  dispatch(
+                    setJourneySettingsConversionTracking({
+                      ...journeySettings.conversionTracking!,
+                      events: events
+                    })
+                  );
+                }}
+              />
+
             </div>
           )}
         </div>
